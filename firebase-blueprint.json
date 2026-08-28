@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Profil utilisateur et informations d'entreprise",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "companyName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Assistant": {
+      "title": "Assistant",
+      "description": "Configuration de l'assistant IA, base de connaissances et personnalisation de la bulle",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessName": { "type": "string" },
+        "websiteUrl": { "type": "string" },
+        "businessCategory": { "type": "string" },
+        "businessDescription": { "type": "string" },
+        "faqText": { "type": "string" },
+        "pricingServicesText": { "type": "string" },
+        "specialRulesText": { "type": "string" },
+        "assistantTone": { "type": "string" },
+        "languages": { "type": "object" },
+        "autoLeadCapture": { "type": "boolean" },
+        "whatsappEscalation": { "type": "string" },
+        "widgetId": { "type": "string" },
+        "widgetConfig": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "businessName", "widgetId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Profils des utilisateurs inscrits"
+    },
+    "/assistants/{assistantId}": {
+      "schema": "Assistant",
+      "description": "Assistants IA configurés par les utilisateurs"
+    }
+  }
+}
