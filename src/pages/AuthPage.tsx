@@ -367,7 +367,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onNav
 
           <div className="mt-6 pt-4 border-t border-white/5 text-[11px] text-neutral-400 flex items-center gap-2">
             <Lock className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-            <span>Données hébergées en base de données sécurisée.</span>
+            <span>Données de connexion cryptées et sécurisées.</span>
           </div>
         </div>
       </div>

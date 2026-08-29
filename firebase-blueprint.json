@@ -38,6 +38,30 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["userId", "businessName", "widgetId"]
+    },
+    "Prospect": {
+      "title": "Prospect",
+      "description": "Visiteurs et prospects capturés par l'assistant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assistantId": { "type": "string" },
+        "userId": { "type": "string" },
+        "visitorId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "need": { "type": "string" },
+        "status": { "type": "string" },
+        "referer": { "type": "string" },
+        "currentPage": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "language": { "type": "string" },
+        "messages": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["assistantId", "userId", "visitorId"]
     }
   },
   "firestore": {
@@ -48,6 +72,10 @@
     "/assistants/{assistantId}": {
       "schema": "Assistant",
       "description": "Assistants IA configurés par les utilisateurs"
+    },
+    "/prospects/{prospectId}": {
+      "schema": "Prospect",
+      "description": "Prospects capturés par l'assistant"
     }
   }
 }

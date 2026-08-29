@@ -93,6 +93,7 @@ export interface AssistantConfig {
   };
   autoLeadCapture: boolean;
   whatsappEscalation?: string;
+  webhookUrl?: string;
   widgetId: string;
   widgetConfig?: WidgetCustomization;
   createdAt?: any;

@@ -1,0 +1,8 @@
+{
+  "name": "JawebFlow Pro",
+  "description": "JawebFlow : 1er chatbot IA en Algérie. Automatisez vos ventes, support client 24/7 et réponses précises en Français et Darija pour votre site web.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

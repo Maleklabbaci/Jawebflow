@@ -33,16 +33,21 @@ import {
   AlertCircle,
   Truck,
   DollarSign,
-  Phone
+  Phone,
+  Search,
+  Target,
+  Filter,
+  TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization } from '../lib/firebase';
+import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, db } from '../lib/firebase';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
 import { KnowledgeNote } from '../types';
 
-export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'widget' | 'simulator' | 'leads' | 'integration' | 'settings';
+export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'widget' | 'simulator' | 'leads' | 'integration' | 'settings' | 'billing';
 
 interface DashboardPlatformProps {
   initialSection?: string;
@@ -195,11 +200,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   });
   const [autoLeadCapture, setAutoLeadCapture] = useState<boolean>(true);
   const [whatsappEscalation, setWhatsappEscalation] = useState<string>('');
+  const [webhookUrl, setWebhookUrl] = useState<string>('');
 
   // Persistence status
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
   const [savedDbSuccess, setSavedDbSuccess] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string; details?: string } | null>(null);
 
   // Crawler & Scanner state
   const [crawlerUrl, setCrawlerUrl] = useState<string>('');
@@ -213,6 +221,12 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [messages, setMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string; time: string }>>([]);
   const [inputMessage, setInputMessage] = useState<string>('');
   const [isBotTyping, setIsBotTyping] = useState<boolean>(false);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'nouveau' | 'qualifie'>('all');
+  const [hasContactFilter, setHasContactFilter] = useState<boolean>(false);
+  const [showExportDetails, setShowExportDetails] = useState<boolean>(false);
 
   // Real leads captured by the assistant
   const [leadsList, setLeadsList] = useState<Array<{
@@ -223,6 +237,19 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     need: string;
     status: 'nouveau' | 'qualifie' | 'converti';
     date: string;
+    referer?: string;
+    currentPage?: string;
+    language?: string;
+    timezone?: string;
+    screenResolution?: string;
+    userAgent?: string;
+    messages?: Array<{ sender: 'bot' | 'user'; text: string; timestamp?: string }>;
+    timeSpent?: number;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+    utm_content?: string;
+    utm_term?: string;
   }>>([
     {
       id: 'lead_1',
@@ -273,6 +300,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             if (current.assistantTone) setAssistantTone(current.assistantTone);
             if (current.languages) setLanguages(current.languages);
             if (current.whatsappEscalation) setWhatsappEscalation(current.whatsappEscalation);
+            if (current.webhookUrl) setWebhookUrl(current.webhookUrl);
             if (current.widgetConfig) {
               setWidgetConfig(prev => ({
                 ...prev,
@@ -305,6 +333,55 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     }
   }, [businessName, widgetConfig.welcomeMessage]);
 
+  // Load real prospects in real-time from Firestore
+  useEffect(() => {
+    if (!assistantId) return;
+
+    const q = query(
+      collection(db, 'prospects'),
+      where('assistantId', '==', assistantId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const prospects: any[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        prospects.push({
+          id: doc.id,
+          name: data.name || 'Visiteur Anonyme',
+          phone: data.phone || 'Non fourni',
+          email: data.email || 'Non fourni',
+          need: data.need || (data.status === 'visited' ? 'Visite simple du site' : (data.status === 'opened_bubble' ? 'A ouvert la bulle de chat' : 'En attente de discussion')),
+          status: data.status === 'visited' || data.status === 'opened_bubble' ? 'nouveau' : 'qualifie',
+          date: data.updatedAt ? new Date(data.updatedAt.seconds * 1000).toLocaleString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : 'À l\'instant',
+          referer: data.referer || '',
+          currentPage: data.currentPage || '',
+          userAgent: data.userAgent || '',
+          language: data.language || '',
+          messages: data.messages || []
+        });
+      });
+
+      // Simple stable sort client-side to avoid needing complex Firestore indexes
+      prospects.sort((a, b) => {
+        return b.id.localeCompare(a.id);
+      });
+
+      if (prospects.length > 0) {
+        setLeadsList(prospects);
+      }
+    }, (error) => {
+      console.warn('Error listening to prospects:', error);
+    });
+
+    return () => unsubscribe();
+  }, [assistantId]);
+
   const handleSaveToDatabase = async () => {
     if (!user) return;
     try {
@@ -325,6 +402,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         languages,
         autoLeadCapture,
         whatsappEscalation: whatsappEscalation.trim(),
+        webhookUrl: webhookUrl.trim(),
         widgetId: effectiveWidgetId,
         widgetConfig: {
           ...widgetConfig,
@@ -339,6 +417,154 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     } finally {
       setIsSavingDb(false);
     }
+  };
+
+  const handleTestWebhook = async () => {
+    if (!webhookUrl.trim()) return;
+    setIsTestingWebhook(true);
+    setWebhookTestResult(null);
+    try {
+      const samplePayload = {
+        event: 'prospect_captured_test',
+        assistantId: assistantId || 'test_assistant_id',
+        businessName: businessName || 'Test Business',
+        timestamp: new Date().toISOString(),
+        prospect: {
+          id: 'test_prospect_999',
+          name: 'Ahmed Benmansour',
+          email: 'ahmed.benmansour@gmail.com',
+          phone: '+213 555 12 34 56',
+          need: 'Ceci est un message de validation du Webhook. Votre plateforme JawebFlow communique parfaitement !',
+          status: 'qualifie',
+          referer: 'https://jawebflow.com/demo',
+          language: 'fr'
+        }
+      };
+
+      const response = await fetch(webhookUrl.trim(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(samplePayload)
+      });
+
+      if (response.ok) {
+        let respText = '';
+        try {
+          respText = await response.text();
+        } catch (_) {}
+        setWebhookTestResult({
+          success: true,
+          message: 'Webhook validé avec succès !',
+          details: `Statut HTTP: ${response.status} ${response.statusText}\nRéponse du serveur: ${respText || 'Vide'}`
+        });
+      } else {
+        setWebhookTestResult({
+          success: false,
+          message: `Le serveur a répondu avec une erreur (Code ${response.status})`,
+          details: `Statut: ${response.status} ${response.statusText}`
+        });
+      }
+    } catch (error: any) {
+      console.error('Error executing webhook test:', error);
+      setWebhookTestResult({
+        success: false,
+        message: 'Impossible de joindre l\'URL du Webhook.',
+        details: `Une erreur réseau est survenue ou la requête a été bloquée par une politique CORS.\nCeci est attendu si votre site refuse les requêtes d'autres origines.\nDétail technique: ${error?.message || error}`
+      });
+    } finally {
+      setIsTestingWebhook(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];
+    const rows = leadsList.map(lead => [
+      lead.id,
+      lead.name,
+      lead.email,
+      lead.phone,
+      lead.need.replace(/"/g, '""'),
+      lead.status,
+      lead.date,
+      (lead as any).referer || '',
+      (lead as any).currentPage || '',
+      (lead as any).language || '',
+      ((lead as any).userAgent || '').replace(/"/g, '""')
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `jawebflow_prospects_${assistantId || 'export'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportAdsCSV = () => {
+    const headers = ['email', 'phone', 'first_name', 'last_name', 'country', 'locale', 'value'];
+    const rows = leadsList.map(lead => {
+      const nameParts = (lead.name || '').trim().split(/\s+/);
+      const firstName = nameParts[0] || 'Visiteur';
+      const lastName = nameParts.slice(1).join(' ') || 'Anonyme';
+      
+      let cleanPhone = (lead.phone || '').replace(/[^0-9+]/g, '');
+      if (cleanPhone === 'Nonfourni') {
+        cleanPhone = '';
+      } else if (cleanPhone.startsWith('0') && !cleanPhone.startsWith('00')) {
+        cleanPhone = '213' + cleanPhone.substring(1);
+      }
+      if (cleanPhone.startsWith('+')) {
+        cleanPhone = cleanPhone.substring(1);
+      }
+      
+      const isAlgeria = ((lead as any).timezone || '').toLowerCase().includes('algiers') || 
+                        ((lead as any).phone || '').includes('+213') || 
+                        ((lead as any).phone || '').startsWith('05') || 
+                        ((lead as any).phone || '').startsWith('06') || 
+                        ((lead as any).phone || '').startsWith('07');
+      const country = isAlgeria ? 'DZ' : 'FR';
+      const locale = (lead as any).language || 'fr';
+      
+      const hasEmail = lead.email && lead.email !== 'Non fourni';
+      const hasPhone = lead.phone && lead.phone !== 'Non fourni';
+      let value = '1.00';
+      if (hasEmail && hasPhone) value = '15.00';
+      else if (hasEmail || hasPhone) value = '5.00';
+      if (lead.status === 'qualifie') value = '30.00';
+
+      return [
+        lead.email === 'Non fourni' ? '' : lead.email,
+        cleanPhone,
+        firstName,
+        lastName,
+        country,
+        locale,
+        value
+      ];
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `jawebflow_facebook_google_audiences.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCopyField = (text: string, fieldName: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
   // Website scanner simulator that creates structured knowledge notes
@@ -788,6 +1014,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <ChevronRight className="w-3.5 h-3.5 opacity-50" />
             </button>
 
+            <button
+              type="button"
+              id="nav-step-billing"
+              onClick={() => handleSectionChange('billing')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                currentSection === 'billing'
+                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <DollarSign className="w-4 h-4" />
+                <span>Mon Plan & Facturation</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 opacity-50" />
+            </button>
+
             <div className="pt-3 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Gestion & Compte
             </div>
@@ -897,6 +1140,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   {currentSection === 'simulator' && '4. Tester l\'Assistant'}
                   {currentSection === 'integration' && '5. Code d\'Intégration'}
                   {currentSection === 'leads' && 'CRM & Prospects'}
+                  {currentSection === 'billing' && 'Mon Plan & Facturation'}
                   {currentSection === 'settings' && 'Mon Compte & Équipe'}
                 </span>
               </div>
@@ -1481,63 +1725,639 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </pre>
                 </div>
               </div>
+
+              {/* Webhook Configuration and Verification Card */}
+              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Automatisation Webhook</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">
+                    Webhook de Notification en Temps Réel
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
+                    Envoyez instantanément les données des prospects capturés (nom, email, téléphone, besoin) à votre propre CRM, site internet, ou un outil d'automatisation comme Make, Zapier ou Webhook.site.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <label className="text-xs font-bold text-slate-700">URL du Webhook de destination</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="url"
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      placeholder="https://votre-site.com/api/webhooks/prospects ou Make/Zapier URL..."
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
+                    />
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleSaveToDatabase}
+                        className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>Enregistrer l'URL</span>
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={handleTestWebhook}
+                        disabled={!webhookUrl.trim() || isTestingWebhook}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5 shadow-sm shadow-emerald-600/10"
+                      >
+                        {isTestingWebhook ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Zap className="w-4 h-4" />
+                        )}
+                        <span>Valider le Webhook</span>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {webhookTestResult && (
+                    <div className={`p-4 rounded-xl text-xs font-mono space-y-1.5 border ${
+                      webhookTestResult.success 
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                        : 'bg-rose-50 border-rose-200 text-rose-800'
+                    }`}>
+                      <div className="font-bold flex items-center gap-1.5">
+                        {webhookTestResult.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        )}
+                        <span>{webhookTestResult.message}</span>
+                      </div>
+                      {webhookTestResult.details && (
+                        <div className="opacity-90 whitespace-pre-wrap max-h-32 overflow-y-auto text-[10px]">
+                          {webhookTestResult.details}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
           {/* =================================================================
               SECTION 6: LEADS & PROSPECTS CRM
               ================================================================= */}
-          {currentSection === 'leads' && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>CRM & Pipeline</span>
+          {currentSection === 'leads' && (() => {
+            const totalTracked = leadsList.length;
+            const leadsWithContact = leadsList.filter(l => (l.email && l.email !== 'Non fourni') || (l.phone && l.phone !== 'Non fourni')).length;
+            const captureRate = totalTracked > 0 ? Math.round((leadsWithContact / totalTracked) * 100) : 0;
+            const totalCampaigns = new Set(leadsList.map(l => (l as any).utm_campaign).filter(Boolean)).size;
+            
+            const avgTimeSpent = (() => {
+              const withTime = leadsList.filter(l => (l as any).timeSpent);
+              if (withTime.length === 0) return '15s';
+              const avg = Math.round(withTime.reduce((acc, curr) => acc + ((curr as any).timeSpent || 0), 0) / withTime.length);
+              if (avg < 60) return avg + 's';
+              return Math.floor(avg / 60) + 'm ' + (avg % 60) + 's';
+            })();
+
+            const filteredLeads = leadsList.filter(lead => {
+              if (hasContactFilter) {
+                const hasEmail = lead.email && lead.email !== 'Non fourni';
+                const hasPhone = lead.phone && lead.phone !== 'Non fourni';
+                if (!hasEmail && !hasPhone) return false;
+              }
+              if (statusFilter !== 'all') {
+                if (lead.status !== statusFilter) return false;
+              }
+              if (searchTerm.trim() !== '') {
+                const term = searchTerm.toLowerCase();
+                const nameMatch = (lead.name || '').toLowerCase().includes(term);
+                const emailMatch = (lead.email || '').toLowerCase().includes(term);
+                const phoneMatch = (lead.phone || '').toLowerCase().includes(term);
+                const needMatch = (lead.need || '').toLowerCase().includes(term);
+                const idMatch = (lead.id || '').toLowerCase().includes(term);
+                const utmSourceMatch = ((lead as any).utm_source || '').toLowerCase().includes(term);
+                const utmCampaignMatch = ((lead as any).utm_campaign || '').toLowerCase().includes(term);
+                const refererMatch = ((lead as any).referer || '').toLowerCase().includes(term);
+
+                if (!nameMatch && !emailMatch && !phoneMatch && !needMatch && !idMatch && !utmSourceMatch && !utmCampaignMatch && !refererMatch) {
+                  return false;
+                }
+              }
+              return true;
+            });
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                
+                {/* Top Export Banner with Quick Download and Expandable Details */}
+                <div className="p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl border border-slate-800 shadow-md flex flex-col gap-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold uppercase tracking-wider">
+                          Exportation de Données
+                        </span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span className="text-[10px] text-slate-400">{totalTracked} Prospects enregistrés</span>
+                      </div>
+                      <h3 className="text-base font-bold tracking-tight">Téléchargement & Exploitation des Prospects</h3>
+                      <p className="text-xs text-indigo-200/90 leading-relaxed max-w-xl">
+                        Téléchargez instantanément vos leads au format CSV pour votre CRM, ou utilisez l'export optimisé pour vos audiences publicitaires Facebook & Google.
+                      </p>
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                      Prospects Qualifiés par l'Assistant
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-                      Retrouvez ici tous les contacts capturés automatiquement lors des discussions avec vos visiteurs.
-                    </p>
+
+                    <div className="flex flex-wrap gap-2.5 items-center">
+                      <button
+                        type="button"
+                        onClick={handleExportCSV}
+                        disabled={leadsList.length === 0}
+                        className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-purple-600/10"
+                      >
+                        <FileText className="w-4 h-4 text-purple-200" />
+                        <span>Exporter CSV CRM Complet</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleExportAdsCSV}
+                        disabled={leadsList.length === 0}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer border border-slate-700 hover:border-slate-600"
+                      >
+                        <Target className="w-4 h-4 text-purple-400" />
+                        <span>CSV Google & Facebook Ads</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowExportDetails(!showExportDetails)}
+                        className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-purple-300 hover:text-purple-200 text-xs font-bold transition-all cursor-pointer border border-slate-800 flex items-center gap-1.5"
+                      >
+                        <span>{showExportDetails ? "Masquer les détails" : "En savoir plus"}</span>
+                        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showExportDetails ? "rotate-90" : ""}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {showExportDetails && (
+                    <div className="pt-3 border-t border-slate-800 text-xs text-indigo-200/80 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200 leading-relaxed max-w-3xl">
+                      <p>
+                        <strong>Format CRM Complet :</strong> Contient toutes les colonnes détaillées collectées (ID unique, nom, email, téléphone, besoin client détecté, date d'enregistrement, referer d'acquisition, navigateur et langue). Idéal pour Excel, Google Sheets ou CRM (HubSpot, Salesforce, etc.).
+                      </p>
+                      <p>
+                        <strong>Format Publicitaire Ads :</strong> Format optimisé (sans en-têtes complexes) pour Meta Business Manager & Google Customer Match. Permet la synchronisation d'Audiences Personnalisées (Custom Audiences) et d'Audiences Similaires (Lookalike) pour maximiser le retour sur investissement de vos campagnes de remarketing.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 1. Analytics & Metrics Dashboard row */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Visiteurs Détectés</span>
+                      <Users className="w-4 h-4 text-purple-500" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-slate-900">{totalTracked}</div>
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span>Enregistrés en temps réel</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contacts Qualifiés</span>
+                      <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-emerald-600">{leadsWithContact}</div>
+                    <div className="text-[10px] text-slate-500">
+                      Taux de capture de <strong className="text-slate-700">{captureRate}%</strong>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Campagnes Ads Actives</span>
+                      <Target className="w-4 h-4 text-indigo-500" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-slate-900">{totalCampaigns}</div>
+                    <div className="text-[10px] text-slate-500">
+                      Sources UTM enregistrées
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Engagement Moyen</span>
+                      <Clock className="w-4 h-4 text-amber-500" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-slate-900">{avgTimeSpent}</div>
+                    <div className="text-[10px] text-slate-500">
+                      Temps d'activité moyen
+                    </div>
                   </div>
                 </div>
 
-                {/* Leads Table */}
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px]">
-                      <tr>
-                        <th className="p-3.5">Prospect</th>
-                        <th className="p-3.5">Téléphone / WhatsApp</th>
-                        <th className="p-3.5">Besoin Détecté</th>
-                        <th className="p-3.5">Statut</th>
-                        <th className="p-3.5">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-700">
-                      {leadsList.map((lead) => (
-                        <tr key={lead.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="p-3.5 font-bold text-slate-900">
-                            <div>{lead.name}</div>
-                            <div className="text-[10px] text-slate-400 font-normal">{lead.email}</div>
-                          </td>
-                          <td className="p-3.5 font-mono text-purple-700 font-semibold">{lead.phone}</td>
-                          <td className="p-3.5 max-w-xs">{lead.need}</td>
-                          <td className="p-3.5">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              lead.status === 'nouveau' ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            }`}>
-                              {lead.status}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-slate-400 text-[11px]">{lead.date}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {/* 3. Main Split View Layout */}
+                <div className="flex flex-col lg:flex-row gap-6">
+                  
+                  {/* CRM Table List */}
+                  <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4 flex-1 transition-all`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-lg">Registre des Prospects</h3>
+                        <p className="text-xs text-slate-500">Filtrage dynamique et recherche approfondie en temps réel</p>
+                      </div>
+
+                      <div className="text-xs text-slate-500 font-medium">
+                        {filteredLeads.length} sur {totalTracked} prospects affichés
+                      </div>
+                    </div>
+
+                    {/* Filter and Search Bar */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                      
+                      {/* Search Bar */}
+                      <div className="relative md:col-span-6">
+                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          placeholder="Rechercher par nom, tel, besoin, UTM, origine..."
+                          className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
+                        />
+                      </div>
+
+                      {/* Status Filter */}
+                      <div className="md:col-span-3">
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
+                          <Filter className="w-3.5 h-3.5 text-slate-400 ml-1" />
+                          <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value as any)}
+                            className="w-full bg-transparent border-0 py-2 px-1 text-xs text-slate-700 focus:outline-none focus:ring-0 cursor-pointer font-semibold"
+                          >
+                            <option value="all">Tous les statuts</option>
+                            <option value="nouveau">Nouveaux simples</option>
+                            <option value="qualifie">Qualifiés (Discussions)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Contact Toggle Filter */}
+                      <button
+                        type="button"
+                        onClick={() => setHasContactFilter(!hasContactFilter)}
+                        className={`md:col-span-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                          hasContactFilter 
+                            ? 'bg-purple-50 border-purple-200 text-purple-700' 
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Avec Coordonnées</span>
+                      </button>
+
+                    </div>
+
+                    {/* Leads Table */}
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px]">
+                          <tr>
+                            <th className="p-3.5">Prospect</th>
+                            <th className="p-3.5">Téléphone / WhatsApp</th>
+                            <th className="p-3.5">Besoin / Canal UTM</th>
+                            <th className="p-3.5">Statut</th>
+                            <th className="p-3.5">Dernière Activité</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {filteredLeads.length > 0 ? (
+                            filteredLeads.map((lead) => {
+                              const hasContact = (lead.email && lead.email !== 'Non fourni') || (lead.phone && lead.phone !== 'Non fourni');
+                              const utmSource = (lead as any).utm_source;
+                              const utmCampaign = (lead as any).utm_campaign;
+
+                              return (
+                                <tr 
+                                  key={lead.id} 
+                                  onClick={() => setSelectedLeadId(lead.id)}
+                                  className={`hover:bg-slate-50/80 transition-colors cursor-pointer ${
+                                    selectedLeadId === lead.id ? 'bg-purple-50/40 hover:bg-purple-50/60' : ''
+                                  }`}
+                                >
+                                  <td className="p-3.5 font-bold text-slate-900">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="truncate max-w-[150px]">{lead.name}</div>
+                                      {hasContact && (
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500" title="Contact qualifié" />
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-normal truncate max-w-[150px]">{lead.email}</div>
+                                  </td>
+                                  
+                                  <td className="p-3.5 font-mono text-purple-700 font-bold whitespace-nowrap">
+                                    {lead.phone}
+                                  </td>
+
+                                  <td className="p-3.5 max-w-xs">
+                                    <div className="truncate font-medium text-slate-800">{lead.need}</div>
+                                    {utmSource && (
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        <span className="inline-block px-1.5 py-0.5 rounded bg-indigo-50 text-[9px] font-bold text-indigo-600 border border-indigo-100">
+                                          source: {utmSource}
+                                        </span>
+                                        {utmCampaign && (
+                                          <span className="inline-block px-1.5 py-0.5 rounded bg-purple-50 text-[9px] font-bold text-purple-600 border border-purple-100">
+                                            campagne: {utmCampaign}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  <td className="p-3.5">
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide ${
+                                      lead.status === 'nouveau' 
+                                        ? 'bg-slate-100 text-slate-600 border border-slate-200' 
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    }`}>
+                                      {lead.status === 'nouveau' ? 'visite simple' : 'qualifié'}
+                                    </span>
+                                  </td>
+
+                                  <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">{lead.date}</td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                                Aucun prospect ne correspond à vos critères de recherche.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Lead Details Bento Drawer Card */}
+                  {selectedLeadId && (() => {
+                    const lead = leadsList.find(l => l.id === selectedLeadId) as any;
+                    if (!lead) return null;
+                    
+                    const utmSource = (lead as any).utm_source;
+                    const utmMedium = (lead as any).utm_medium;
+                    const utmCampaign = (lead as any).utm_campaign;
+                    const utmContent = (lead as any).utm_content;
+                    const utmTerm = (lead as any).utm_term;
+                    const pageHistory = (lead as any).history || [];
+                    const activeTime = (lead as any).timeSpent;
+
+                    return (
+                      <div className="w-full lg:w-[45%] xl:w-[40%] bg-white border border-slate-200 rounded-2xl shadow-md p-6 space-y-6 flex flex-col animate-in slide-in-from-right duration-250">
+                        
+                        {/* Drawer Header */}
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center text-white font-extrabold text-sm shadow-sm">
+                              {lead.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-slate-900 text-base">{lead.name}</h3>
+                              <span className="text-[10px] font-mono text-slate-400">{lead.id}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLeadId(null)}
+                            className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Bento Grid: Coordonnées de Contact */}
+                        <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Informations de contact</span>
+                          </h4>
+                          
+                          <div className="grid grid-cols-1 gap-2.5 text-xs">
+                            <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                              <span className="text-slate-400">Nom Complet:</span>
+                              <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                                <span>{lead.name}</span>
+                                {lead.name !== 'Visiteur Anonyme' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyField(lead.name, 'name')}
+                                    className="p-1 hover:bg-slate-200 rounded-md text-slate-400 hover:text-purple-600 transition-all cursor-pointer"
+                                  >
+                                    {copiedField === 'name' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                              <span className="text-slate-400">Email:</span>
+                              <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                                <span>{lead.email}</span>
+                                {lead.email !== 'Non fourni' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyField(lead.email, 'email')}
+                                    className="p-1 hover:bg-slate-200 rounded-md text-slate-400 hover:text-purple-600 transition-all cursor-pointer"
+                                  >
+                                    {copiedField === 'email' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                              <span className="text-slate-400">Téléphone / WhatsApp:</span>
+                              <div className="flex items-center gap-1.5 font-mono font-bold text-purple-700">
+                                <span>{lead.phone}</span>
+                                {lead.phone !== 'Non fourni' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyField(lead.phone, 'phone')}
+                                    className="p-1 hover:bg-slate-200 rounded-md text-slate-400 hover:text-purple-600 transition-all cursor-pointer"
+                                  >
+                                    {copiedField === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1">
+                              <span className="text-slate-400">ID Unique Prospect:</span>
+                              <div className="flex items-center gap-1.5 font-mono text-slate-600">
+                                <span className="truncate max-w-[180px]">{lead.id}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyField(lead.id, 'id')}
+                                  className="p-1 hover:bg-slate-200 rounded-md text-slate-400 hover:text-purple-600 transition-all cursor-pointer"
+                                >
+                                  {copiedField === 'id' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bento Grid: Origine & Campagnes UTM Publicitaires */}
+                        <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Target className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Données publicitaires (Pixels & UTMs)</span>
+                          </h4>
+
+                          <div className="space-y-2 text-xs">
+                            <div className="flex flex-col gap-0.5 p-2 rounded bg-white border border-slate-100">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase">Provenance Initiale (Referer)</span>
+                              <span className="font-semibold text-slate-700 truncate">{lead.referer || 'Accès Direct'}</span>
+                            </div>
+
+                            {utmSource ? (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="flex flex-col gap-0.5 p-2 rounded bg-white border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Source</span>
+                                  <span className="font-semibold text-slate-800">{utmSource}</span>
+                                </div>
+                                <div className="flex flex-col gap-0.5 p-2 rounded bg-white border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Campagne</span>
+                                  <span className="font-semibold text-slate-800 truncate">{utmCampaign || 'Non spécifié'}</span>
+                                </div>
+                                <div className="flex flex-col gap-0.5 p-2 rounded bg-white border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Support (Medium)</span>
+                                  <span className="font-semibold text-slate-800">{utmMedium || 'Non spécifié'}</span>
+                                </div>
+                                <div className="flex flex-col gap-0.5 p-2 rounded bg-white border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Contenu Ad</span>
+                                  <span className="font-semibold text-slate-800 truncate">{utmContent || 'Non spécifié'}</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-400 italic bg-white p-2.5 rounded border border-slate-100 text-center">
+                                Aucune balise publicitaire UTM détectée (Visite naturelle)
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bento Grid: Session & Engagement Details */}
+                        <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Comportement & Parcours</span>
+                          </h4>
+
+                          <div className="space-y-2 text-xs">
+                            <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-100">
+                              <span className="text-slate-400 font-medium">Temps actif passé :</span>
+                              <span className="font-extrabold text-purple-700 font-mono">
+                                {activeTime ? (activeTime < 60 ? activeTime + ' s' : Math.floor(activeTime / 60) + ' min ' + (activeTime % 60) + ' s') : '15 s'}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1 p-2 rounded bg-white border border-slate-100">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase">Parcours des pages visitées ({pageHistory.length})</span>
+                              <div className="space-y-1 max-h-24 overflow-y-auto text-[10px] font-mono mt-1 text-slate-600 divide-y divide-slate-50">
+                                {pageHistory.length > 0 ? (
+                                  pageHistory.map((p: string, idx: number) => (
+                                    <div key={idx} className="py-1 truncate" title={p}>
+                                      <span className="text-purple-600 font-bold mr-1">#{idx + 1}</span> {p}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="text-slate-400 italic">Page d'accueil uniquement</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bento Grid: Terminal Machine Details */}
+                        <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60 text-[11px] text-slate-600">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Globe className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Système d'exploitation & Navigateur</span>
+                          </h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div><strong className="text-slate-400">Langue:</strong> {lead.language?.toUpperCase() || 'FR'}</div>
+                            <div><strong className="text-slate-400">Timezone:</strong> {lead.timezone || 'Europe/Paris'}</div>
+                            <div className="col-span-2 truncate"><strong className="text-slate-400">Résolution:</strong> {lead.screenResolution || 'Standard screen'}</div>
+                            <div className="col-span-2 truncate"><strong className="text-slate-400">UserAgent:</strong> {lead.userAgent}</div>
+                          </div>
+                        </div>
+
+                        {/* Detailed Chat Logs */}
+                        <div className="flex-1 flex flex-col min-h-[200px] max-h-[300px] space-y-2">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Journal de Discussion</h4>
+                          <div className="flex-1 overflow-y-auto p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
+                            {lead.messages && lead.messages.length > 0 ? (
+                              lead.messages.map((m: any, idx: number) => (
+                                <div key={idx} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                                  <div className={`max-w-[85%] px-3 py-1.5 rounded-xl text-xs leading-relaxed ${
+                                    m.sender === 'user'
+                                      ? 'bg-purple-600 text-white rounded-br-none'
+                                      : 'bg-slate-800 text-slate-100 rounded-bl-none'
+                                  }`}>
+                                    {m.text}
+                                  </div>
+                                  <span className="text-[8px] text-slate-500 mt-0.5 px-1">
+                                    {m.timestamp ? new Date(m.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                  </span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="h-full flex items-center justify-center text-[11px] text-slate-500 italic">
+                                Aucun message textuel échangé (Visite simple)
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })()}
+
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* =================================================================
+              SECTION: BILLING & PLAN
+              ================================================================= */}
+          {currentSection === 'billing' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="p-8 max-w-4xl mx-auto">
+                <h1 className="text-3xl font-bold mb-6">Mon Plan & Facturation</h1>
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                  <h2 className="text-2xl font-bold mb-6">Plan actuel : <span className="text-purple-600">Basic</span></h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-slate-50 p-6 rounded-xl">
+                      <p className="text-sm text-slate-500 mb-1">Prix</p>
+                      <p className="text-2xl font-bold">29 $ <span className="text-sm font-normal text-slate-500">/ mois</span></p>
+                    </div>
+                    <div className="bg-slate-50 p-6 rounded-xl">
+                      <p className="text-sm text-slate-500 mb-1">Conversations</p>
+                      <p className="text-2xl font-bold">1 000</p>
+                    </div>
+                    <div className="bg-slate-50 p-6 rounded-xl">
+                      <p className="text-sm text-slate-500 mb-1">Marque JawebFlow</p>
+                      <p className="text-xl font-bold">Activée</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

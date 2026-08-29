@@ -126,6 +126,8 @@ export default function App() {
           />
         )}
 
+
+
         {/* Dynamic Multi-Page Router */}
         <main className="flex-grow">
           {currentPage === 'home' && (

@@ -436,7 +436,7 @@ Formule Entreprise : Sur devis personnalisé avec intégration CRM sur-mesure.`
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3 text-neutral-300">
         <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-        <span className="text-sm font-medium">Vérification de la session en base de données…</span>
+        <span className="text-sm font-medium">Vérification de la session en cours…</span>
       </div>
     );
   }
@@ -451,7 +451,7 @@ Formule Entreprise : Sur devis personnalisé avec intégration CRM sur-mesure.`
         <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-semibold backdrop-blur-xl mb-4 shadow-lg shadow-purple-950/30">
             <Lock className="w-3.5 h-3.5 text-purple-400" />
-            <span>Espace Sécurisé · Connexion Automatique Database</span>
+            <span>Espace Sécurisé · Connexion Automatique</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-neutral-100 mb-3 leading-tight">
