@@ -142,7 +142,7 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({ on
     }
   }, [messages, isTyping]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
     if (!text) return;
 
@@ -157,43 +157,24 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({ on
     if (!textToSend) setInputText('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      let reply = `Je vérifie dans la base de connaissances certifiée de ${currentConfig.title} pour vous donner l'information exacte.`;
-      const lower = text.toLowerCase();
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: currentConfig.title,
+          message: text
+        })
+      });
 
-      if (selectedBusiness === 'services') {
-        if (lower.includes('tarif') || lower.includes('forfait') || lower.includes('prix') || lower.includes('chhal')) {
-          reply = "Nos forfaits démarrent à partir de 45 000 DZD pour l'accompagnement mensuel de base. Nous fournissons une offre sur-mesure adaptée à votre cahier des charges.";
-        } else if (lower.includes('zone') || lower.includes('région') || lower.includes('déplacement') || lower.includes('site') || lower.includes('ville')) {
-          reply = "Nous intervenons dans toutes les zones et régions ! Nos consultants se déplacent sur site pour les réunions de cadrage et ateliers, ou travaillent en visioconférence sécurisée.";
-        } else if (lower.includes('délai') || lower.includes('waqt') || lower.includes('démarrer')) {
-          reply = "La prise en charge se fait sous 48h à 72h dès la validation du bon de commande. Un chef de projet dédié vous est immédiatement assigné.";
-        } else if (lower.includes('modalité') || lower.includes('paiement') || lower.includes('acompte')) {
-          reply = "Le règlement s'effectue par virement bancaire, chèque ou carte avec un acompte au lancement et le solde à la livraison validée.";
-        } else {
-          reply = `Selon la documentation de ${currentConfig.title}, notre équipe est disponible du lundi au samedi pour répondre à toutes vos demandes de devis et partenariats.`;
-        }
-      } else if (selectedBusiness === 'ecommerce') {
-        if (lower.includes('délai') || lower.includes('waqt') || lower.includes('livraison') || lower.includes('zone')) {
-          reply = "La livraison s'effectue rapidement sous 24h à 48h selon votre zone géographique, à domicile ou en point relais sécurisé.";
-        } else if (lower.includes('paiement') || lower.includes('main') || lower.includes('carte')) {
-          reply = "Oui bien sûr ! Le paiement se fait à la livraison ou en ligne selon vos préférences.";
-        } else if (lower.includes('soin') || lower.includes('produit') || lower.includes('pack')) {
-          reply = "Le Pack Soin Naturel comprend un sérum éclat et une crème réparatrice bio haute qualité.";
-        } else {
-          reply = `Toutes les commandes passées chez ${currentConfig.title} bénéficient du suivi en temps réel et d'un service client réactif.`;
-        }
-      } else {
-        // Formation
-        if (lower.includes('session') || lower.includes('date') || lower.includes('quand') || lower.includes('démarre')) {
-          reply = "La prochaine session intensive démarre le mois prochain. Les inscriptions sont ouvertes et limitées à 12 personnes par groupe.";
-        } else if (lower.includes('prix') || lower.includes('tarif') || lower.includes('tranche') || lower.includes('facilité')) {
-          reply = "Le cycle complet de formation inclut une possibilité de règlement en plusieurs mensualités sans frais.";
-        } else if (lower.includes('centre') || lower.includes('lieu') || lower.includes('adresse') || lower.includes('distance')) {
-          reply = "Nos formations sont accessibles en présentiel dans nos centres partenaires ou 100% en ligne en direct avec formateurs.";
-        } else {
-          reply = "Tous nos programmes incluent les supports pédagogiques, l'accès à notre plateforme e-learning et un accompagnement individuel par les formateurs.";
-        }
+      let reply = '';
+      if (response.ok) {
+        const data = await response.json();
+        reply = data.text || data.message || data.response || '';
+      }
+
+      if (!reply) {
+        reply = `Je vérifie dans la base de connaissances certifiée de ${currentConfig.title} pour vous donner l'information exacte.`;
       }
 
       const botMsg: ChatMessage = {
@@ -205,8 +186,19 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({ on
       };
 
       setMessages(prev => [...prev, botMsg]);
+    } catch (err) {
+      console.error('Chat AI error:', err);
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'assistant',
+        text: `Bonjour ! Merci pour votre message chez ${currentConfig.title}. Comment puis-je vous aider aujourd'hui ?`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isAiVerified: true,
+      };
+      setMessages(prev => [...prev, botMsg]);
+    } finally {
       setIsTyping(false);
-    }, 650);
+    }
   };
 
   const handleReset = () => {

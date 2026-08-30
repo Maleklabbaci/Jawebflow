@@ -8,6 +8,8 @@ import { DemoPage } from './pages/DemoPage';
 import { ContactPage } from './pages/ContactPage';
 import { CreateAssistantPage } from './pages/CreateAssistantPage';
 import { AuthPage } from './pages/AuthPage';
+import { CheckoutPage } from './pages/CheckoutPage';
+import { PrivacyPage } from './pages/PrivacyPage';
 import { DashboardPlatform } from './components/DashboardPlatform';
 import { Sparkles } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
@@ -30,8 +32,12 @@ export default function App() {
       if (root === 'pricing' || root === 'tarifs') return { page: 'pricing', section: 'overview' };
       if (root === 'demo') return { page: 'demo', section: 'overview' };
       if (root === 'contact') return { page: 'contact', section: 'overview' };
+      if (root === 'checkout' || root === 'paiement' || root === 'caisse' || root === 'buy') return { page: 'checkout', section: 'overview' };
       if (root === 'login' || root === 'connexion' || root === 'signin') return { page: 'login', section: 'overview' };
       if (root === 'signup' || root === 'register' || root === 'inscription') return { page: 'signup', section: 'overview' };
+      if (root === 'privacy' || root === 'privacy-policy' || root === 'confidentialite') return { page: 'privacy', section: 'overview' };
+      if (root === 'terms' || root === 'terms-of-service' || root === 'conditions') return { page: 'terms', section: 'overview' };
+      if (root === 'data-deletion' || root === 'suppression-donnees' || root === 'deletion') return { page: 'data-deletion', section: 'overview' };
       
       if (root === 'dashboard' || root === 'create-assistant' || root === 'creer-assistant' || root === 'cockpit') {
         let validSection = 'overview';
@@ -40,6 +46,7 @@ export default function App() {
         else if (sub === 'widget' || sub === 'bulle' || sub === 'appearance' || sub === 'style' || sub === 'customization') validSection = 'widget';
         else if (sub === 'simulator' || sub === 'test' || sub === 'chatbot') validSection = 'simulator';
         else if (sub === 'integration' || sub === 'script' || sub === 'embed') validSection = 'integration';
+        else if (sub === 'instagram' || sub === 'ig' || sub === 'meta' || sub === 'direct') validSection = 'instagram';
         else if (sub === 'leads' || sub === 'crm' || sub === 'prospects') validSection = 'leads';
         else if (sub === 'settings' || sub === 'parametres' || sub === 'whatsapp') validSection = 'settings';
         return { page: 'create-assistant', section: validSection };
@@ -81,7 +88,7 @@ export default function App() {
       }
     }
 
-    const validPage: PageId = (['home', 'services', 'pricing', 'demo', 'contact', 'create-assistant', 'login', 'signup'].includes(page) 
+    const validPage: PageId = (['home', 'services', 'pricing', 'demo', 'contact', 'create-assistant', 'login', 'signup', 'checkout'].includes(page) 
       ? page 
       : 'home') as PageId;
 
@@ -105,7 +112,7 @@ export default function App() {
     handleNavigate('create-assistant');
   };
 
-  const isInsideDashboard = currentPage === 'create-assistant' && !!user;
+  const isInsideDashboard = (currentPage === 'create-assistant' || currentPage === 'checkout') && !!user;
 
   return (
     <div className="relative min-h-screen bg-[#0d0f17] text-neutral-100 overflow-x-hidden selection:bg-purple-500/30 selection:text-purple-200">
@@ -176,6 +183,41 @@ export default function App() {
             <AuthPage 
               initialMode="signup" 
               onNavigate={handleNavigate} 
+            />
+          )}
+
+          {currentPage === 'checkout' && (
+            user ? (
+              <DashboardPlatform 
+                initialSection="billing"
+                onNavigate={handleNavigate}
+              />
+            ) : (
+              <AuthPage 
+                initialMode="login"
+                onNavigate={handleNavigate}
+              />
+            )
+          )}
+
+          {currentPage === 'privacy' && (
+            <PrivacyPage 
+              type="privacy"
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {currentPage === 'terms' && (
+            <PrivacyPage 
+              type="terms"
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {currentPage === 'data-deletion' && (
+            <PrivacyPage 
+              type="deletion"
+              onNavigate={handleNavigate}
             />
           )}
 

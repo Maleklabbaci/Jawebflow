@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Menu, X, UserCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export type PageId = 'home' | 'services' | 'pricing' | 'demo' | 'contact' | 'create-assistant' | 'login' | 'signup';
+export type PageId = 'home' | 'services' | 'pricing' | 'demo' | 'contact' | 'create-assistant' | 'login' | 'signup' | 'checkout' | 'privacy' | 'terms' | 'data-deletion';
 
 interface NavbarProps {
   currentPage: PageId;

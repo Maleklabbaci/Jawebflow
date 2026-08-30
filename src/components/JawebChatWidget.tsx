@@ -86,7 +86,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
     }
   }, [mergedConfig.showTeaser]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputVal).trim();
     if (!text) return;
 
@@ -95,24 +95,28 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
     setInputVal('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      const lower = text.toLowerCase();
-      let botReply = '';
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: businessName,
+          message: text
+        })
+      });
 
-      if (lower.includes('tarif') || lower.includes('prix') || lower.includes('combien') || lower.includes('cout') || lower.includes('chhal')) {
-        botReply = `Nos tarifs sont personnalisés selon vos besoins. Nous proposons des offres transparentes et adaptées. Souhaitez-vous un devis rapide ou un échange WhatsApp ?`;
-        setShowLeadForm(true);
-      } else if (lower.includes('contact') || lower.includes('whatsapp') || lower.includes('numéro') || lower.includes('telephone') || lower.includes('appeler')) {
-        botReply = whatsappNumber
-          ? `Vous pouvez nous joindre directement par WhatsApp au ${whatsappNumber} ou laisser votre numéro ici !`
-          : `Vous pouvez nous laisser votre numéro de téléphone ou email afin qu'un conseiller vous rappelle rapidement.`;
-        setShowLeadForm(true);
-      } else if (lower.includes('salam') || lower.includes('bonjour') || lower.includes('hello') || lower.includes('salut')) {
-        botReply = `Marhaban bik ! Bonjour ! Comment puis-je vous renseigner aujourd'hui sur nos services ?`;
-      } else if (lower.includes('delai') || lower.includes('temps') || lower.includes('délai') || lower.includes('durée')) {
-        botReply = `Nos délais de mise en œuvre sont généralement de 24h à 72h selon la formule choisie.`;
-      } else {
-        botReply = `Merci pour votre message ! D'après nos informations chez ${businessName}, nous pouvons vous accompagner sur ce point. Souhaitez-vous être mis en relation avec notre équipe ?`;
+      let botReply = '';
+      if (response.ok) {
+        const data = await response.json();
+        botReply = data.text || data.message || data.response || '';
+      }
+
+      if (!botReply) {
+        botReply = `Marhaban bik ! Merci pour votre message chez ${businessName}. Comment puis-je vous aider aujourd'hui ?`;
+      }
+
+      const lower = text.toLowerCase();
+      if (lower.includes('tarif') || lower.includes('prix') || lower.includes('contact') || lower.includes('devis')) {
         setShowLeadForm(true);
       }
 
@@ -124,8 +128,19 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
+    } catch (err) {
+      console.error('Chat AI error:', err);
+      setMessages(prev => [
+        ...prev,
+        {
+          sender: 'bot',
+          text: `Merci pour votre message ! Un conseiller chez ${businessName} va vous répondre très rapidement.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 700);
+    }
   };
 
   const handleLeadSubmit = (e: React.FormEvent) => {

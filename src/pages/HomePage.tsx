@@ -42,6 +42,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenAssistantModal, onNavi
       {/* Call to Action Final Section */}
       <CtaSection 
         onOpenAssistantModal={onOpenAssistantModal}
+        onNavigate={onNavigate}
       />
     </div>
   );

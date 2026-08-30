@@ -62,6 +62,39 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["assistantId", "userId", "visitorId"]
+    },
+    "ConversationContext": {
+      "title": "ConversationContext",
+      "description": "Historique des échanges et contexte évolutif d'apprentissage de l'assistant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assistantId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "channel": { "type": "string" },
+        "userMessage": { "type": "string" },
+        "assistantResponse": { "type": "string" },
+        "detectedPreferences": { "type": "object" },
+        "detectedTone": { "type": "string" },
+        "topics": { "type": "array" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["assistantId", "userMessage", "assistantResponse"]
+    },
+    "EvolvingMemory": {
+      "title": "EvolvingMemory",
+      "description": "Synthèse du contexte évolutif et de l'adaptation du ton et de l'expertise",
+      "type": "object",
+      "properties": {
+        "assistantId": { "type": "string" },
+        "preferredTone": { "type": "string" },
+        "adaptedExpertise": { "type": "string" },
+        "learnedPatterns": { "type": "array" },
+        "userPreferencesSummary": { "type": "string" },
+        "totalInteractions": { "type": "number" },
+        "lastEvolvedAt": { "type": "string" }
+      },
+      "required": ["assistantId"]
     }
   },
   "firestore": {
@@ -76,6 +109,17 @@
     "/prospects/{prospectId}": {
       "schema": "Prospect",
       "description": "Prospects capturés par l'assistant"
+    },
+    "/conversation_contexts/{contextId}": {
+      "schema": "ConversationContext",
+      "description": "Historique des messages et contexte de conversation"
+    },
+    "/evolving_memories/{assistantId}": {
+      "schema": "EvolvingMemory",
+      "description": "Profil de contexte évolutif et d'apprentissage continu de l'assistant"
+    },
+    "/instagram_integrations/{userId}": {
+      "description": "Données d'authentification et de configuration de l'intégration Instagram"
     }
   }
 }

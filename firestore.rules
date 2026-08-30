@@ -29,6 +29,22 @@ service cloud.firestore {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
+    // Instagram Integrations
+    match /instagram_integrations/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Conversation contexts & Evolving Memory
+    match /conversation_contexts/{contextId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Server-only writes via Admin SDK
+    }
+
+    match /evolving_memories/{assistantId} {
+      allow read: if true; // Readable by widget/dashboard
+      allow write: if false; // Server-only updates via Admin SDK
+    }
+
     // Contact messages / Inquiries
     match /inquiries/{inquiryId} {
       allow create: if true; // Public contact form submissions

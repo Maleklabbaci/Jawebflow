@@ -3,9 +3,10 @@ import { Sparkles, ArrowRight, ShieldCheck, Heart } from 'lucide-react';
 
 interface CtaSectionProps {
   onOpenAssistantModal: () => void;
+  onNavigate?: (page: string) => void;
 }
 
-export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal }) => {
+export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, onNavigate }) => {
   return (
     <section 
       id="cta-section"
@@ -64,7 +65,7 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal }) 
         </div>
       </div>
 
-      {/* Footer Branding */}
+      {/* Footer Branding & Legal Links */}
       <footer className="mt-12 sm:mt-20 pt-6 sm:pt-8 pb-10 sm:pb-12 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-400 gap-3 sm:gap-4">
         <div className="flex items-center gap-2 sm:gap-3">
           <img 
@@ -77,8 +78,35 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal }) 
           <span className="text-[11px] sm:text-xs font-medium text-neutral-300">1er Chatbot IA en Algérie 🇩🇿 pour sites web & entreprises</span>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4 text-neutral-400 text-[10px] sm:text-[11px]">
-          <span>Services · Agences · Cabinets · E-commerce · B2B</span>
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-5 text-neutral-400 text-[11px]">
+          {onNavigate ? (
+            <>
+              <button 
+                onClick={() => onNavigate('privacy')} 
+                className="hover:text-purple-300 transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Confidentialité
+              </button>
+              <button 
+                onClick={() => onNavigate('terms')} 
+                className="hover:text-purple-300 transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Conditions
+              </button>
+              <button 
+                onClick={() => onNavigate('data-deletion')} 
+                className="hover:text-purple-300 transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Suppression des données
+              </button>
+            </>
+          ) : (
+            <>
+              <a href="/privacy" className="hover:text-purple-300 transition-colors">Confidentialité</a>
+              <a href="/terms" className="hover:text-purple-300 transition-colors">Conditions</a>
+              <a href="/data-deletion" className="hover:text-purple-300 transition-colors">Suppression des données</a>
+            </>
+          )}
         </div>
       </footer>
     </section>

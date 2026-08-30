@@ -10,6 +10,8 @@ import {
   FileText,
   CreditCard
 } from 'lucide-react';
+import { PaymentCheckoutModal } from '../components/PaymentCheckoutModal';
+import { PaymentPlanId, InvoiceRecord } from '../types';
 
 interface PricingPageProps {
   onOpenAssistantModal: () => void;
@@ -19,9 +21,14 @@ interface PricingPageProps {
 export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, onNavigate }) => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [showFaq, setShowFaq] = useState(false);
+  
+  // Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] = useState<PaymentPlanId>('pro');
 
   const plans = [
     {
+      id: 'basic' as PaymentPlanId,
       name: 'Plan Basic',
       subtitle: 'Idéal pour intégrer votre premier assistant sur votre site web',
       priceUsdMonthly: 29,
@@ -39,6 +46,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       ctaText: 'Choisir le Plan Basic',
     },
     {
+      id: 'pro' as PaymentPlanId,
       name: 'Plan Pro / Business',
       subtitle: 'Pour commerces & entreprises voulant le Web + accès prioritaire aux réseaux',
       priceUsdMonthly: 79,
@@ -57,6 +65,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       ctaText: 'Choisir le Plan Pro',
     },
     {
+      id: 'enterprise' as PaymentPlanId,
       name: 'Plan Enterprise',
       subtitle: 'Pour grandes structures, réseaux & architectures sur-mesure',
       priceUsdMonthly: 199,
@@ -214,9 +223,12 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
                 </div>
               </div>
 
-              <div className="relative z-10 pt-8">
+              <div className="relative z-10 pt-8 space-y-2">
                 <button
-                  onClick={onOpenAssistantModal}
+                  onClick={() => {
+                    window.history.pushState({}, '', `/checkout?plan=${plan.id}&cycle=${billingCycle}`);
+                    onNavigate('checkout');
+                  }}
                   className={`w-full py-3.5 rounded-2xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                     plan.isPopular
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-600/40 hover:shadow-purple-500/60'
@@ -289,6 +301,19 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
           </div>
         </div>
       )}
+
+      {/* Online Payment Modal */}
+      <PaymentCheckoutModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        initialPlan={checkoutPlan}
+        initialCycle={billingCycle}
+        onPaymentSuccess={(newPlan, invoice) => {
+          setIsPaymentModalOpen(false);
+          onNavigate('dashboard');
+        }}
+      />
     </div>
   );
+
 };
