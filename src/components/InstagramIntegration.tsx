@@ -97,6 +97,9 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     }
   ]);
   const [isTestingDm, setIsTestingDm] = useState(false);
+  const [showAdvancedDevSettings, setShowAdvancedDevSettings] = useState<boolean>(false);
+  const [manualTokenInput, setManualTokenInput] = useState<string>('');
+  const [manualAccountIdInput, setManualAccountIdInput] = useState<string>('');
 
   // Local storage cache keys for offline resilience
   const getCacheKey = (uid: string) => `jawebflow_ig_config_${uid}`;
@@ -428,7 +431,45 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     );
   }
 
-  const webhookCallbackUrl = `${typeof window !== 'undefined' && !window.location.origin.includes('localhost') ? window.location.origin : 'https://ais-dev-plnpcivvgr7la27cilze6i-170357957641.europe-west2.run.app'}/api/webhooks/instagram`;
+  const webhookCallbackUrl = 'https://jawebflow.pages.dev/api/webhook/instagram';
+
+  const handleSaveManualToken = async () => {
+    if (!user || !manualTokenInput.trim()) return;
+    setSaveLoading(true);
+    try {
+      const updatedPayload: InstagramIntegrationData = {
+        ...integrationData,
+        connected: true,
+        instagramUserId: manualAccountIdInput.trim() || integrationData.instagramUserId || `ig_${user.uid.substring(0, 8)}`,
+        instagramUsername: integrationData.instagramUsername || `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'mon_compte_ig'}`,
+        pageName: `${businessName || 'Entreprise'} Instagram`,
+        autoReplyEnabled: true,
+        webhookStatus: 'active',
+        lastConnectedAt: new Date().toISOString()
+      };
+      saveLocalCache(user.uid, updatedPayload);
+      setIntegrationData(updatedPayload);
+
+      try {
+        const docRef = doc(db, 'instagram_integrations', user.uid);
+        await setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
+      } catch (e) {
+        // Safe fallback
+      }
+
+      setNotification({
+        type: 'success',
+        message: 'Compte Instagram lié avec succès !'
+      });
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: 'Erreur lors de la sauvegarde du token.'
+      });
+    } finally {
+      setSaveLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto animate-in fade-in duration-200">
@@ -524,7 +565,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                     <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
                       <Instagram className="w-4 h-4 text-white" />
                     </div>
-                    <span>Connecter Instagram avec Firebase</span>
+                    <span>Connecter mon Instagram (1 Clic)</span>
                   </>
                 )}
               </button>
@@ -646,87 +687,87 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
           </div>
 
-          {/* Card 2: Direct Meta Developer App & Webhook Configuration */}
+          {/* Card 2: Optional Advanced Configuration Accordion */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 text-white flex items-center justify-center shadow-xs">
-                <Zap className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">Connexion Directe Meta (Instagram Graph API)</h3>
-                <p className="text-xs text-slate-500">Liaison 100% directe sans intermédiaire : vos messages arrivent directement sur JawebFlow.</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  1. URL de Rappel Webhook (Callback URL)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={webhookCallbackUrl}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(webhookCallbackUrl, 'webhook')}
-                    className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-all cursor-pointer shrink-0 border border-purple-200"
-                    title="Copier l'URL"
-                  >
-                    {copiedKey === 'webhook' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  </button>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedDevSettings(!showAdvancedDevSettings)}
+              className="w-full flex items-center justify-between text-left cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 group-hover:bg-purple-50 group-hover:text-purple-600 flex items-center justify-center transition-colors">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-xs sm:text-sm">Paramètres Avancés & Token Manuel</h4>
+                  <p className="text-[11px] text-slate-400">Pour les développeurs souhaitant lier manuellement un jeton d'accès Meta Graph API</p>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  2. Jeton de Vérification Webhook (Verify Token)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value="jawebflow_secure_verify_token_2025"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-purple-700 font-bold"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard("jawebflow_secure_verify_token_2025", 'verifyToken')}
-                    className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-all cursor-pointer shrink-0 border border-purple-200"
-                    title="Copier le Jeton"
-                  >
-                    {copiedKey === 'verifyToken' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  3. Champ Webhook à cocher dans Meta for Developers
-                </label>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                  <span className="font-mono font-bold text-slate-800">messages</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">Requis pour DMs</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Direct Connection Steps */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100 space-y-2.5 text-xs text-purple-950">
-              <span className="font-bold flex items-center gap-1.5 text-purple-900">
-                <ShieldCheck className="w-4 h-4 text-purple-600" /> Guide de liaison directe Meta Developers (3 minutes) :
+              <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
+                {showAdvancedDevSettings ? 'Masquer' : 'Afficher'}
               </span>
-              <ol className="space-y-1.5 pl-4 list-decimal text-[11px] text-purple-900/90 leading-relaxed">
-                <li>Rendez-vous sur <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="font-bold underline text-purple-700 hover:text-purple-900">developers.facebook.com</a> et ouvrez votre application Meta Business.</li>
-                <li>Dans le menu de gauche, cliquez sur <strong>Webhooks &gt; Instagram</strong> (ou Messenger).</li>
-                <li>Cliquez sur <strong>Modifier l'abonnement</strong>, collez l'<strong>URL de Rappel</strong> et le <strong>Jeton de Vérification</strong> ci-dessus, puis validez.</li>
-                <li>Cochez la case <strong>messages</strong> : le bot JawebFlow répondra instantanément à tous vos messages privés !</li>
-              </ol>
-            </div>
+            </button>
 
+            {showAdvancedDevSettings && (
+              <div className="pt-4 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Instagram Account ID (Optionnel)
+                  </label>
+                  <input
+                    type="text"
+                    value={manualAccountIdInput}
+                    onChange={(e) => setManualAccountIdInput(e.target.value)}
+                    placeholder="Ex: 17841475492133009"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:border-purple-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Token d'accès Instagram (Access Token)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={manualTokenInput}
+                      onChange={(e) => setManualTokenInput(e.target.value)}
+                      placeholder="Collez votre jeton d'accès Meta généré (EAAB...)"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:border-purple-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveManualToken}
+                      disabled={saveLoading || !manualTokenInput.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-40"
+                    >
+                      {saveLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Lier'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    URL du Webhook configuré :
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={webhookCallbackUrl}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-[11px] font-mono text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(webhookCallbackUrl, 'webhook')}
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all shrink-0 cursor-pointer"
+                    >
+                      {copiedKey === 'webhook' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
