@@ -34,6 +34,20 @@ const PLAN_DETAILS: Record<PaymentPlanId, {
   dzdYearly: number;
   features: string[];
 }> = {
+  free: {
+    name: 'Plan Gratuit',
+    subtitle: 'Pour découvrir la plateforme et préparer son intégration sans risque',
+    usdMonthly: 0,
+    dzdMonthly: 0,
+    usdYearly: 0,
+    dzdYearly: 0,
+    features: [
+      'Accès complet au tableau de configuration',
+      'Intégration du code widget sur site web',
+      'Connexion à Instagram',
+      'Zéro crédit IA inclus'
+    ]
+  },
   basic: {
     name: 'Plan Basic',
     subtitle: 'Idéal pour intégrer votre premier assistant sur votre site web',

@@ -1,54 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    // User profiles
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // Assistants collection
-    match /assistants/{assistantId} {
-      allow read: if true; // Publicly readable for the widget config and styling
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    // Prospects collection
-    match /prospects/{prospectId} {
-      allow create: if false; // Block client writes
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    // Instagram Integrations
-    match /instagram_integrations/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // Conversation contexts & Evolving Memory
-    match /conversation_contexts/{contextId} {
-      allow read: if isAuthenticated();
-      allow write: if false; // Server-only writes via Admin SDK
-    }
-
-    match /evolving_memories/{assistantId} {
-      allow read: if true; // Readable by widget/dashboard
-      allow write: if false; // Server-only updates via Admin SDK
-    }
-
-    // Contact messages / Inquiries
-    match /inquiries/{inquiryId} {
-      allow create: if true; // Public contact form submissions
-      allow read, update, delete: if isAuthenticated();
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }

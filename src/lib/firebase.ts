@@ -75,9 +75,13 @@ export interface WidgetCustomization {
 
 export interface AssistantConfig {
   id?: string;
+  plan?: string;
   userId: string;
   businessName: string;
   websiteUrl?: string;
+  siteType?: string;
+  siteTypeConfidence?: number;
+  scrapingStrategy?: string[];
   businessCategory: string;
   businessDescription?: string;
   faqText?: string;
@@ -350,5 +354,86 @@ export async function getAssistantById(idOrWidgetId: string): Promise<AssistantC
     console.error('Error fetching assistant by ID:', error);
     return null;
   }
+}
+
+// ----------------------------------------------------
+// SUPER ADMIN MASTER CONTROLS & RBAC HELPERS
+// ----------------------------------------------------
+
+export const SUPER_ADMIN_EMAILS = [
+  'abdelmaleklabbaci01@gmail.com',
+  'admin@jawebflow.com'
+];
+
+export function isUserAdmin(
+  user: { email?: string | null } | null, 
+  profile?: { role?: string; email?: string } | null
+): boolean {
+  if (!user && !profile) return false;
+  const email = (user?.email || profile?.email || '').toLowerCase().trim();
+  if (SUPER_ADMIN_EMAILS.some(adminEmail => adminEmail.toLowerCase() === email)) {
+    return true;
+  }
+  if (profile?.role === 'admin' || profile?.role === 'superadmin') {
+    return true;
+  }
+  return false;
+}
+
+// Fetch all users across the platform for Super Admin
+export async function getAllUsers(): Promise<UserProfile[]> {
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    return snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+  } catch (err) {
+    console.error('Error fetching all users:', err);
+    return [];
+  }
+}
+
+// Fetch all assistants across all users
+export async function getAllAssistants(): Promise<AssistantConfig[]> {
+  try {
+    const snap = await getDocs(collection(db, 'assistants'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as AssistantConfig));
+  } catch (err) {
+    console.error('Error fetching all assistants:', err);
+    return [];
+  }
+}
+
+// Fetch all prospects / leads across all assistants
+export async function getAllProspects(): Promise<any[]> {
+  try {
+    const snap = await getDocs(collection(db, 'prospects'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error('Error fetching all prospects:', err);
+    return [];
+  }
+}
+
+// Update assistant plan directly (Admin action)
+export async function updateAssistantPlan(assistantId: string, plan: string): Promise<void> {
+  const ref = doc(db, 'assistants', assistantId);
+  await updateDoc(ref, {
+    plan,
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Delete an assistant (Admin action)
+export async function deleteAssistantDocument(assistantId: string): Promise<void> {
+  await deleteDoc(doc(db, 'assistants', assistantId));
+}
+
+// Delete a user document (Admin action)
+export async function deleteUserRecord(userId: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', userId));
+}
+
+// Delete a lead/prospect (Admin action)
+export async function deleteProspectRecord(prospectId: string): Promise<void> {
+  await deleteDoc(doc(db, 'prospects', prospectId));
 }
 

@@ -10,8 +10,9 @@ import { CreateAssistantPage } from './pages/CreateAssistantPage';
 import { AuthPage } from './pages/AuthPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { AdminPage } from './pages/AdminPage';
 import { DashboardPlatform } from './components/DashboardPlatform';
-import { Sparkles } from 'lucide-react';
+import { FloatingLiveWidget } from './components/FloatingLiveWidget';
 import { useAuth } from './context/AuthContext';
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
       if (root === 'login' || root === 'connexion' || root === 'signin') return { page: 'login', section: 'overview' };
       if (root === 'signup' || root === 'register' || root === 'inscription') return { page: 'signup', section: 'overview' };
       if (root === 'privacy' || root === 'privacy-policy' || root === 'confidentialite') return { page: 'privacy', section: 'overview' };
+      if (root === 'admin') return { page: 'admin', section: 'overview' };
       if (root === 'terms' || root === 'terms-of-service' || root === 'conditions') return { page: 'terms', section: 'overview' };
       if (root === 'data-deletion' || root === 'suppression-donnees' || root === 'deletion') return { page: 'data-deletion', section: 'overview' };
       
@@ -88,7 +90,7 @@ export default function App() {
       }
     }
 
-    const validPage: PageId = (['home', 'services', 'pricing', 'demo', 'contact', 'create-assistant', 'login', 'signup', 'checkout'].includes(page) 
+    const validPage: PageId = (['home', 'services', 'pricing', 'demo', 'contact', 'create-assistant', 'login', 'signup', 'checkout', 'privacy', 'terms', 'data-deletion', 'admin'].includes(page) 
       ? page 
       : 'home') as PageId;
 
@@ -112,7 +114,7 @@ export default function App() {
     handleNavigate('create-assistant');
   };
 
-  const isInsideDashboard = (currentPage === 'create-assistant' || currentPage === 'checkout') && !!user;
+  const isInsideDashboard = ((currentPage === 'create-assistant' || currentPage === 'checkout') && !!user) || currentPage === 'admin';
 
   return (
     <div className="relative min-h-screen bg-[#0d0f17] text-neutral-100 overflow-x-hidden selection:bg-purple-500/30 selection:text-purple-200">
@@ -233,21 +235,19 @@ export default function App() {
               />
             )
           )}
+
+          {currentPage === 'admin' && (
+            <AdminPage />
+          )}
         </main>
       </div>
 
-      {/* Floating Action Button for Quick Assistant Generation (only on public pages) */}
+      {/* Floating Live Assistant Widget (demonstrating the actual widget embedded in client accounts) */}
       {!isInsideDashboard && (
-        <div className="fixed bottom-6 right-6 z-40">
-          <button
-            onClick={handleOpenCreateAssistant}
-            className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-neutral-950/70 hover:bg-neutral-900/90 text-purple-300 border border-purple-500/40 backdrop-blur-2xl shadow-2xl shadow-purple-950/50 hover:scale-105 active:scale-95 transition-all text-xs font-semibold group cursor-pointer"
-          >
-            <div className="w-2 h-2 rounded-full bg-purple-400 animate-ping"></div>
-            <Sparkles className="w-4 h-4 text-purple-400" />
-            <span className="hidden sm:inline">Créer mon assistant</span>
-          </button>
-        </div>
+        <FloatingLiveWidget 
+          onOpenCreateAssistant={handleOpenCreateAssistant}
+          onNavigate={handleNavigate}
+        />
       )}
     </div>
   );

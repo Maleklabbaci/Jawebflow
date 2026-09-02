@@ -28,6 +28,24 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
 
   const plans = [
     {
+      id: 'free' as PaymentPlanId,
+      name: 'Plan Gratuit',
+      subtitle: 'Pour découvrir la plateforme et préparer son intégration sans risque',
+      priceUsdMonthly: 0,
+      priceDzdMonthly: 0,
+      priceUsdYearly: 0,
+      priceDzdYearly: 0,
+      badge: 'Test & Intégration',
+      isPopular: false,
+      features: [
+        'Accès complet au tableau de bord et à la configuration',
+        'Intégration du code widget sur votre site web',
+        'Connexion à Instagram & canaux externes',
+        'Zéro crédit IA inclus (Pas de réponses automatiques)',
+      ],
+      ctaText: 'Commencer gratuitement',
+    },
+    {
       id: 'basic' as PaymentPlanId,
       name: 'Plan Basic',
       subtitle: 'Idéal pour intégrer votre premier assistant sur votre site web',
@@ -109,7 +127,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
   ];
 
   return (
-    <div className="pt-28 pb-20 px-4 sm:px-6 max-w-6xl mx-auto space-y-16">
+    <div className="pt-28 pb-20 px-6 sm:px-10 lg:px-16 max-w-[1440px] mx-auto space-y-16">
       {/* Header */}
       <div className="text-center max-w-3xl mx-auto space-y-4">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-semibold backdrop-blur-xl">
@@ -157,7 +175,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       </div>
 
       {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
         {plans.map((plan, idx) => {
           const isYearly = billingCycle === 'yearly';
           const priceUsd = isYearly ? plan.priceUsdYearly : plan.priceUsdMonthly;

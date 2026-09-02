@@ -52,7 +52,7 @@ export const ProcessSection: React.FC<ProcessSectionProps> = ({ onOpenAssistantM
       title: 'Installez',
       description: 'Collez une ligne de code sur votre site web et laissez l\'assistant convertir vos visiteurs.',
       icon: Code2,
-      detail: 'Compatible avec tout site web (WordPress, Webflow, Shopify, Wix, Next.js, HTML sur-mesure) et connexion WhatsApp / réseaux sociaux prochainement.',
+      detail: 'Compatible avec tout site web (WordPress, Webflow, Shopify, Wix, Next.js, HTML sur-mesure) sans ralentir le chargement.',
     },
   ];
 
@@ -73,7 +73,7 @@ export const ProcessSection: React.FC<ProcessSectionProps> = ({ onOpenAssistantM
           className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-neutral-100 font-display mb-4 sm:mb-6 leading-tight break-words"
         >
           Trois étapes simples. <br className="hidden sm:inline" />
-          <span className="bg-gradient-to-r from-purple-300 via-fuchsia-200 to-indigo-300 bg-clip-text text-transparent">
+          <span className="text-purple-300">
             Votre chatbot en ligne en 2 minutes.
           </span>
         </h2>

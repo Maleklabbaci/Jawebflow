@@ -28,6 +28,13 @@ interface PaymentCheckoutModalProps {
 }
 
 const PLAN_PRICES: Record<PaymentPlanId, { name: string; usdMonthly: number; dzdMonthly: number; usdYearly: number; dzdYearly: number }> = {
+  free: {
+    name: 'Plan Gratuit',
+    usdMonthly: 0,
+    dzdMonthly: 0,
+    usdYearly: 0,
+    dzdYearly: 0,
+  },
   basic: {
     name: 'Plan Basic',
     usdMonthly: 29,

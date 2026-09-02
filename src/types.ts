@@ -49,7 +49,7 @@ export interface ZoneDeliveryTarif {
   delai: string;
 }
 
-export type PaymentPlanId = 'basic' | 'pro' | 'enterprise';
+export type PaymentPlanId = 'free' | 'basic' | 'pro' | 'enterprise';
 export type PaymentCycle = 'monthly' | 'yearly';
 export type PaymentMethodType = 'stripe_card' | 'slickpay_dzd' | 'baridimob_ccp';
 

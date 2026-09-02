@@ -36,8 +36,8 @@ export const KnowledgeBaseSection: React.FC = () => {
           id="knowledge-title"
           className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-neutral-100 font-display mb-3 sm:mb-4 leading-tight break-words"
         >
-          C'est quoi la « Base de Connaissances » ? <br className="hidden sm:inline" />
-          <span className="bg-gradient-to-r from-purple-300 via-fuchsia-200 to-indigo-300 bg-clip-text text-transparent">
+          Comment fonctionne la base de connaissances ? <br className="hidden sm:inline" />
+          <span className="text-purple-300">
             Vos documents et consignes.
           </span>
         </h2>
@@ -81,7 +81,7 @@ export const KnowledgeBaseSection: React.FC = () => {
           </div>
           <h3 className="relative z-10 text-sm sm:text-base font-bold text-neutral-100 group-hover:text-purple-200 transition-colors">3. Réponses 24h/24</h3>
           <p className="relative z-10 text-xs text-neutral-300 leading-relaxed">
-            Sur votre site web ou WhatsApp, l'assistant renseigne vos prospects sans jamais inventer d'information.
+            Sur votre site web ou boutique en ligne, l'assistant renseigne vos prospects sans jamais inventer d'information.
           </p>
         </div>
       </div>

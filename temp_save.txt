@@ -1,0 +1,24 @@
+  const handleSaveToDatabase = async () => {
+    if (!user) return;
+    try {
+      setIsSavingDb(true);
+      const effectiveWidgetId = widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`;
+      const savedId = await saveAssistantToDatabase({
+        id: assistantId || undefined,
+        userId: user.uid,
+        businessName: businessName.trim() || 'Mon Entreprise',
+        websiteUrl: websiteUrl.trim(),
+        siteType,
+        siteTypeConfidence,
+        scrapingStrategy,
+        businessCategory: businessCategory || 'Services',
+        businessDescription: businessDescription.trim(),
+        knowledgeNotes,
+        faqText: faqText.trim(),
+        pricingServicesText: pricingServicesText.trim(),
+        specialRulesText: specialRulesText.trim(),
+        assistantTone,
+        languages,
+        autoLeadCapture,
+        whatsappEscalation: whatsappEscalation.trim(),
+        webhookUrl: webhookUrl.trim(),

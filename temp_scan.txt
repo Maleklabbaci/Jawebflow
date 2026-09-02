@@ -1,0 +1,87 @@
+  const handleRunWebsiteScan = async () => {
+    const url = crawlerUrl.trim() || websiteUrl.trim();
+    if (!url) return;
+
+    setIsScanning(true);
+    setScanProgress(15);
+    setScanStage("Connexion au domaine et analyse des signaux (E-commerce, Vitrine, SaaS)...");
+    
+    setScannedPages([
+      { url: `${url}`, title: "Page d'accueil (Hero & Proposition de valeur)", status: "pending" },
+      { url: `${url}/services`, title: "Catalogue & Prestations de services", status: "pending" },
+      { url: `${url}/contact`, title: "Coordonnées & Horaires", status: "pending" }
+    ]);
+
+    try {
+      const response = await fetch("/api/crawler/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.startsWith("http") ? url : `https://${url}` })
+      });
+
+      setScanProgress(60);
+      setScanStage("Analyse sémantique IA (Gemini) en cours...");
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.siteType) {
+          setSiteType(data.siteType);
+          setSiteTypeConfidence(data.confidence || 0);
+        }
+        if (data.scrapingStrategy) {
+          setScrapingStrategy(data.scrapingStrategy);
+          setScannedPages([
+            { url: `${url}`, title: "Accueil détectée", status: "done" },
+            ...data.scrapingStrategy.map((s: string) => ({ url: `${url}/${s.toLowerCase()}`, title: `Stratégie IA : ${s}`, status: "done" as const }))
+          ]);
+        }
+
+        setScanProgress(90);
+        setScanStage("Génération automatique des notes de connaissances IA...");
+
+        setTimeout(() => {
+          setScanProgress(100);
+          setScanStage(`Analyse terminée ! Type détecté : ${data.siteType?.toUpperCase() || "VITRINE"} (${data.confidence || 90}% confiance).`);
+          
+          if (data.knowledgeNotes && data.knowledgeNotes.length > 0) {
+             setScanResultNotes(data.knowledgeNotes.map((n: any) => ({
+                ...n,
+                id: n.id || "scanned_" + Math.random().toString(36).substring(2, 9),
+                updatedAt: new Date().toISOString()
+             })));
+          }
+          setIsScanning(false);
+        }, 1000);
+      } else {
+        throw new Error("Fallback to simulator");
+      }
+    } catch (e) {
+      console.warn("Backend crawler failed, using fallback simulator", e);
+      setTimeout(() => {
+        setScanProgress(100);
+        setScanStage("Analyse terminée (Mode simulation).");
+        setScannedPages(prev => prev.map(p => ({ ...p, status: "done" })));
+        setIsScanning(false);
+        
+        const domainName = url.replace(/^https?:\/\//, "").split("/")[0];
+        const targetBiz = businessName || domainName;
+        
+        const generatedNotes: KnowledgeNote[] = [
+          {
+            id: "scanned_" + Math.random().toString(36).substring(2, 9),
+            title: `Mission & Positionnement de ${targetBiz}`,
+            category: "general",
+            enabled: true,
+            source: "scanned",
+            content: `${targetBiz} (${url}) propose des solutions professionnelles.`,
+            updatedAt: new Date().toISOString()
+          }
+        ];
+        
+        setSiteType("vitrine");
+        setSiteTypeConfidence(70);
+        setScanResultNotes(generatedNotes);
+      }, 2000);
+    }
+

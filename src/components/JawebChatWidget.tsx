@@ -14,6 +14,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { WidgetCustomization } from '../lib/firebase';
+import { renderMessageContent } from '../utils/renderMessageContent';
 
 export interface JawebChatWidgetProps {
   businessName?: string;
@@ -109,10 +110,13 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
       if (response.ok) {
         const data = await response.json();
         botReply = data.text || data.message || data.response || '';
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        botReply = errData.message || `Bonjour ! Merci pour votre message chez ${businessName}. Laissez-nous vos coordonnées ou votre question, un conseiller vous répond très rapidement.`;
       }
 
       if (!botReply) {
-        botReply = `Marhaban bik ! Merci pour votre message chez ${businessName}. Comment puis-je vous aider aujourd'hui ?`;
+        botReply = `Bonjour ! Merci pour votre message chez ${businessName}. Comment puis-je vous aider aujourd'hui ?`;
       }
 
       const lower = text.toLowerCase();
@@ -134,7 +138,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
         ...prev,
         {
           sender: 'bot',
-          text: `Merci pour votre message ! Un conseiller chez ${businessName} va vous répondre très rapidement.`,
+          text: '⚠️ Erreur de connexion avec l\'assistant IA.',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -181,16 +185,16 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
 
   return (
     <div
-      className={`fixed bottom-5 z-[999999] flex flex-col items-${isLeft ? 'start' : 'end'} font-sans antialiased`}
+      className={`fixed bottom-3 sm:bottom-5 z-[999999] flex flex-col items-${isLeft ? 'start' : 'end'} font-sans antialiased pointer-events-none`}
       style={{
-        [isLeft ? 'left' : 'right']: '20px',
-        maxWidth: 'calc(100vw - 40px)'
+        [isLeft ? 'left' : 'right']: '16px',
+        maxWidth: 'calc(100vw - 32px)'
       }}
     >
       {/* CHAT WINDOW */}
       {isOpen && (
         <div
-          className={`mb-4 w-[360px] sm:w-[390px] h-[520px] max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border transition-all duration-200 animate-in fade-in slide-in-from-bottom-4 ${
+          className={`mb-3 w-[calc(100vw-32px)] sm:w-[380px] max-w-[400px] h-[520px] max-h-[calc(100dvh-5.5rem)] sm:max-h-[82vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border transition-all duration-200 animate-in fade-in slide-in-from-bottom-4 pointer-events-auto ${
             themeMode === 'dark'
               ? 'bg-[#0f121d] text-white border-white/15 shadow-black/80'
               : 'bg-white text-neutral-900 border-neutral-200 shadow-xl'
@@ -198,47 +202,48 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
         >
           {/* Header */}
           <div
-            className="p-4 flex items-center justify-between text-white relative shadow-md"
+            className="p-3.5 sm:p-4 flex items-center justify-between text-white relative shadow-md shrink-0"
             style={{
               background: useGradient
                 ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`
                 : primaryColor
             }}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md p-1.5 flex items-center justify-center shadow-inner overflow-hidden">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-white/20 backdrop-blur-md p-1.5 flex items-center justify-center shadow-inner overflow-hidden shrink-0">
                 {renderBubbleIcon()}
               </div>
-              <div>
-                <h4 className="font-bold text-sm leading-tight flex items-center gap-1.5">
-                  <span>{headerTitle}</span>
+              <div className="min-w-0">
+                <h4 className="font-bold text-xs sm:text-sm leading-tight flex items-center gap-1.5 truncate">
+                  <span className="truncate">{headerTitle}</span>
                   {mergedConfig.onlineBadge !== false && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0 inline-block"></span>
                   )}
                 </h4>
-                <p className="text-[11px] text-white/80 font-medium">
+                <p className="text-[11px] text-white/85 font-medium truncate">
                   {headerSubtitle}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0 ml-2">
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer"
                 title="Fermer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </div>
 
           {/* Body Messages */}
           <div
-            className={`flex-1 p-4 overflow-y-auto space-y-3.5 ${
+            className={`flex-1 p-3.5 sm:p-4 overflow-y-auto space-y-3.5 overscroll-contain ${
               themeMode === 'dark' ? 'bg-[#090b11]/80' : 'bg-neutral-50'
             }`}
+            style={{ scrollbarWidth: 'thin', scrollbarColor: themeMode === 'dark' ? 'rgba(255,255,255,0.15) transparent' : 'rgba(0,0,0,0.15) transparent' }}
           >
             {messages.map((m, idx) => (
               <div
@@ -246,7 +251,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                 className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed shadow-sm ${
+                  className={`max-w-[88%] rounded-2xl px-3.5 sm:px-4 py-2.5 text-xs sm:text-[13px] leading-relaxed shadow-sm break-words ${
                     m.sender === 'user'
                       ? 'text-white rounded-br-none'
                       : themeMode === 'dark'
@@ -263,7 +268,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                       : {}
                   }
                 >
-                  {m.text}
+                  {renderMessageContent(m.text, themeMode)}
                 </div>
                 <span className="text-[9px] text-neutral-400 mt-1 px-1">{m.time}</span>
               </div>
@@ -299,16 +304,16 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                 }`}
               >
                 <p className="text-xs font-semibold text-purple-400 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5" />
+                  <Phone className="w-3.5 h-3.5 shrink-0" />
                   <span>Être rappelé ou recevoir une proposition :</span>
                 </p>
                 <div className="flex gap-2">
                   <input
-                    type="text"
-                    placeholder="Votre n° WhatsApp / Téléphone"
+                    type="tel"
+                    placeholder="Ex: 0550 12 34 56"
                     value={leadPhone}
                     onChange={(e) => setLeadPhone(e.target.value)}
-                    className={`flex-1 text-xs px-3 py-2 rounded-xl border focus:outline-none ${
+                    className={`flex-1 text-xs sm:text-sm px-3 py-2 rounded-xl border focus:outline-none ${
                       themeMode === 'dark'
                         ? 'bg-[#090b11] text-white border-white/15 focus:border-purple-500'
                         : 'bg-neutral-50 text-neutral-900 border-neutral-300 focus:border-purple-600'
@@ -316,7 +321,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                   />
                   <button
                     type="submit"
-                    className="px-3 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-transform active:scale-95 cursor-pointer shrink-0"
                     style={{
                       background: useGradient
                         ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`
@@ -336,7 +341,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
               e.preventDefault();
               handleSendMessage();
             }}
-            className={`p-3 border-t flex items-center gap-2 ${
+            className={`p-3 border-t flex items-center gap-2 shrink-0 ${
               themeMode === 'dark' ? 'bg-[#0f121d] border-white/10' : 'bg-white border-neutral-200'
             }`}
           >
@@ -345,7 +350,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               placeholder="Écrivez votre message..."
-              className={`flex-1 text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border focus:outline-none transition-all ${
+              className={`flex-1 text-xs sm:text-sm px-3.5 py-2 rounded-xl border focus:outline-none transition-all ${
                 themeMode === 'dark'
                   ? 'bg-[#151928] text-white border-white/10 placeholder-neutral-500 focus:border-purple-500'
                   : 'bg-neutral-100 text-neutral-900 border-neutral-200 placeholder-neutral-400 focus:border-purple-600'
@@ -354,12 +359,13 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
             <button
               type="submit"
               disabled={!inputVal.trim() || isTyping}
-              className="p-2.5 rounded-xl text-white disabled:opacity-40 transition-all cursor-pointer shadow-md"
+              className="p-2 sm:p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-md shrink-0"
               style={{
                 background: useGradient
                   ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`
                   : primaryColor
               }}
+              title="Envoyer"
             >
               <Send className="w-4 h-4" />
             </button>
@@ -374,32 +380,33 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                   : 'bg-neutral-100 text-neutral-400 border-neutral-200'
               }`}
             >
-              Propulsé par <span className="font-semibold text-purple-400">JawebFlow IA</span>
+              ⚡ Propulsé par <span className="font-semibold text-purple-400">JawebFlow IA</span>
             </div>
           )}
         </div>
       )}
 
       {/* FLOATING TRIGGER BUTTON & TEASER */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
         {/* Teaser tooltip if closed */}
         {!isOpen && showTeaser && mergedConfig.teaserText && (
           <div
-            className={`hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-xl border text-xs font-medium cursor-pointer transition-all hover:scale-105 ${
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-xl border text-xs font-medium cursor-pointer transition-all hover:scale-105 max-w-[calc(100vw-5rem)] sm:max-w-xs ${
               themeMode === 'dark'
                 ? 'bg-[#151928] text-white border-white/15'
                 : 'bg-white text-neutral-800 border-neutral-200'
             }`}
             onClick={() => setIsOpen(true)}
           >
-            <span>{mergedConfig.teaserText}</span>
+            <span className="truncate">{mergedConfig.teaserText}</span>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowTeaser(false);
               }}
-              className="text-neutral-400 hover:text-white p-0.5 rounded"
+              className="text-neutral-400 hover:text-white p-0.5 rounded ml-auto shrink-0"
+              title="Fermer"
             >
               <X className="w-3 h-3" />
             </button>
@@ -412,10 +419,10 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
           onClick={() => setIsOpen(!isOpen)}
           className={`relative flex items-center justify-center text-white shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer ${
             shape === 'circle'
-              ? 'rounded-full w-14 h-14'
+              ? 'rounded-full w-12 h-12 sm:w-14 sm:h-14'
               : shape === 'squircle'
-              ? 'rounded-2xl w-14 h-14'
-              : 'rounded-full px-5 py-3.5 gap-2'
+              ? 'rounded-2xl w-12 h-12 sm:w-14 sm:h-14'
+              : 'rounded-full px-4 sm:px-5 py-3 sm:py-3.5 gap-2'
           }`}
           style={{
             background: useGradient
@@ -426,10 +433,10 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
           aria-label="Ouvrir le chat assistant IA"
         >
           {isOpen ? (
-            <ChevronDown className="w-7 h-7" />
+            <ChevronDown className="w-6 h-6 sm:w-7 sm:h-7" />
           ) : (
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 flex items-center justify-center">
+              <div className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center">
                 {renderBubbleIcon()}
               </div>
               {shape === 'compact' && (
@@ -440,7 +447,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
 
           {/* Online green indicator dot */}
           {mergedConfig.onlineBadge !== false && !isOpen && (
-            <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#090b11]"></span>
+            <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#090b11] shadow-sm"></span>
           )}
         </button>
       </div>

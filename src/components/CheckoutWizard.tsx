@@ -18,8 +18,8 @@ import {
 interface CheckoutWizardProps {
   billingCycle: 'monthly' | 'yearly';
   setBillingCycle: (cycle: 'monthly' | 'yearly') => void;
-  selectedCheckoutPlan: 'basic' | 'pro' | 'enterprise';
-  setSelectedCheckoutPlan: (plan: 'basic' | 'pro' | 'enterprise') => void;
+  selectedCheckoutPlan: 'free' | 'basic' | 'pro' | 'enterprise';
+  setSelectedCheckoutPlan: (plan: 'free' | 'basic' | 'pro' | 'enterprise') => void;
   checkoutStep: number;
   setCheckoutStep: (step: number) => void;
   checkoutName: string;
@@ -91,6 +91,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
   const [gatewayHolder, setGatewayHolder] = useState(checkoutName || user?.displayName || 'YACINE BENALI');
 
   const getDzdAmountStr = () => {
+    if (selectedCheckoutPlan === 'free') return '0';
     if (selectedCheckoutPlan === 'basic') {
       return billingCycle === 'monthly' ? '6 850' : '65 760';
     } else if (selectedCheckoutPlan === 'pro') {
@@ -101,6 +102,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
   };
 
   const getUsdAmountStr = () => {
+    if (selectedCheckoutPlan === 'free') return '$0';
     if (selectedCheckoutPlan === 'basic') {
       return billingCycle === 'monthly' ? '$29' : '$276';
     } else if (selectedCheckoutPlan === 'pro') {

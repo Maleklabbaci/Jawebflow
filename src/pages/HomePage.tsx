@@ -26,9 +26,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenAssistantModal, onNavi
         onScrollToParcours={() => onNavigate('services')}
       />
 
-      {/* Interactive Live Chat Mockup */}
+      {/* Interactive Real Integrated Widget Website Preview */}
       <InteractiveChatMockup 
         onOpenKnowledgeDetails={() => scrollToSection('knowledge-section')}
+        onOpenAssistantModal={onOpenAssistantModal}
       />
 
       {/* Knowledge Base Section */}

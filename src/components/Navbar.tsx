@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Menu, X, UserCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export type PageId = 'home' | 'services' | 'pricing' | 'demo' | 'contact' | 'create-assistant' | 'login' | 'signup' | 'checkout' | 'privacy' | 'terms' | 'data-deletion';
+export type PageId = 'home' | 'services' | 'pricing' | 'demo' | 'contact' | 'create-assistant' | 'login' | 'signup' | 'checkout' | 'privacy' | 'terms' | 'data-deletion' | 'admin';
 
 interface NavbarProps {
   currentPage: PageId;
@@ -50,9 +50,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           : 'bg-transparent py-5'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
-        {/* Left: Fixed Brand Logo */}
-        <div className="flex-shrink-0 flex items-center">
+      <div className="max-w-[1440px] mx-auto px-6 sm:px-10 lg:px-16 grid grid-cols-3 items-center">
+        {/* Left: Fixed Brand Logo (Extreme Left) */}
+        <div className="flex items-center justify-start">
           <button 
             id="brand-logo-btn"
             onClick={() => handleItemClick('home')}
@@ -68,7 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        {/* Center: Simple Pure Text Navigation Links (Sans background, sans carte, simple texte normal) */}
+        {/* Center: Navigation Links / Page Title (Strictly Centered) */}
         <nav 
           id="center-navigation"
           className="hidden md:flex items-center justify-center gap-8 lg:gap-10"
@@ -95,8 +95,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </nav>
 
-        {/* Right: Fixed "Créer mon assistant" CTA Button & User badge */}
-        <div className="flex-shrink-0 flex items-center gap-3">
+        {/* Right: CTA Button & User badge (Extreme Right) */}
+        <div className="flex items-center justify-end gap-3">
           {!user ? (
             <button
               id="navbar-login-btn"
@@ -119,12 +119,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="navbar-cta-btn"
             onClick={onOpenAssistantModal}
-            className="relative group overflow-hidden rounded-xl bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-purple-600/30 hover:shadow-purple-600/50 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer flex-shrink-0"
+            className="rounded-xl bg-purple-600 hover:bg-purple-500 px-4 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white shadow-md shadow-purple-600/30 hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer flex-shrink-0"
           >
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{user ? 'Mon Assistant' : 'Créer mon assistant'}</span>
-            </div>
+            <span>{user ? 'Mon Tableau de Bord' : 'Créer mon assistant'}</span>
           </button>
 
           {/* Mobile Menu Toggle */}
@@ -176,9 +173,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onOpenAssistantModal();
                 setMobileMenuOpen(false);
               }}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30"
+              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 cursor-pointer"
             >
-              <Sparkles className="w-4 h-4" />
               <span>{user ? 'Mon Assistant' : 'Créer mon assistant'}</span>
             </button>
           </div>
