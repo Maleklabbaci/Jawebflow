@@ -182,58 +182,68 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       // Create Facebook Provider configured for Instagram Business messaging OAuth
       const provider = new FacebookAuthProvider();
       
-      // Request essential scopes for Instagram Direct Messages and Pages
+      // Request standard and extended scopes for Instagram & Pages
+      provider.addScope('public_profile');
+      provider.addScope('email');
       provider.addScope('instagram_basic');
       provider.addScope('instagram_manage_messages');
       provider.addScope('pages_show_list');
       provider.addScope('pages_messaging');
-      provider.addScope('pages_read_engagement');
       provider.setCustomParameters({
         display: 'popup'
       });
 
-      // Launch OAuth Popup with Firebase Auth
-      let authResult;
+      let authResult: any = null;
+      
+      // Try popup authentication or link with existing session
       try {
-        authResult = await signInWithPopup(auth, provider);
-      } catch (popupError: any) {
-        // If user is already logged in with another provider (e.g. Email/Google), try linking
-        if (popupError.code === 'auth/account-exists-with-different-credential' && auth.currentUser) {
-          authResult = await linkWithPopup(auth.currentUser, provider);
+        if (auth.currentUser) {
+          try {
+            authResult = await linkWithPopup(auth.currentUser, provider);
+          } catch (linkErr: any) {
+            // If linking fails or already linked, fall back to direct signInWithPopup
+            authResult = await signInWithPopup(auth, provider);
+          }
         } else {
-          throw popupError;
+          authResult = await signInWithPopup(auth, provider);
         }
+      } catch (popupError: any) {
+        // If popup was blocked by iframe/browser security, provide direct direct-window helper
+        if (popupError.code === 'auth/popup-blocked') {
+          throw new Error('POPUPS_BLOCKED');
+        }
+        throw popupError;
       }
 
       // Extract OAuth Access Token from credential
       const credential = FacebookAuthProvider.credentialFromResult(authResult);
       const accessToken = credential?.accessToken;
-      const fbUser = authResult.user;
+      const fbUser = authResult?.user || auth.currentUser;
 
       // Extract business profile hints from auth payload
-      const extractedUsername = fbUser.displayName 
+      const extractedUsername = fbUser?.displayName 
         ? `@${fbUser.displayName.toLowerCase().replace(/\s+/g, '_')}` 
         : `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'business_dz'}`;
 
       const updatedPayload: InstagramIntegrationData = {
         connected: true,
-        instagramUserId: fbUser.uid,
+        instagramUserId: fbUser?.uid || `ig_${user.uid.substring(0, 8)}`,
         instagramUsername: extractedUsername,
-        pageId: fbUser.providerData[0]?.uid || 'fb_page_id',
+        pageId: fbUser?.providerData?.[0]?.uid || 'fb_page_id',
         pageName: `${businessName || 'Entreprise'} Official Page`,
-        profilePictureUrl: fbUser.photoURL || '',
+        profilePictureUrl: fbUser?.photoURL || '',
         autoReplyEnabled: true,
         respondToStories: true,
         respondToComments: false,
         assistantTone: integrationData.assistantTone || 'professionnel',
         customGreeting: integrationData.customGreeting || `Salam ! Bienvenue chez ${businessName || 'nous'}. Comment pouvons-nous vous aider ?`,
-        lastConnectedAt: serverTimestamp(),
+        lastConnectedAt: new Date().toISOString(),
         webhookStatus: 'active',
         totalMessagesHandled: integrationData.totalMessagesHandled || 12,
         unresolvedCount: 0
       };
 
-      // Save connection data locally and into Firestore securely under /instagram_integrations/{userId}
+      // Save connection data locally and into Firestore securely
       saveLocalCache(user.uid, updatedPayload);
       setIntegrationData(updatedPayload);
 
@@ -246,51 +256,31 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
       setNotification({
         type: 'success',
-        message: `Compte Instagram ${extractedUsername} connecté avec succès à JawebFlow ! L'assistant IA gère désormais vos messages.`
+        message: `Compte Instagram ${extractedUsername} connecté avec succès ! L'assistant IA JawebFlow gère désormais vos messages.`
       });
     } catch (error: any) {
       console.warn('Facebook/Instagram OAuth Notice:', error);
       
-      // Fallback Demo Connection for testing environment if Meta App credentials are in sandbox
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
         setNotification({
           type: 'info',
-          message: 'La fenêtre de connexion a été fermée avant la validation.'
+          message: 'La fenêtre de connexion a été fermée. Cliquez à nouveau sur le bouton pour valider.'
+        });
+      } else if (error.message === 'POPUPS_BLOCKED' || error.code === 'auth/popup-blocked') {
+        // Direct link to Meta login if browser blocks popup
+        const metaDirectAuthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=1376023754506953&redirect_uri=${encodeURIComponent('https://gen-lang-client-0772569610.firebaseapp.com/__/auth/handler')}&scope=instagram_basic,instagram_manage_messages,pages_show_list,pages_messaging&response_type=token`;
+        window.open(metaDirectAuthUrl, '_blank', 'width=600,height=750');
+        setNotification({
+          type: 'info',
+          message: 'Fenêtre ouverte dans un nouvel onglet pour autoriser Instagram.'
         });
       } else {
-        // Provide friendly fallback connection simulation to allow user to configure & test
-        const simulatedUsername = `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'boutique_algerie'}`;
-        const mockPayload: InstagramIntegrationData = {
-          connected: true,
-          instagramUserId: `ig_${user.uid.substring(0, 8)}`,
-          instagramUsername: simulatedUsername,
-          pageId: `fb_page_${Date.now()}`,
-          pageName: `${businessName || 'Commerce'} Instagram Business`,
-          profilePictureUrl: user.photoURL || '',
-          autoReplyEnabled: true,
-          respondToStories: true,
-          respondToComments: false,
-          assistantTone: 'professionnel',
-          customGreeting: `Salam 👋 Bienvenue sur le compte de ${businessName || 'notre boutique'}. Je suis l'assistant IA, posez-moi vos questions !`,
-          lastConnectedAt: new Date().toISOString(),
-          webhookStatus: 'active',
-          totalMessagesHandled: 24,
-          unresolvedCount: 0
-        };
-
-        saveLocalCache(user.uid, mockPayload);
-        setIntegrationData(mockPayload);
-
-        try {
-          const docRef = doc(db, 'instagram_integrations', user.uid);
-          await setDoc(docRef, sanitizeFirestoreData(mockPayload), { merge: true });
-        } catch (fsErr) {
-          // Safe offline fallback
-        }
-
+        // Provide clickable direct popup fallback
+        const metaDirectAuthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=1376023754506953&redirect_uri=${encodeURIComponent('https://gen-lang-client-0772569610.firebaseapp.com/__/auth/handler')}&scope=instagram_basic,instagram_manage_messages,pages_show_list,pages_messaging&response_type=token`;
+        window.open(metaDirectAuthUrl, '_blank', 'width=600,height=750');
         setNotification({
-          type: 'success',
-          message: `Compte Business ${simulatedUsername} synchronisé avec succès ! L'assistant IA JawebFlow est prêt à répondre aux DMs.`
+          type: 'info',
+          message: 'Fenêtre de connexion ouverte. Si la popup ne s\'affiche pas, autorisez les popups dans votre navigateur.'
         });
       }
     } finally {
