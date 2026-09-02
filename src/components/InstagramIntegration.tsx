@@ -163,11 +163,10 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
     fetchInstagramData();
 
-    // Check for incoming Instagram Authorization Code in URL params
+    // 1. Check for incoming Instagram Authorization Code in direct URL params (e.g. mobile redirect)
     const urlParams = new URLSearchParams(window.location.search);
     const authCode = urlParams.get('code');
     if (authCode && user) {
-      // Clean URL params
       window.history.replaceState({}, document.title, window.location.pathname);
       
       const updatedPayload: InstagramIntegrationData = {
@@ -201,8 +200,49 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       });
     }
 
-    return () => { isMounted = false; };
-  }, [user]);
+    // 2. Listen for messages sent from popup window
+    const handlePopupAuthMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'INSTAGRAM_AUTH_SUCCESS' && user) {
+        setIsConnecting(false);
+        const updatedPayload: InstagramIntegrationData = {
+          ...integrationData,
+          connected: true,
+          instagramUserId: `ig_${user.uid.substring(0, 8)}`,
+          instagramUsername: `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'boutique_dz'}`,
+          pageName: `${businessName || 'Entreprise'} Official Instagram`,
+          autoReplyEnabled: true,
+          respondToStories: true,
+          respondToComments: false,
+          lastConnectedAt: new Date().toISOString(),
+          webhookStatus: 'active',
+          totalMessagesHandled: integrationData.totalMessagesHandled || 18,
+          unresolvedCount: 0
+        };
+
+        saveLocalCache(user.uid, updatedPayload);
+        setIntegrationData(updatedPayload);
+
+        try {
+          const docRef = doc(db, 'instagram_integrations', user.uid);
+          setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
+        } catch (e) {
+          // Safe offline
+        }
+
+        setNotification({
+          type: 'success',
+          message: 'Compte Instagram connecté avec succès ! L\'IA JawebFlow gère vos DMs.'
+        });
+      }
+    };
+
+    window.addEventListener('message', handlePopupAuthMessage);
+
+    return () => { 
+      isMounted = false; 
+      window.removeEventListener('message', handlePopupAuthMessage);
+    };
+  }, [user, businessName, integrationData]);
 
   // Handle Direct 100% Instagram OAuth Flow (No Facebook Required)
   const handleConnectInstagram = async () => {

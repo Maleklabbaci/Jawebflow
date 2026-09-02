@@ -58,6 +58,27 @@ export default function App() {
     };
 
     const initialRoute = parseRoute(window.location.pathname);
+    
+    // Check for Instagram OAuth callback in URL parameters
+    const searchParams = new URLSearchParams(window.location.search);
+    const authCode = searchParams.get('code');
+    if (authCode) {
+      // If opened inside a popup window, inform the parent opener and close itself immediately
+      if (window.opener && window.opener !== window) {
+        try {
+          window.opener.postMessage({ type: 'INSTAGRAM_AUTH_SUCCESS', code: authCode }, '*');
+          window.close();
+          return;
+        } catch (err) {
+          console.warn('Popup postMessage error:', err);
+        }
+      }
+      // If opened in the main window (e.g. mobile redirect), navigate straight to the Instagram cockpit
+      setCurrentPage('create-assistant');
+      setDashboardSection('instagram');
+      return;
+    }
+
     setCurrentPage(initialRoute.page);
     setDashboardSection(initialRoute.section);
 
