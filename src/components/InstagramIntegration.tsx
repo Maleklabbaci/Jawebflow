@@ -272,22 +272,31 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     setNotification(null);
 
     try {
-      // Exact Official Meta/Instagram Login URL provided by your Meta App
-      const directInstagramUrl = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=1376023754506953&redirect_uri=https://jawebflow.pages.dev/&response_type=code&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish%2Cinstagram_business_manage_insights`;
+      // Official Instagram OAuth URL configuration
+      const appId = '1376023754506953';
+      const redirectUri = encodeURIComponent('https://jawebflow.pages.dev/');
+      const scope = encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish');
+      
+      const directInstagramUrl = `https://api.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code`;
+
+      const width = 600;
+      const height = 720;
+      const left = Math.max(0, Math.floor(window.screen.width / 2 - width / 2));
+      const top = Math.max(0, Math.floor(window.screen.height / 2 - height / 2));
 
       const popup = window.open(
         directInstagramUrl, 
         'InstagramDirectAuth', 
-        'width=620,height=750,status=no,toolbar=no,menubar=no'
+        `width=${width},height=${height},top=${top},left=${left},status=no,toolbar=no,menubar=no,location=yes,resizable=yes`
       );
 
       if (!popup || popup.closed || typeof popup.closed === 'undefined') {
         // Fallback if browser blocks popups
-        window.location.href = directInstagramUrl;
+        window.location.href = `https://api.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code`;
       } else {
         setNotification({
           type: 'info',
-          message: 'Fenêtre officielle Instagram ouverte. Connectez-vous avec vos identifiants Instagram pour autoriser le bot JawebFlow.'
+          message: 'Fenêtre officielle Instagram ouverte. Connectez-vous et autorisez pour lier votre bot.'
         });
       }
     } catch (error: any) {
