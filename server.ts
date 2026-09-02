@@ -29,6 +29,9 @@ try {
   console.warn("Firebase admin initialization notice:", e);
 }
 
+// In-memory cache for Instagram integrations across requests during server runtime
+const instagramTokensCache = new Map<string, any>();
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -1316,7 +1319,7 @@ Le champ 'knowledgeNotes' doit inclure 3 à 5 fiches pertinentes avec de vraies 
               let botReplyText = "";
               try {
                 const aiRes = await ai.models.generateContent({
-                  model: "gemini-3.7-flash",
+                  model: "gemini-2.5-flash-lite",
                   contents: incomingUserText,
                   config: {
                     systemInstruction: `Vous êtes l'assistant IA officiel sur Instagram pour "${storeName}" en Algérie.
@@ -1340,31 +1343,61 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
                 });
                 botReplyText = aiRes.text || `Salam ! Bienvenue chez ${storeName}. Comment puis-je vous aider ? ${businessSiteUrl ? `Vous pouvez aussi visiter notre site : ${businessSiteUrl}` : ''}`;
               } catch (aiErr) {
-                botReplyText = `Salam ! Merci pour votre message. Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h. ${businessSiteUrl ? `Découvrez tous nos produits sur notre site : ${businessSiteUrl}` : 'Quel produit vous intéresse ?'}`;
+                botReplyText = `Salam ! Merci pour votre message chez ${storeName}. Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h (Paiement à la livraison & BaridiMob). ${businessSiteUrl ? `Découvrez nos offres sur notre site : ${businessSiteUrl}` : 'En quoi puis-je vous aider ?'}`;
               }
 
               // 2. Send the reply back directly via Meta Instagram Graph API if token is configured
               let PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN || process.env.INSTAGRAM_ACCESS_TOKEN;
               
               // Dynamic token lookup for the specific connected Instagram account / user
-              if (db) {
+              // 1. Check in-memory server cache first
+              for (const [, cachedData] of instagramTokensCache.entries()) {
+                if (cachedData?.accessToken && (cachedData.instagramUserId === String(recipientId) || !PAGE_ACCESS_TOKEN)) {
+                  PAGE_ACCESS_TOKEN = cachedData.accessToken;
+                  break;
+                }
+              }
+
+              // 2. Query Firestore via direct REST API with project apiKey (works reliably across environments)
+              if (!PAGE_ACCESS_TOKEN) {
                 try {
-                  const igDoc = await db.collection("instagram_integrations").limit(5).get();
-                  if (!igDoc.empty) {
-                    for (const docItem of igDoc.docs) {
-                      const igData = docItem.data();
-                      if (igData.accessToken && (igData.instagramUserId === String(recipientId) || !PAGE_ACCESS_TOKEN)) {
-                        PAGE_ACCESS_TOKEN = igData.accessToken;
+                  const cfgStr = fs.readFileSync("firebase-applet-config.json", "utf-8");
+                  const cfg = JSON.parse(cfgStr);
+                  const fsUrl = `https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/${cfg.firestoreDatabaseId}/documents:runQuery?key=${cfg.apiKey}`;
+                  const fsRes = await fetch(fsUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      structuredQuery: {
+                        from: [{ collectionId: "instagram_integrations" }],
+                        limit: 5
+                      }
+                    })
+                  });
+                  const fsData = await fsRes.json();
+                  if (Array.isArray(fsData)) {
+                    for (const docItem of fsData) {
+                      const fields = docItem.document?.fields;
+                      if (fields?.accessToken?.stringValue) {
+                        PAGE_ACCESS_TOKEN = fields.accessToken.stringValue;
+                        // Cache for subsequent messages
+                        instagramTokensCache.set(docItem.document.name, {
+                          accessToken: PAGE_ACCESS_TOKEN,
+                          instagramUserId: fields.instagramUserId?.stringValue || "",
+                          instagramUsername: fields.instagramUsername?.stringValue || "@compte_ig"
+                        });
                         break;
                       }
                     }
                   }
                 } catch (tokErr) {
-                  console.warn("Instagram integration token lookup:", tokErr);
+                  console.warn("[Instagram Webhook] Token resolution via Firestore REST:", tokErr);
                 }
               }
 
               if (PAGE_ACCESS_TOKEN) {
+                let sendSuccess = false;
+                // Attempt 1: Direct Instagram Graph API
                 try {
                   const metaSendRes = await fetch(`https://graph.instagram.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
                     method: "POST",
@@ -1375,9 +1408,36 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
                     })
                   });
                   const sendResult = await metaSendRes.json();
-                  console.log("📤 Meta Direct DM Response sent:", sendResult);
+                  if (metaSendRes.ok && !sendResult.error) {
+                    sendSuccess = true;
+                    console.log("📤 Meta Direct DM Response sent successfully via graph.instagram.com:", sendResult);
+                  } else {
+                    console.warn("⚠️ graph.instagram.com response notice:", sendResult);
+                  }
                 } catch (sendErr) {
-                  console.error("❌ Failed to send DM reply back to Instagram:", sendErr);
+                  console.warn("⚠️ graph.instagram.com network error:", sendErr);
+                }
+
+                // Attempt 2: Facebook Graph API fallback (standard Messenger API for Instagram)
+                if (!sendSuccess) {
+                  try {
+                    const fbSendRes = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        recipient: { id: senderId },
+                        message: { text: botReplyText }
+                      })
+                    });
+                    const fbResult = await fbSendRes.json();
+                    if (fbSendRes.ok && !fbResult.error) {
+                      console.log("📤 Meta Direct DM Response sent successfully via graph.facebook.com:", fbResult);
+                    } else {
+                      console.error("❌ Meta graph.facebook.com error:", fbResult);
+                    }
+                  } catch (fbErr) {
+                    console.error("❌ Meta graph.facebook.com network error:", fbErr);
+                  }
                 }
               } else {
                 console.log(`ℹ️ [Simulated Meta Send] Generated reply for ${senderId}: "${botReplyText}"`);
@@ -1473,8 +1533,19 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
         console.warn('[Instagram OAuth] Profile fetch error:', pErr);
       }
 
-      // 4. Persist directly to Firestore
-      if (db && userId) {
+      // 4. Cache in memory on server for active webhook message auto-replies
+      if (userId) {
+        instagramTokensCache.set(userId, {
+          accessToken: finalAccessToken,
+          instagramUserId: String(instagramUserId || ''),
+          instagramUsername: instagramUsername ? `@${instagramUsername}` : `@compte_${String(instagramUserId).slice(-4)}`,
+          accountName: accountName || instagramUsername || 'Compte Instagram'
+        });
+      }
+
+      // Persist via Firebase Admin SDK only if explicit Google Application Credentials are configured;
+      // otherwise, persistence is handled reliably by the client React application using the authenticated Firebase Client SDK.
+      if (db && userId && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         try {
           await db.collection('instagram_integrations').doc(userId).set({
             connected: true,
@@ -1487,8 +1558,8 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
             autoReplyEnabled: true,
             updatedAt: new Date().toISOString()
           }, { merge: true });
-        } catch (fsErr) {
-          console.warn('[Instagram OAuth] Firestore direct write:', fsErr);
+        } catch (fsErr: any) {
+          console.debug('[Instagram OAuth] Server-side Firestore write skipped:', fsErr?.message || fsErr);
         }
       }
 
@@ -1502,6 +1573,115 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
     } catch (error: any) {
       console.error('[Instagram OAuth] Server error:', error);
       return res.status(500).json({ error: error.message || 'Erreur serveur interne' });
+    }
+  });
+
+  // ============================================================================
+  // INSTAGRAM SYNC TOKEN & LIVE DIAGNOSTICS
+  // ============================================================================
+  app.post('/api/instagram/sync-token', async (req, res) => {
+    try {
+      const { userId, accessToken, instagramUserId, instagramUsername, pageName } = req.body;
+      if (!accessToken) {
+        return res.status(400).json({ error: 'accessToken requis' });
+      }
+
+      const cleanToken = String(accessToken).trim();
+      const userKey = userId || 'default';
+
+      instagramTokensCache.set(userKey, {
+        accessToken: cleanToken,
+        instagramUserId: String(instagramUserId || ''),
+        instagramUsername: instagramUsername ? String(instagramUsername) : '@compte_ig',
+        pageName: pageName || 'Instagram Professionnel'
+      });
+
+      // Also persist to disk cache
+      try {
+        const cacheFile = 'instagram_tokens_cache.json';
+        let existing: any = {};
+        if (fs.existsSync(cacheFile)) {
+          existing = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+        }
+        existing[userKey] = {
+          accessToken: cleanToken,
+          instagramUserId: String(instagramUserId || ''),
+          instagramUsername: instagramUsername || '',
+          pageName: pageName || '',
+          updatedAt: new Date().toISOString()
+        };
+        fs.writeFileSync(cacheFile, JSON.stringify(existing, null, 2));
+      } catch (fErr) {
+        console.warn('[Instagram] Disk cache save warning:', fErr);
+      }
+
+      console.log(`[Instagram Sync] Token cached successfully for ${instagramUsername || userKey}`);
+      return res.json({ success: true, message: 'Jeton synchronisé avec succès' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/instagram/diagnostics', async (req, res) => {
+    const cachedList: any[] = [];
+    for (const [key, data] of instagramTokensCache.entries()) {
+      cachedList.push({
+        id: key,
+        username: data.instagramUsername,
+        hasToken: !!data.accessToken,
+        tokenPrefix: data.accessToken ? `${data.accessToken.substring(0, 10)}...` : null
+      });
+    }
+
+    // Check disk cache if memory was empty
+    if (cachedList.length === 0 && fs.existsSync('instagram_tokens_cache.json')) {
+      try {
+        const diskData = JSON.parse(fs.readFileSync('instagram_tokens_cache.json', 'utf-8'));
+        for (const [k, v] of Object.entries(diskData as any)) {
+          cachedList.push({
+            id: k,
+            username: (v as any).instagramUsername,
+            hasToken: !!(v as any).accessToken,
+            tokenPrefix: (v as any).accessToken ? `${(v as any).accessToken.substring(0, 10)}...` : null
+          });
+        }
+      } catch (e) {}
+    }
+
+    return res.json({
+      status: 'active',
+      webhookUrl: 'https://jawebflow.pages.dev/api/webhook/instagram',
+      verifyToken: 'jawebflow_secure_webhook_token_2025',
+      cachedAccountsCount: cachedList.length,
+      accounts: cachedList,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.post('/api/instagram/test-live-message', async (req, res) => {
+    try {
+      const { messageText } = req.body;
+      const textToTest = messageText || 'Bonjour, est-ce que vous livrez à Oran et quel est le prix ?';
+
+      // Use Gemini flash lite with real business context
+      const aiRes = await ai.models.generateContent({
+        model: "gemini-2.5-flash-lite",
+        contents: textToTest,
+        config: {
+          systemInstruction: `Vous êtes l'assistant IA Instagram officiel de Telya Agency en Algérie.
+Répondez avec politesse, concision et chaleur (format DM Instagram) en Français ou Darija.
+Livraison disponible dans les 58 wilayas d'Algérie sous 24h/48h. Paiement à la livraison et BaridiMob.`
+        }
+      });
+
+      return res.json({
+        success: true,
+        userMessage: textToTest,
+        aiResponse: aiRes.text?.trim(),
+        modelUsed: 'gemini-2.5-flash-lite'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 
