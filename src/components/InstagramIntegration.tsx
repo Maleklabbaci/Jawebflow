@@ -218,15 +218,8 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     setNotification(null);
 
     try {
-      const instagramAppId = '1376023754506953';
-      const currentOrigin = window.location.origin;
-      const redirectUri = currentOrigin.includes('localhost') || currentOrigin.includes('run.app')
-        ? window.location.href.split('?')[0].split('#')[0]
-        : 'https://jawebflow.pages.dev';
-
-      // 100% Pure Instagram Business Login Dialog
-      // Opens official Instagram authorization with zero Facebook branding
-      const directInstagramUrl = `https://api.instagram.com/oauth/authorize?client_id=${instagramAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments&response_type=code`;
+      // Exact Official Meta/Instagram Login URL provided by your Meta App
+      const directInstagramUrl = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=1376023754506953&redirect_uri=https://jawebflow.pages.dev/&response_type=code&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish%2Cinstagram_business_manage_insights`;
 
       const popup = window.open(
         directInstagramUrl, 
