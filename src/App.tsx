@@ -63,11 +63,20 @@ export default function App() {
     const searchParams = new URLSearchParams(window.location.search);
     const authCode = searchParams.get('code');
     if (authCode) {
+      // Store in localStorage for cross-tab or redirect resilience
+      try {
+        localStorage.setItem('jawebflow_last_ig_auth_code', authCode);
+      } catch (e) {
+        // Safe fallback
+      }
+
       // If opened inside a popup window, inform the parent opener and close itself immediately
       if (window.opener && window.opener !== window) {
         try {
           window.opener.postMessage({ type: 'INSTAGRAM_AUTH_SUCCESS', code: authCode }, '*');
-          window.close();
+          setTimeout(() => {
+            try { window.close(); } catch (e) {}
+          }, 300);
           return;
         } catch (err) {
           console.warn('Popup postMessage error:', err);

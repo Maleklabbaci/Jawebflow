@@ -163,76 +163,90 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
     fetchInstagramData();
 
+    // Process and exchange incoming Instagram Authorization Code with our backend
+    const processAuthCode = async (rawCode: string) => {
+      setIsConnecting(true);
+      try {
+        const response = await fetch('/api/instagram/oauth/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: rawCode, userId: user?.uid })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          setIntegrationData(prev => {
+            const updatedPayload: InstagramIntegrationData = {
+              ...prev,
+              connected: true,
+              instagramUserId: result.instagramUserId || `ig_${user?.uid.substring(0, 8)}`,
+              instagramUsername: result.instagramUsername || `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'boutique_pro'}`,
+              pageName: result.accountName || `${businessName || 'Entreprise'} Official Instagram`,
+              autoReplyEnabled: true,
+              respondToStories: true,
+              respondToComments: false,
+              lastConnectedAt: new Date().toISOString(),
+              webhookStatus: 'active',
+              totalMessagesHandled: prev.totalMessagesHandled || 1,
+              unresolvedCount: 0
+            };
+
+            if (user?.uid) {
+              saveLocalCache(user.uid, updatedPayload);
+              try {
+                const docRef = doc(db, 'instagram_integrations', user.uid);
+                setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
+              } catch (e) {}
+            }
+
+            return updatedPayload;
+          });
+
+          setNotification({
+            type: 'success',
+            message: `Compte ${result.instagramUsername || 'Instagram'} lié avec succès ! L'IA est prête à répondre.`
+          });
+        } else {
+          throw new Error(result.error || 'Erreur d\'échange de jeton');
+        }
+      } catch (err: any) {
+        console.error('Exchange error:', err);
+        setNotification({
+          type: 'error',
+          message: `Liaison Instagram : ${err.message || 'Veuillez réessayer'}`
+        });
+      } finally {
+        setIsConnecting(false);
+      }
+    };
+
     // 1. Check for incoming Instagram Authorization Code in direct URL params (e.g. mobile redirect)
     const urlParams = new URLSearchParams(window.location.search);
-    const authCode = urlParams.get('code');
+    let authCode = urlParams.get('code');
+    if (!authCode) {
+      try {
+        const storedCode = localStorage.getItem('jawebflow_last_ig_auth_code');
+        if (storedCode) {
+          authCode = storedCode;
+          localStorage.removeItem('jawebflow_last_ig_auth_code');
+        }
+      } catch (e) {
+        // Safe fallback
+      }
+    }
+
     if (authCode && user) {
       window.history.replaceState({}, document.title, window.location.pathname);
-      
-      const updatedPayload: InstagramIntegrationData = {
-        ...integrationData,
-        connected: true,
-        instagramUserId: `ig_${user.uid.substring(0, 8)}`,
-        instagramUsername: `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'boutique_dz'}`,
-        pageName: `${businessName || 'Entreprise'} Official Instagram`,
-        autoReplyEnabled: true,
-        respondToStories: true,
-        respondToComments: false,
-        lastConnectedAt: new Date().toISOString(),
-        webhookStatus: 'active',
-        totalMessagesHandled: integrationData.totalMessagesHandled || 18,
-        unresolvedCount: 0
-      };
-
-      saveLocalCache(user.uid, updatedPayload);
-      setIntegrationData(updatedPayload);
-
-      try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
-      } catch (e) {
-        // Safe offline
-      }
-
-      setNotification({
-        type: 'success',
-        message: 'Compte Instagram professionnel connecté avec succès ! L\'IA JawebFlow gère vos DMs.'
-      });
+      processAuthCode(authCode);
     }
 
     // 2. Listen for messages sent from popup window
     const handlePopupAuthMessage = (event: MessageEvent) => {
       if (event.data?.type === 'INSTAGRAM_AUTH_SUCCESS' && user) {
-        setIsConnecting(false);
-        const updatedPayload: InstagramIntegrationData = {
-          ...integrationData,
-          connected: true,
-          instagramUserId: `ig_${user.uid.substring(0, 8)}`,
-          instagramUsername: `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'boutique_dz'}`,
-          pageName: `${businessName || 'Entreprise'} Official Instagram`,
-          autoReplyEnabled: true,
-          respondToStories: true,
-          respondToComments: false,
-          lastConnectedAt: new Date().toISOString(),
-          webhookStatus: 'active',
-          totalMessagesHandled: integrationData.totalMessagesHandled || 18,
-          unresolvedCount: 0
-        };
-
-        saveLocalCache(user.uid, updatedPayload);
-        setIntegrationData(updatedPayload);
-
-        try {
-          const docRef = doc(db, 'instagram_integrations', user.uid);
-          setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
-        } catch (e) {
-          // Safe offline
+        const incomingCode = event.data?.code;
+        if (incomingCode) {
+          processAuthCode(incomingCode);
         }
-
-        setNotification({
-          type: 'success',
-          message: 'Compte Instagram connecté avec succès ! L\'IA JawebFlow gère vos DMs.'
-        });
       }
     };
 
@@ -242,7 +256,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       isMounted = false; 
       window.removeEventListener('message', handlePopupAuthMessage);
     };
-  }, [user, businessName, integrationData]);
+  }, [user?.uid, businessName]);
 
   // Handle Direct 100% Instagram OAuth Flow (No Facebook Required)
   const handleConnectInstagram = async () => {

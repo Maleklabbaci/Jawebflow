@@ -1344,10 +1344,29 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
               }
 
               // 2. Send the reply back directly via Meta Instagram Graph API if token is configured
-              const PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN || process.env.INSTAGRAM_ACCESS_TOKEN;
+              let PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN || process.env.INSTAGRAM_ACCESS_TOKEN;
+              
+              // Dynamic token lookup for the specific connected Instagram account / user
+              if (db) {
+                try {
+                  const igDoc = await db.collection("instagram_integrations").limit(5).get();
+                  if (!igDoc.empty) {
+                    for (const docItem of igDoc.docs) {
+                      const igData = docItem.data();
+                      if (igData.accessToken && (igData.instagramUserId === String(recipientId) || !PAGE_ACCESS_TOKEN)) {
+                        PAGE_ACCESS_TOKEN = igData.accessToken;
+                        break;
+                      }
+                    }
+                  }
+                } catch (tokErr) {
+                  console.warn("Instagram integration token lookup:", tokErr);
+                }
+              }
+
               if (PAGE_ACCESS_TOKEN) {
                 try {
-                  const metaSendRes = await fetch(`https://graph.facebook.com/v20.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+                  const metaSendRes = await fetch(`https://graph.instagram.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1361,7 +1380,7 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
                   console.error("❌ Failed to send DM reply back to Instagram:", sendErr);
                 }
               } else {
-                console.log(`ℹ️ [Simulated Meta Send] Generated reply for ${senderId}: "${botReplyText}" (Provide META_PAGE_ACCESS_TOKEN to auto-send live via Graph API)`);
+                console.log(`ℹ️ [Simulated Meta Send] Generated reply for ${senderId}: "${botReplyText}"`);
               }
 
               // 🧠 3. Instagram Conversation Continuous Self-Learning & History Middleware
@@ -1378,6 +1397,108 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
       }
     } catch (err) {
       console.error("❌ Instagram Webhook Error:", err);
+    }
+  });
+
+  // ============================================================================
+  // INSTAGRAM 100% AUTOMATED OAUTH TOKEN EXCHANGE & REAL PROFILE FETCHER
+  // ============================================================================
+  const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID || '1376023754506953';
+  const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || 'a0adcf14c3fc0e87564b3c35c70be359';
+  const INSTAGRAM_REDIRECT_URI = 'https://jawebflow.pages.dev/';
+
+  app.post('/api/instagram/oauth/exchange', async (req, res) => {
+    try {
+      const { code, userId } = req.body;
+      if (!code) {
+        return res.status(400).json({ error: 'Code d\'autorisation manquant' });
+      }
+
+      console.log(`[Instagram OAuth] Exchanging code automatically for user ${userId || 'anonymous'}...`);
+
+      // 1. Exchange authorization code for short-lived token
+      const tokenFormData = new URLSearchParams();
+      tokenFormData.append('client_id', INSTAGRAM_APP_ID);
+      tokenFormData.append('client_secret', INSTAGRAM_APP_SECRET);
+      tokenFormData.append('grant_type', 'authorization_code');
+      tokenFormData.append('redirect_uri', INSTAGRAM_REDIRECT_URI);
+      tokenFormData.append('code', code.replace(/#_$/, ''));
+
+      const tokenResponse = await fetch('https://api.instagram.com/oauth/access_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: tokenFormData.toString()
+      });
+
+      const tokenData = await tokenResponse.json();
+      console.log('[Instagram OAuth] Exchange result status:', tokenResponse.status, tokenData);
+
+      if (!tokenResponse.ok || !tokenData.access_token) {
+        return res.status(400).json({ 
+          error: tokenData.error_message || tokenData.error?.message || 'Échec d\'obtention du jeton Instagram',
+          details: tokenData 
+        });
+      }
+
+      const shortLivedToken = tokenData.access_token;
+      const instagramUserId = tokenData.user_id;
+
+      // 2. Exchange for 60-day Long-Lived Token
+      let finalAccessToken = shortLivedToken;
+      try {
+        const longLivedUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${INSTAGRAM_APP_SECRET}&access_token=${shortLivedToken}`;
+        const longLivedRes = await fetch(longLivedUrl);
+        const longLivedData = await longLivedRes.json();
+        if (longLivedData.access_token) {
+          finalAccessToken = longLivedData.access_token;
+          console.log('[Instagram OAuth] Converted to 60-day Long Lived Token');
+        }
+      } catch (llErr) {
+        console.warn('[Instagram OAuth] Long lived exchange fallback:', llErr);
+      }
+
+      // 3. Fetch real username and display info
+      let instagramUsername = '';
+      let accountName = '';
+      try {
+        const profileRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id,username,name,account_type&access_token=${finalAccessToken}`);
+        const profileData = await profileRes.json();
+        console.log('[Instagram OAuth] Real profile info:', profileData);
+        if (profileData.username) instagramUsername = profileData.username;
+        if (profileData.name) accountName = profileData.name;
+      } catch (pErr) {
+        console.warn('[Instagram OAuth] Profile fetch error:', pErr);
+      }
+
+      // 4. Persist directly to Firestore
+      if (db && userId) {
+        try {
+          await db.collection('instagram_integrations').doc(userId).set({
+            connected: true,
+            instagramUserId: String(instagramUserId || ''),
+            instagramUsername: instagramUsername ? `@${instagramUsername}` : `@compte_${String(instagramUserId).slice(-4)}`,
+            pageName: accountName || instagramUsername || 'Compte Instagram',
+            accessToken: finalAccessToken,
+            lastConnectedAt: new Date().toISOString(),
+            webhookStatus: 'active',
+            autoReplyEnabled: true,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (fsErr) {
+          console.warn('[Instagram OAuth] Firestore direct write:', fsErr);
+        }
+      }
+
+      return res.json({
+        success: true,
+        instagramUserId: String(instagramUserId || ''),
+        instagramUsername: instagramUsername ? `@${instagramUsername}` : `@compte_${String(instagramUserId).slice(-4)}`,
+        accountName: accountName || instagramUsername || 'Compte Instagram Professionnel',
+        accessToken: finalAccessToken
+      });
+    } catch (error: any) {
+      console.error('[Instagram OAuth] Server error:', error);
+      return res.status(500).json({ error: error.message || 'Erreur serveur interne' });
     }
   });
 
