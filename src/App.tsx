@@ -62,10 +62,15 @@ export default function App() {
     // Check for Instagram OAuth callback in URL parameters
     const searchParams = new URLSearchParams(window.location.search);
     const authCode = searchParams.get('code');
+    const authError = searchParams.get('error') || searchParams.get('error_description');
+
     if (authCode) {
+      // Strip any trailing #_ added by Instagram
+      const sanitizedCode = authCode.split('#')[0].replace(/_$/, '').trim();
+
       // Store in localStorage for cross-tab or redirect resilience
       try {
-        localStorage.setItem('jawebflow_last_ig_auth_code', authCode);
+        localStorage.setItem('jawebflow_last_ig_auth_code', sanitizedCode);
       } catch (e) {
         // Safe fallback
       }
@@ -73,19 +78,29 @@ export default function App() {
       // If opened inside a popup window, inform the parent opener and close itself immediately
       if (window.opener && window.opener !== window) {
         try {
-          window.opener.postMessage({ type: 'INSTAGRAM_AUTH_SUCCESS', code: authCode }, '*');
-          setTimeout(() => {
-            try { window.close(); } catch (e) {}
-          }, 300);
-          return;
+          window.opener.postMessage({ type: 'INSTAGRAM_AUTH_SUCCESS', code: sanitizedCode }, '*');
         } catch (err) {
           console.warn('Popup postMessage error:', err);
         }
+        setTimeout(() => {
+          try { window.close(); } catch (e) {}
+        }, 300);
+        return;
       }
       // If opened in the main window (e.g. mobile redirect), navigate straight to the Instagram cockpit
       setCurrentPage('create-assistant');
       setDashboardSection('instagram');
       return;
+    } else if (authError) {
+      if (window.opener && window.opener !== window) {
+        try {
+          window.opener.postMessage({ type: 'INSTAGRAM_AUTH_ERROR', error: authError }, '*');
+        } catch (e) {}
+        setTimeout(() => {
+          try { window.close(); } catch (e) {}
+        }, 300);
+        return;
+      }
     }
 
     setCurrentPage(initialRoute.page);

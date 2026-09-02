@@ -1409,20 +1409,23 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
 
   app.post('/api/instagram/oauth/exchange', async (req, res) => {
     try {
-      const { code, userId } = req.body;
+      const { code, userId, redirectUri } = req.body;
       if (!code) {
         return res.status(400).json({ error: 'Code d\'autorisation manquant' });
       }
 
-      console.log(`[Instagram OAuth] Exchanging code automatically for user ${userId || 'anonymous'}...`);
+      const cleanCode = String(code).split('#')[0].replace(/_$/, '').trim();
+      const targetRedirectUri = redirectUri || INSTAGRAM_REDIRECT_URI;
+
+      console.log(`[Instagram OAuth] Exchanging code automatically for user ${userId || 'anonymous'} with URI ${targetRedirectUri}...`);
 
       // 1. Exchange authorization code for short-lived token
       const tokenFormData = new URLSearchParams();
       tokenFormData.append('client_id', INSTAGRAM_APP_ID);
       tokenFormData.append('client_secret', INSTAGRAM_APP_SECRET);
       tokenFormData.append('grant_type', 'authorization_code');
-      tokenFormData.append('redirect_uri', INSTAGRAM_REDIRECT_URI);
-      tokenFormData.append('code', code.replace(/#_$/, ''));
+      tokenFormData.append('redirect_uri', targetRedirectUri);
+      tokenFormData.append('code', cleanCode);
 
       const tokenResponse = await fetch('https://api.instagram.com/oauth/access_token', {
         method: 'POST',
