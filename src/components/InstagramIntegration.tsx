@@ -185,15 +185,17 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           })
         });
 
-        if (response.ok) {
-          const text = await response.text();
-          if (text && text.trim()) {
-            try {
-              serverResult = JSON.parse(text);
-            } catch (parseErr) {
-              console.warn('Non-JSON server response:', parseErr);
-            }
+        const text = await response.text();
+        if (text && text.trim()) {
+          try {
+            serverResult = JSON.parse(text);
+          } catch (parseErr) {
+            console.warn('Réponse serveur non JSON:', parseErr);
+            serverResult = { error: text.slice(0, 240) };
           }
+        }
+        if (!response.ok && !serverResult) {
+          serverResult = { error: `Erreur serveur OAuth (${response.status})` };
         }
       } catch (netErr) {
         console.warn('Exchange API network notice (static hosting environment):', netErr);
@@ -251,6 +253,10 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
     // 1. Check for incoming Instagram Authorization Code in direct URL params (e.g. mobile redirect)
     const urlParams = new URLSearchParams(window.location.search);
+    const oauthError = urlParams.get('error_description') || urlParams.get('error_reason') || urlParams.get('error');
+    if (oauthError && user) {
+      setNotification({ type: 'error', message: `Meta a refusé l’autorisation : ${oauthError}` });
+    }
     let authCode = urlParams.get('code');
     if (!authCode) {
       try {
@@ -264,7 +270,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       }
     }
 
-    if (authCode && user) {
+    if (authCode && user && !oauthError) {
       window.history.replaceState({}, document.title, window.location.pathname);
       processAuthCode(authCode);
     }

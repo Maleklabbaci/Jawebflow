@@ -734,7 +734,7 @@ Règles de communication impératives :
   // Deep Multi-Page Crawler & AI Knowledge Generator
   app.post("/api/crawler/analyze", async (req, res) => {
     try {
-      let { url } = req.body;
+      let { url, assistantId, userId } = req.body;
       if (!url) {
         return res.status(400).json({ error: "URL is required" });
       }
@@ -786,9 +786,16 @@ Règles de communication impératives :
           },
           signal: AbortSignal.timeout(8000)
         });
+        if (!resp.ok) {
+          throw new Error(`Le site a répondu HTTP ${resp.status}`);
+        }
         rootHtml = await resp.text();
       } catch (err: any) {
         console.warn(`[Crawler] Root fetch error for ${url}:`, err?.message || err);
+      }
+
+      if (!rootHtml.trim()) {
+        return res.status(502).json({ error: "Impossible de récupérer le contenu HTML du site." });
       }
 
       const rootTitleMatch = rootHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
@@ -1091,7 +1098,8 @@ IMPORTANT :
         };
       }
 
-      // Add scanned pages summary to response
+      // Les fiches sont renvoyées au client, qui les fusionne avec l’assistant
+      // authentifié et les sauvegarde dans Firestore sans inventer de contenu.
       res.json({
         ...generatedResult,
         scannedPages: crawledPages.map((p) => ({

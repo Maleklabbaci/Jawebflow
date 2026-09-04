@@ -439,7 +439,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return () => unsubscribe();
   }, [assistantId]);
 
-  const handleSaveToDatabase = async () => {
+  const handleSaveToDatabase = async (notesOverride?: KnowledgeNote[], metadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>) => {
     if (!user) return;
     try {
       setIsSavingDb(true);
@@ -447,14 +447,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       const savedId = await saveAssistantToDatabase({
         id: assistantId || undefined,
         userId: user.uid,
-        businessName: businessName.trim() || 'Mon Entreprise',
-        websiteUrl: websiteUrl.trim(),
-        siteType,
-        siteTypeConfidence,
-        scrapingStrategy,
-        businessCategory: businessCategory || 'Services',
-        businessDescription: businessDescription.trim(),
-        knowledgeNotes,
+        businessName: (metadataOverride?.businessName ?? businessName).trim() || 'Mon Entreprise',
+        websiteUrl: (metadataOverride?.websiteUrl ?? websiteUrl).trim(),
+        siteType: metadataOverride?.siteType ?? siteType,
+        siteTypeConfidence: metadataOverride?.siteTypeConfidence ?? siteTypeConfidence,
+        scrapingStrategy: metadataOverride?.scrapingStrategy ?? scrapingStrategy,
+        businessCategory: (metadataOverride?.businessCategory ?? businessCategory) || 'Services',
+        businessDescription: (metadataOverride?.businessDescription ?? businessDescription).trim(),
+        knowledgeNotes: notesOverride ?? knowledgeNotes,
         faqText: faqText.trim(),
         pricingServicesText: pricingServicesText.trim(),
         specialRulesText: specialRulesText.trim(),
@@ -633,7 +633,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       const response = await fetch("/api/crawler/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.startsWith("http") ? url : `https://${url}` })
+        body: JSON.stringify({
+          url: url.startsWith("http") ? url : `https://${url}`,
+          assistantId: assistantId || undefined,
+          userId: user?.uid || undefined
+        })
       });
 
       setScanProgress(70);
@@ -679,68 +683,39 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         setScanStage(`Analyse terminée ! ${data.knowledgeNotes?.length || 0} fiches de connaissances générées.`);
         
         if (data.knowledgeNotes && data.knowledgeNotes.length > 0) {
-          setScanResultNotes(data.knowledgeNotes.map((n: any) => ({
+          const scannedNotes: KnowledgeNote[] = data.knowledgeNotes.map((n: any) => ({
             ...n,
             id: n.id || "scanned_" + Math.random().toString(36).substring(2, 9),
             updatedAt: new Date().toISOString()
-          })));
+          }));
+          const existingTitles = new Set(knowledgeNotes.map(n => n.title.toLowerCase().trim()));
+          const notesToSave = [...scannedNotes.filter(n => !existingTitles.has(n.title.toLowerCase().trim())), ...knowledgeNotes];
+          setScanResultNotes(scannedNotes);
+          setKnowledgeNotes(notesToSave);
+          setWebsiteUrl(url);
+          await handleSaveToDatabase(notesToSave, {
+            websiteUrl: url,
+            businessName: data.businessName || businessName,
+            businessCategory: data.businessCategory || businessCategory,
+            businessDescription: data.businessDescription || businessDescription,
+            siteType: data.siteType || siteType,
+            siteTypeConfidence: data.confidence || siteTypeConfidence,
+            scrapingStrategy: data.scrapingStrategy || scrapingStrategy
+          });
+          setScanSuccessMessage(`${scannedNotes.length} fiches réelles enregistrées dans la base de connaissances.`);
         }
         setIsScanning(false);
       } else {
         throw new Error("Crawler API returned non-ok");
       }
-    } catch (e) {
-      console.warn("Crawler fetch failed, using smart fallback", e);
-      setScanProgress(100);
-      setScanStage("Analyse terminée (Mode synthèse de secours).");
-      setScannedPages(prev => prev.map(p => ({ ...p, status: "done" })));
+    } catch (e: any) {
+      console.error("Crawler réel échoué", e);
+      setScanProgress(0);
+      setScanStage("Le site n’a pas pu être lu. Aucune donnée inventée n’a été ajoutée.");
+      setScannedPages(prev => prev.map(p => ({ ...p, status: "failed" })));
+      setScanResultNotes(null);
+      setScanSuccessMessage(`Scan impossible : ${e?.message || "vérifiez l’URL et rendez le site accessible publiquement."}`);
       setIsScanning(false);
-      
-      const domainName = url.replace(/^https?:\/\//, "").split("/")[0];
-      const targetBiz = businessName || domainName;
-      
-      const generatedNotes: KnowledgeNote[] = [
-        {
-          id: "scanned_gen_" + Math.random().toString(36).substring(2, 9),
-          title: `Mission & Positionnement de ${targetBiz}`,
-          category: "general",
-          enabled: true,
-          source: "scanned",
-          content: `${targetBiz} (${url}) propose des prestations et solutions professionnelles complètes pour ses clients.`,
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: "scanned_srv_" + Math.random().toString(36).substring(2, 9),
-          title: "Prestations & Catalogue de Services",
-          category: "services",
-          enabled: true,
-          source: "scanned",
-          content: `Découvrez l'ensemble de notre catalogue sur notre site officiel ${url}. Contactez nos conseillers pour un accompagnement sur-mesure.`,
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: "scanned_liv_" + Math.random().toString(36).substring(2, 9),
-          title: "Livraison & Expédition (58 Wilayas)",
-          category: "livraison",
-          enabled: true,
-          source: "scanned",
-          content: "Livraison assurée dans l'ensemble des 58 wilayas d'Algérie avec suivi en temps réel et paiement sécurisé.",
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: "scanned_ctc_" + Math.random().toString(36).substring(2, 9),
-          title: "Contact & Assistance Client",
-          category: "contact",
-          enabled: true,
-          source: "scanned",
-          content: `Pour toute question ou demande de devis, contactez notre équipe par message ou directement sur ${url}.`,
-          updatedAt: new Date().toISOString()
-        }
-      ];
-      
-      setSiteType("vitrine");
-      setSiteTypeConfidence(75);
-      setScanResultNotes(generatedNotes);
     }
   };
 
@@ -759,9 +734,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     setKnowledgeNotes(updatedNotes);
     setWebsiteUrl(crawlerUrl.trim() || websiteUrl.trim());
     setScanSuccessMessage(`${scanResultNotes.length} fiches importées avec succès et enregistrées dans la base de connaissances !`);
-    
-    // Automatically persist to Firestore database
-    handleSaveToDatabase();
+    // Utiliser explicitement la nouvelle valeur : setState est asynchrone.
+    handleSaveToDatabase(updatedNotes);
   };
 
   // AI response in simulator leveraging live backend API with real knowledge notes and error handling
