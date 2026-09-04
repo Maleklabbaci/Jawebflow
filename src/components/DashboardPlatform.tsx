@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -137,6 +137,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Assistant Configuration State
   const [assistantId, setAssistantId] = useState<string>('');
+  const [assistantLoaded, setAssistantLoaded] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [widgetId, setWidgetId] = useState<string>('');
   const [businessName, setBusinessName] = useState<string>('');
   const [websiteUrl, setWebsiteUrl] = useState<string>('');
@@ -336,8 +338,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         try {
           const assistants = await getUserAssistants(user.uid);
           if (assistants.length > 0) {
-            const current = assistants[0];
+            const activeId = localStorage.getItem(`jawebflow_active_assistant_${user.uid}`);
+            const current = assistants.find(item => item.id === activeId) || assistants[0];
             setAssistantId(current.id || '');
+            if (current.id) localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, current.id);
             setWidgetId(current.widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`);
             if (current.plan) setActivePlan(current.plan as PaymentPlanId);
             if (current.businessName) setBusinessName(current.businessName);
@@ -371,7 +375,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             const newWid = `asst_${Math.random().toString(36).substring(2, 10)}`;
             setWidgetId(newWid);
           }
+          setAssistantLoaded(true);
         } catch (e) {
+          setAssistantLoaded(true);
           console.warn('Failed to load user assistant:', e);
         }
       };
@@ -469,7 +475,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           headerTitle: widgetConfig.headerTitle || businessName.trim() || 'Assistant IA'
         }
       });
-      if (savedId) setAssistantId(savedId);
+      if (savedId) {
+        setAssistantId(savedId);
+        localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, savedId);
+      }
       setSavedDbSuccess(true);
       setTimeout(() => setSavedDbSuccess(false), 3000);
     } catch (err) {
@@ -510,7 +519,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           headerTitle: widgetConfig.headerTitle || businessName.trim() || 'Assistant IA'
         }
       });
-      if (savedId) setAssistantId(savedId);
+      if (savedId) {
+        setAssistantId(savedId);
+        localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, savedId);
+      }
       setSavedDbSuccess(true);
       setTimeout(() => setSavedDbSuccess(false), 3000);
     } catch (err) {
@@ -519,6 +531,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setIsSavingDb(false);
     }
   };
+
+  // Autosave : les modifications ne doivent pas disparaître si l’utilisateur recharge ou se déconnecte.
+  useEffect(() => {
+    if (!user || !assistantLoaded || !assistantId) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      handleSaveToDatabase().catch((error) => console.error('Autosave assistant failed:', error));
+    }, 900);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [user?.uid, assistantLoaded, assistantId, businessName, websiteUrl, siteType, siteTypeConfidence, businessCategory, businessDescription, knowledgeNotes, faqText, pricingServicesText, specialRulesText, assistantTone, languages, autoLeadCapture, whatsappEscalation, webhookUrl, widgetConfig]);
 
   const handleExportCSV = () => {
     const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];

@@ -393,13 +393,13 @@ Règles de communication impératives :
       if (process.env.GEMINI_API_KEY) {
         try {
           const response = await ai.models.generateContent({
-            model: "gemini-3.7-flash",
+            model: "gemini-2.5-flash-lite",
             contents: userMessage,
             config: { systemInstruction: richSystemInstruction }
           });
           replyText = response.text || "";
           if (replyText) {
-            usedModel = "gemini-3.7-flash";
+            usedModel = "gemini-2.5-flash-lite";
             usedProvider = "Gemini";
           }
         } catch (geminiErr) {
@@ -407,8 +407,9 @@ Règles de communication impératives :
         }
       }
 
-      // 2. Secondary AI Provider / Fallback: AgentRouter.org if Gemini didn't reply
-      if (!replyText) {
+      // JawebFlow doit rester sur Gemini ; aucun fallback silencieux pour son assistant officiel.
+      // Pour les assistants clients, AgentRouter reste disponible comme secours optionnel.
+      if (!replyText && !isJawebFlowOfficial) {
         const requestedModel = req.body?.model || process.env.AGENTROUTER_MODEL;
         const candidateModels = Array.from(new Set([
           requestedModel,
@@ -484,7 +485,7 @@ Règles de communication impératives :
         status: "success",
         assistantId: assistantId,
         provider: usedProvider || "Unavailable",
-        model: usedModel || "gemini-3.7-flash",
+        model: usedModel || "gemini-2.5-flash-lite",
         text: replyText,
         message: replyText,
         response: replyText,
