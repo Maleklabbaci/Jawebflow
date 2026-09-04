@@ -1,270 +1,154 @@
-// Cloudflare Pages Function pour valider et traiter les Webhooks Instagram Meta
 import firebaseConfig from "../../../firebase-applet-config.json";
 
-interface ProcessResult {
-  status: string;
-  senderId?: string;
-  botReply?: string;
-  metaResult?: any;
+interface Env { GEMINI_API_KEY?: string; INSTAGRAM_VERIFY_TOKEN?: string; }
+type Integration = { accessToken: string; instagramUserId: string; instagramUsername?: string; assistantId?: string; autoReplyEnabled?: boolean; assistantTone?: string; customGreeting?: string };
+
+type FirestoreValue = { stringValue?: string; booleanValue?: boolean; integerValue?: string; doubleValue?: number; arrayValue?: { values?: FirestoreValue[] }; mapValue?: { fields?: Record<string, FirestoreValue> } };
+function value(field?: FirestoreValue): any {
+  if (!field) return undefined;
+  if (field.stringValue !== undefined) return field.stringValue;
+  if (field.booleanValue !== undefined) return field.booleanValue;
+  if (field.integerValue !== undefined) return Number(field.integerValue);
+  if (field.doubleValue !== undefined) return field.doubleValue;
+  if (field.arrayValue) return (field.arrayValue.values || []).map(value);
+  if (field.mapValue) return Object.fromEntries(Object.entries(field.mapValue.fields || {}).map(([key, val]) => [key, value(val)]));
+  return undefined;
 }
 
-async function fetchFirestoreIntegration() {
-  try {
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents:runQuery?key=${firebaseConfig.apiKey}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: "instagram_integrations" }],
-          limit: 5
-        }
-      })
-    });
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        if (item.document && item.document.fields) {
-          const fields = item.document.fields;
-          const token = fields.accessToken?.stringValue;
-          if (token) {
-            return {
-              accessToken: token,
-              instagramUserId: fields.instagramUserId?.stringValue || "28053148244344018",
-              instagramUsername: fields.instagramUsername?.stringValue || "@telyaagency",
-              pageName: fields.pageName?.stringValue || "Telya Agency 🚀",
-              assistantTone: fields.assistantTone?.stringValue || "professionnel",
-              customGreeting: fields.customGreeting?.stringValue || "Salam ! Bienvenue chez Telya Agency.",
-              autoReplyEnabled: fields.autoReplyEnabled?.booleanValue !== false
-            };
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[CF Webhook] Firestore integration lookup error:", err);
-  }
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
+}
 
-  // Aucun token de secours : une intégration non connectée ne doit jamais
-  // envoyer de message avec les identifiants d’un autre compte.
+async function firestoreQuery(structuredQuery: any) {
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents:runQuery?key=${firebaseConfig.apiKey}`;
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ structuredQuery }) });
+  if (!response.ok) throw new Error(`Firestore HTTP ${response.status}`);
+  return await response.json() as any[];
+}
+
+async function fetchIntegration(instagramUserId?: string): Promise<Integration | null> {
+  try {
+    const structuredQuery: any = { from: [{ collectionId: "instagram_integrations" }], limit: 50 };
+    if (instagramUserId) {
+      structuredQuery.where = { fieldFilter: { field: { fieldPath: "instagramUserId" }, op: "EQUAL", value: { stringValue: String(instagramUserId) } } };
+      structuredQuery.limit = 1;
+    }
+    const rows = await firestoreQuery(structuredQuery);
+    for (const row of rows) {
+      const fields = row.document?.fields as Record<string, FirestoreValue> | undefined;
+      const token = value(fields?.accessToken);
+      if (token) return {
+        accessToken: String(token), instagramUserId: String(value(fields?.instagramUserId) || instagramUserId || ""),
+        instagramUsername: value(fields?.instagramUsername), assistantId: value(fields?.assistantId),
+        autoReplyEnabled: value(fields?.autoReplyEnabled) !== false, assistantTone: value(fields?.assistantTone), customGreeting: value(fields?.customGreeting)
+      };
+    }
+  } catch (error) { console.error("[CF Instagram] intégration Firestore inaccessible:", error); }
   return null;
 }
 
-async function fetchAssistantKnowledge() {
+async function fetchAssistantKnowledge(assistantId?: string) {
+  const fallback = { businessName: "", website: "", knowledgeNotes: [] as any[], assistantTone: "professionnel", customGreeting: "" };
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents:runQuery?key=${firebaseConfig.apiKey}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: "assistants" }],
-          limit: 3
-        }
-      })
-    });
-    const data = await res.json();
-    if (Array.isArray(data) && data[0]?.document?.fields) {
-      const f = data[0].document.fields;
-      return {
-        businessName: f.businessName?.stringValue || f.name?.stringValue || "Telya Agency",
-        website: f.website?.stringValue || f.websiteUrl?.stringValue || "https://jawebflow.pages.dev",
-        phone: f.phoneNumber?.stringValue || ""
-      };
-    }
-  } catch (err) {
-    console.error("[CF Webhook] Assistant knowledge lookup error:", err);
-  }
-  return {
-    businessName: "Telya Agency",
-    website: "https://jawebflow.pages.dev",
-    phone: ""
-  };
+    if (!assistantId) return fallback;
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/assistants/${encodeURIComponent(assistantId)}?key=${firebaseConfig.apiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Assistant HTTP ${response.status}`);
+    const document = await response.json() as any;
+    const fields = document.fields as Record<string, FirestoreValue>;
+    return {
+      businessName: value(fields?.businessName) || value(fields?.name) || "",
+      website: value(fields?.websiteUrl) || value(fields?.website) || "",
+      knowledgeNotes: value(fields?.knowledgeNotes) || [],
+      assistantTone: value(fields?.assistantTone) || "professionnel",
+      customGreeting: value(fields?.customGreeting) || ""
+    };
+  } catch (error) { console.error("[CF Instagram] base assistant inaccessible:", error); return fallback; }
 }
 
-async function generateAiReply(userText: string, businessInfo: any, env?: any): Promise<string> {
-  const apiKey = env?.GEMINI_API_KEY || (typeof process !== "undefined" && process.env?.GEMINI_API_KEY) || businessInfo?.geminiApiKey;
-  
-  const prompt = `Tu es l'assistant IA Instagram officiel de "${businessInfo.businessName || 'notre agence'}" en Algérie.
-Ton rôle : répondre avec politesse, rapidité et concision (format Instagram DM), en Français et en Darija si le client s'adresse en arabe ou darija.
-Données clés :
-- Site Web : ${businessInfo.website}
-- Livraison : Disponible dans les 58 wilayas d'Algérie en 24h/48h.
-- Paiement : À la livraison (main à main) et par BaridiMob.
+async function generateAiReply(userText: string, info: any, env: Env, integration: Integration) {
+  if (!env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY absent dans l’environnement Cloudflare Production.");
+  const notes = (info.knowledgeNotes || []).filter((note: any) => note?.enabled !== false && note?.content).slice(0, 50);
+  const knowledge = notes.map((note: any) => `### ${note.title || "Information"}\n${note.content}`).join("\n\n").slice(0, 30000);
+  const prompt = `Tu es l’assistant Instagram officiel de ${info.businessName || "cette entreprise"}. Réponds au dernier message en français ou en darija selon la langue du client, avec un ton ${info.assistantTone || integration.assistantTone || "professionnel"}. Réponse courte et naturelle pour un DM.
 
-Message de l'utilisateur sur Instagram : "${userText}"
-Réponds directement en 1 ou 2 phrases percutantes et chaleureuses adaptées aux DM Instagram.`;
+RÈGLE ABSOLUE : utilise uniquement les informations de la base ci-dessous. Si une information n’est pas présente, dis honnêtement que tu dois vérifier et propose le contact disponible. N’invente jamais de prix, livraison, wilaya, délai, produit ou promotion.
 
-  if (apiKey) {
-    try {
-      const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
-      const genRes = await fetch(genUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      if (genRes.ok) {
-        const genData = await genRes.json();
-        const text = genData.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text.trim();
-      } else {
-        console.warn("[CF Webhook] Gemini API non-ok status:", genRes.status, await genRes.text().catch(() => ''));
-      }
-    } catch (e) {
-      console.warn("[CF Webhook] Gemini generation error, using smart fallback:", e);
-    }
-  }
+BASE DE CONNAISSANCES :
+${knowledge || "Aucune fiche de connaissance disponible."}
 
-  return `Salam ! Merci pour votre message chez ${businessInfo.businessName || 'Telya Agency'}. Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h (Paiement à la livraison & BaridiMob). Découvrez nos offres sur notre site : ${businessInfo.website} ! En quoi pouvons-nous vous aider ?`;
-}
-
-async function sendMetaInstagramMessage(recipientId: string, text: string, accessToken: string) {
-  // 1. Essai direct via Instagram Graph API
-  try {
-    const igUrl = `https://graph.instagram.com/v21.0/me/messages?access_token=${accessToken}`;
-    const igRes = await fetch(igUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text: text }
-      })
-    });
-    const igData = await igRes.json();
-    if (igRes.ok && !igData.error) {
-      return { success: true, via: "graph.instagram.com", data: igData };
-    }
-    console.warn("[CF Webhook] graph.instagram.com notice, trying graph.facebook.com fallback:", igData);
-  } catch (e) {
-    console.warn("[CF Webhook] graph.instagram.com fetch error:", e);
-  }
-
-  // 2. Fallback via Facebook Graph API (Messenger for Instagram)
-  try {
-    const fbUrl = `https://graph.facebook.com/v21.0/me/messages?access_token=${accessToken}`;
-    const fbRes = await fetch(fbUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text: text }
-      })
-    });
-    const fbData = await fbRes.json();
-    return { success: fbRes.ok && !fbData.error, via: "graph.facebook.com", data: fbData };
-  } catch (err: any) {
-    return { success: false, error: err?.message || err };
-  }
-}
-
-async function handleIncomingEvents(body: any, env?: any): Promise<ProcessResult[]> {
-  const results: ProcessResult[] = [];
-  if (body.object !== "instagram" && body.object !== "page") {
-    return results;
-  }
-
-  const integration = await fetchFirestoreIntegration();
-  if (!integration || !integration.accessToken || !integration.autoReplyEnabled) {
-    console.warn("[CF Webhook] No active Instagram integration or auto-reply disabled");
-    return results;
-  }
-
-  const businessInfo = await fetchAssistantKnowledge();
-
-  const entries = body.entry || [];
-  for (const entry of entries) {
-    const messaging = entry.messaging || [];
-    for (const event of messaging) {
-      const senderId = event.sender?.id;
-      const message = event.message;
-
-      if (message && message.text && !message.is_echo && senderId) {
-        console.log(`[CF Webhook] DM from ${senderId}: "${message.text}"`);
-        const replyText = await generateAiReply(message.text, businessInfo, env);
-        const sendResult = await sendMetaInstagramMessage(senderId, replyText, integration.accessToken);
-        results.push({
-          status: sendResult.success ? "sent" : "error",
-          senderId,
-          botReply: replyText,
-          metaResult: sendResult
-        });
-      }
-    }
-  }
-
-  return results;
-}
-
-export async function onRequestGet(context: any) {
-  const url = new URL(context.request.url);
-  const challenge = url.searchParams.get("hub.challenge") || url.searchParams.get("challenge");
-
-  // Si Meta envoie son challenge de vérification
-  if (challenge) {
-    return new Response(challenge, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      }
-    });
-  }
-
-  // Si on visite l'URL dans le navigateur pour vérifier
-  return new Response(`
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head><meta charset="utf-8"><title>JawebFlow Webhook OK</title></head>
-    <body style="background:#090d16;color:#34d399;font-family:sans-serif;padding:40px;text-align:center;">
-      <h2>● Webhook Instagram JawebFlow Actif sur Cloudflare Edge</h2>
-      <p style="color:#94a3b8">Prêt pour la réception des messages Instagram Direct & Meta</p>
-    </body>
-    </html>
-  `, {
-    status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8" }
+Message client : ${userText}
+Réponds uniquement avec le texte à envoyer, sans titre ni explication interne.`;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.25, maxOutputTokens: 300 } })
   });
+  const data = await response.json().catch(() => ({})) as any;
+  if (!response.ok) throw new Error(`Gemini HTTP ${response.status}: ${data.error?.message || "erreur inconnue"}`);
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!text) throw new Error("Gemini n’a retourné aucune réponse.");
+  return text;
 }
 
-export async function onRequestPost(context: any) {
+async function sendInstagramMessage(recipientId: string, text: string, accessToken: string) {
+  const attempts = [
+    `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(accessToken)}`,
+    `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(accessToken)}`
+  ];
+  let lastError = "";
+  for (const url of attempts) {
+    try {
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }) });
+      const data = await response.json().catch(() => ({})) as any;
+      if (response.ok && !data.error) return { success: true, data };
+      lastError = data.error?.message || `Meta HTTP ${response.status}`;
+    } catch (error: any) { lastError = error?.message || "Erreur réseau Meta"; }
+  }
+  return { success: false, error: lastError };
+}
+
+async function processEvents(body: any, env: Env) {
+  if (body.object !== "instagram" && body.object !== "page") return;
+  for (const entry of body.entry || []) {
+    for (const event of entry.messaging || []) {
+      const message = event.message;
+      const senderId = event.sender?.id;
+      const recipientId = event.recipient?.id || entry.id;
+      if (!message?.text || message.is_echo || !senderId) continue;
+      const integration = await fetchIntegration(recipientId);
+      if (!integration?.accessToken || integration.autoReplyEnabled === false) {
+        console.error(`[CF Instagram] aucun token actif pour recipient=${recipientId}`);
+        continue;
+      }
+      const info = await fetchAssistantKnowledge(integration.assistantId);
+      try {
+        const reply = await generateAiReply(message.text, info, env, integration);
+        const result = await sendInstagramMessage(senderId, reply, integration.accessToken);
+        if (!result.success) console.error(`[CF Instagram] réponse non envoyée à ${senderId}:`, result.error);
+        else console.log(`[CF Instagram] réponse envoyée via Gemini à ${senderId}, assistant=${integration.assistantId || "inconnu"}`);
+      } catch (error) { console.error("[CF Instagram] traitement Gemini échoué:", error); }
+    }
+  }
+}
+
+export async function onRequestGet(context: { request: Request; env: Env }) {
+  const url = new URL(context.request.url);
+  const challenge = url.searchParams.get("hub.challenge");
+  const verifyToken = url.searchParams.get("hub.verify_token");
+  if (challenge && verifyToken === (context.env.INSTAGRAM_VERIFY_TOKEN || "jawebflow_secure_webhook_token_2025")) return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
+  if (challenge) return new Response("Token de vérification invalide", { status: 403 });
+  return new Response("JawebFlow Instagram webhook actif", { status: 200 });
+}
+
+export async function onRequestPost(context: { request: Request; env: Env; waitUntil?: (promise: Promise<unknown>) => void }) {
   try {
     const body = await context.request.json();
-    console.log("[CF Webhook] Received Meta POST payload:", JSON.stringify(body).slice(0, 150));
-
-    // Exécution du traitement de message
-    const promise = handleIncomingEvents(body, context.env);
-    if (context.waitUntil) {
-      context.waitUntil(promise);
-    } else {
-      await promise;
-    }
-
-    return new Response(JSON.stringify({ status: "EVENT_RECEIVED" }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      }
-    });
-  } catch (err: any) {
-    console.error("[CF Webhook] Error processing POST:", err);
-    return new Response(JSON.stringify({ status: "EVENT_RECEIVED", error: err?.message }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
+    const work = processEvents(body, context.env);
+    if (context.waitUntil) context.waitUntil(work); else await work;
+    return json({ status: "EVENT_RECEIVED" });
+  } catch (error: any) {
+    console.error("[CF Instagram] webhook invalide:", error);
+    return json({ status: "EVENT_RECEIVED", error: error?.message || "invalid payload" });
   }
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With"
-    }
-  });
-}
-
+export async function onRequestOptions() { return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" } }); }

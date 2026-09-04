@@ -35,6 +35,7 @@ import { useAuth } from '../context/AuthContext';
 
 export interface InstagramIntegrationData {
   connected: boolean;
+  assistantId?: string;
   instagramUserId?: string;
   instagramUsername?: string;
   pageId?: string;
@@ -147,9 +148,12 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         const snap = await getDoc(docRef);
         if (snap.exists() && isMounted) {
           const data = snap.data() as InstagramIntegrationData;
-          const merged = { ...integrationData, ...data };
+          const merged = { ...integrationData, ...data, assistantId: data.assistantId || assistantId };
           setIntegrationData(merged);
           saveLocalCache(user.uid, merged);
+          if (assistantId && data.assistantId !== assistantId) {
+            await setDoc(docRef, { assistantId }, { merge: true });
+          }
         }
       } catch (err: any) {
         // Gracefully handle offline or network hiccups without noisy console errors
@@ -219,6 +223,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       const updatedPayload: InstagramIntegrationData = {
         ...integrationData,
         connected: true,
+        assistantId,
         instagramUserId: finalUserId,
         instagramUsername: finalUsername,
         pageName: finalPageName,
@@ -334,6 +339,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     const updatedPayload: InstagramIntegrationData = {
       ...integrationData,
       connected: true,
+      assistantId,
       instagramUserId: integrationData.instagramUserId || `ig_${user?.uid ? user.uid.substring(0, 8) : 'dz'}_${Date.now().toString().slice(-4)}`,
       instagramUsername: formattedUsername,
       pageName: `${formattedUsername.replace('@', '')} Official Instagram`,
@@ -551,6 +557,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       const updatedPayload: InstagramIntegrationData = {
         ...integrationData,
         connected: true,
+        assistantId,
         accessToken: cleanToken,
         instagramUserId: igUserId || `ig_${user.uid.substring(0, 8)}`,
         instagramUsername: igUsername || `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'mon_compte_ig'}`,
