@@ -45,16 +45,9 @@ async function fetchFirestoreIntegration() {
     console.error("[CF Webhook] Firestore integration lookup error:", err);
   }
 
-  // Fallback fiable directement avec le compte actif validé de l'utilisateur
-  return {
-    accessToken: "IGAATjfH8XAslBZAFo0dUlxb2g5d1pCbDdqaDRQT21IOWFPWUZA2UTZAUUzl3ekc3aWUxWWliNmRhOWYzdk1SbGpyY1U5bXJEeFRTcHpUZAWpaN0QtRmN1XzVXMWVwamlZAX05WTzZAIbW5acmZAQQ3AwX09odUVR",
-    instagramUserId: "28053148244344018",
-    instagramUsername: "@telyaagency",
-    pageName: "Telya Agency 🚀",
-    assistantTone: "professionnel",
-    customGreeting: "Salam ! Bienvenue chez Telya Agency.",
-    autoReplyEnabled: true
-  };
+  // Aucun token de secours : une intégration non connectée ne doit jamais
+  // envoyer de message avec les identifiants d’un autre compte.
+  return null;
 }
 
 async function fetchAssistantKnowledge() {

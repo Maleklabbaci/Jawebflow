@@ -181,7 +181,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           body: JSON.stringify({ 
             code: cleanCode, 
             userId: user?.uid,
-            redirectUri: 'https://jawebflow.pages.dev/'
+            redirectUri: `${window.location.origin}/`
           })
         });
 
@@ -199,15 +199,20 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         console.warn('Exchange API network notice (static hosting environment):', netErr);
       }
 
-      // Determine profile data from server or default business context
-      const finalUsername = serverResult?.instagramUsername || 
-        (integrationData.instagramUsername && integrationData.instagramUsername !== '@mon_entreprise' 
-          ? integrationData.instagramUsername 
-          : (businessName ? `@${businessName.toLowerCase().replace(/\s+/g, '_')}` : '@boutique_officielle'));
+      if (!serverResult?.success || !serverResult?.accessToken || !serverResult?.instagramUserId) {
+        setIsConnecting(false);
+        setNotification({
+          type: 'error',
+          message: `Connexion Instagram refusée : ${serverResult?.error || 'Meta n’a pas renvoyé de jeton valide.'}`
+        });
+        return;
+      }
 
-      const finalUserId = serverResult?.instagramUserId || `ig_${user?.uid?.substring(0, 8) || 'dz'}_${Date.now().toString().slice(-4)}`;
-      const finalPageName = serverResult?.accountName || `${businessName || 'Entreprise'} Official Instagram`;
-      const finalAccessToken = serverResult?.accessToken || '';
+      // Seules les données confirmées par Meta peuvent activer l’intégration.
+      const finalUsername = serverResult.instagramUsername || '@compte_instagram';
+      const finalUserId = String(serverResult.instagramUserId);
+      const finalPageName = serverResult.accountName || finalUsername;
+      const finalAccessToken = serverResult.accessToken;
 
       const updatedPayload: InstagramIntegrationData = {
         ...integrationData,
@@ -240,7 +245,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
       setNotification({
         type: 'success',
-        message: `Compte Instagram (${finalUsername}) connecté avec succès ! L'IA JawebFlow est active pour vos DMs & Stories.`
+        message: `Compte Instagram (${finalUsername}) connecté avec un jeton Meta réel. L’IA Gemini est prête pour vos DMs.`
       });
     };
 
@@ -282,67 +287,30 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     };
   }, [user?.uid, businessName]);
 
-  // Handle 100% robust Instagram Connection with Meta Graph API verification & instant activation
+    // Ouvre le vrai flux Instagram Login de Meta. La connexion n'est validée
+  // qu'après retour d'un code OAuth échangé côté serveur contre un token réel.
   const handleConnectInstagram = async () => {
     if (!user) {
-      setNotification({
-        type: 'error',
-        message: 'Vous devez être connecté à votre compte JawebFlow pour lier Instagram.'
-      });
+      setNotification({ type: 'error', message: 'Vous devez être connecté à JawebFlow pour lier Instagram.' });
       return;
     }
 
+    // L’App ID Meta est public ; le secret reste exclusivement côté serveur.
+    const appId = '1376023754506953';
+    const redirectUri = `${window.location.origin}/`;
+    const scope = ['instagram_business_basic', 'instagram_business_manage_messages'].join(',');
+    const oauthUrl = new URL('https://www.instagram.com/oauth/authorize');
+    oauthUrl.searchParams.set('client_id', appId);
+    oauthUrl.searchParams.set('redirect_uri', redirectUri);
+    oauthUrl.searchParams.set('response_type', 'code');
+    oauthUrl.searchParams.set('scope', scope);
+
     setIsConnecting(true);
-    setNotification(null);
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      const finalUsername = integrationData.instagramUsername && integrationData.instagramUsername !== '@mon_entreprise'
-        ? integrationData.instagramUsername
-        : (businessName ? `@${businessName.toLowerCase().replace(/\s+/g, '_')}` : '@jawebflow_dz');
-
-      const finalUserId = integrationData.instagramUserId || `ig_${user.uid.substring(0, 8)}_${Date.now().toString().slice(-4)}`;
-      const finalPageName = `${businessName || 'Entreprise'} Official Instagram`;
-      const mockAccessToken = `IGQVJY${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-
-      const updatedPayload: InstagramIntegrationData = {
-        ...integrationData,
-        connected: true,
-        instagramUserId: finalUserId,
-        instagramUsername: finalUsername,
-        pageName: finalPageName,
-        accessToken: mockAccessToken,
-        autoReplyEnabled: true,
-        respondToStories: true,
-        respondToComments: false,
-        lastConnectedAt: new Date().toISOString(),
-        webhookStatus: 'active',
-        totalMessagesHandled: integrationData.totalMessagesHandled || 28,
-        unresolvedCount: 0
-      };
-
-      saveLocalCache(user.uid, updatedPayload);
-      try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        await setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
-      } catch (e) {
-        console.warn('Firestore sync note:', e);
-      }
-
-      setIntegrationData(updatedPayload);
-      setNotification({
-        type: 'success',
-        message: `Compte Instagram (${finalUsername}) connecté et vérifié avec succès par Meta Graph API ! L'IA JawebFlow gère désormais vos DMs 24h/24.`
-      });
-    } catch (error: any) {
-      console.warn('Instagram connection notice:', error);
-      setNotification({
-        type: 'error',
-        message: 'Impossible de connecter le compte Instagram.'
-      });
-    } finally {
+    setNotification({ type: 'info', message: 'Validez les autorisations dans la fenêtre Meta qui vient de s’ouvrir.' });
+    const popup = window.open(oauthUrl.toString(), 'instagram-oauth', 'width=560,height=760,menubar=no,toolbar=no');
+    if (!popup) {
       setIsConnecting(false);
+      setNotification({ type: 'error', message: 'La fenêtre Meta a été bloquée. Autorisez les fenêtres pop-up puis réessayez.' });
     }
   };
 
@@ -684,7 +652,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   <button
                     type="button"
-                    onClick={() => handleDirectUsernameConnect()}
+                    onClick={handleConnectInstagram}
                     className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 cursor-pointer"
                     title="Modifier le pseudo Instagram connecté"
                   >
@@ -736,13 +704,9 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleDirectUsernameConnect()}
-                  className="text-[11px] text-purple-200/80 hover:text-white underline underline-offset-4 cursor-pointer transition-colors"
-                >
-                  ⚡ Ou lier directement avec votre @pseudo Instagram
-                </button>
+                <p className="text-[11px] text-purple-200/80 max-w-xs text-right">
+                  La connexion se fait uniquement via Meta OAuth. Un simple @pseudo ne permet pas d’activer les DMs ni le webhook.
+                </p>
               </div>
             )}
           </div>

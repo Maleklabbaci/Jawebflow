@@ -50,12 +50,12 @@ async function startServer() {
   });
 
   // Default AI Provider Configuration (AgentRouter API & Gemini Fallback)
-  const AGENTROUTER_API_KEY = process.env.AGENTROUTER_API_KEY || "sk-lH1ELWJwVfU0wFj2C9zjV6ywCgCCValyp6R9FnpMqve6biSi";
+  const AGENTROUTER_API_KEY = process.env.AGENTROUTER_API_KEY || "";
   const AGENTROUTER_BASE_URL = (process.env.AGENTROUTER_BASE_URL || "https://co.agentrouter.org/v1").replace(/\/$/, "");
 
   // Fallback Gemini API client
   const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY || "AIzaSy_demo",
+    apiKey: process.env.GEMINI_API_KEY || "",
     httpOptions: {
       headers: { 'User-Agent': 'aistudio-build' }
     }
@@ -387,6 +387,7 @@ Règles de communication impératives :
       
       let replyText = "";
       let usedModel = "";
+      let usedProvider = "";
 
       // 1. Primary AI Provider: Google Gemini API (Fast, reliable, secure)
       if (process.env.GEMINI_API_KEY) {
@@ -399,6 +400,7 @@ Règles de communication impératives :
           replyText = response.text || "";
           if (replyText) {
             usedModel = "gemini-3.7-flash";
+            usedProvider = "Gemini";
           }
         } catch (geminiErr) {
           console.warn("Gemini API error:", (geminiErr as Error)?.message || geminiErr);
@@ -446,6 +448,7 @@ Règles de communication impératives :
                 replyText = arData.choices[0].message?.content || "";
                 if (replyText) {
                   usedModel = modelName;
+                  usedProvider = "AgentRouter";
                   break; 
                 }
               }
@@ -480,7 +483,7 @@ Règles de communication impératives :
       res.json({
         status: "success",
         assistantId: assistantId,
-        provider: usedModel ? "AgentRouter" : "Fallback",
+        provider: usedProvider || "Unavailable",
         model: usedModel || "gemini-3.7-flash",
         text: replyText,
         message: replyText,
@@ -1731,15 +1734,18 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
   // ============================================================================
   // INSTAGRAM 100% AUTOMATED OAUTH TOKEN EXCHANGE & REAL PROFILE FETCHER
   // ============================================================================
-  const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID || '1376023754506953';
-  const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || 'a0adcf14c3fc0e87564b3c35c70be359';
-  const INSTAGRAM_REDIRECT_URI = 'https://jawebflow.pages.dev/';
+  const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID;
+  const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET;
+  const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || process.env.APP_URL || 'https://jawebflow.pages.dev/';
 
   app.post('/api/instagram/oauth/exchange', async (req, res) => {
     try {
       const { code, userId, redirectUri } = req.body;
       if (!code) {
         return res.status(400).json({ error: 'Code d\'autorisation manquant' });
+      }
+      if (!INSTAGRAM_APP_ID || !INSTAGRAM_APP_SECRET) {
+        return res.status(503).json({ error: 'OAuth Instagram non configuré : INSTAGRAM_APP_ID et INSTAGRAM_APP_SECRET sont requis côté serveur.' });
       }
 
       const cleanCode = String(code).split('#')[0].replace(/_$/, '').trim();
