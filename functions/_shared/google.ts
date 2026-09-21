@@ -136,9 +136,8 @@ export function firestoreDocumentsBase(env: GoogleEnv): string {
 
 /**
  * Convertit un objet Firestore REST `{ fields: {...} }` en objet JS classique.
- * Sans ça, chaque Function devait réécrire sa propre copie de cette logique
- * (ce qui a déjà causé des divergences entre le webhook Instagram et le
- * crawler : l'un savait lire les tableaux imbriqués, l'autre non).
+ * Centralisé ici pour éviter que chaque Function (webhook, crawler...)
+ * réimplémente sa propre copie divergente de cette logique.
  */
 export function parseFields(fields: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
@@ -220,8 +219,7 @@ export async function adminGetDocument(
  * Sans cette fonction, le crawler ne pouvait renvoyer sa synthèse QUE vers le
  * frontend, qui devait lui-même écrire dans Firestore avec les identifiants
  * du navigateur — bloqué par les mêmes règles de sécurité mentionnées en
- * haut de ce fichier. Résultat : le scan « réussissait » côté IA, mais rien
- * n'était jamais réellement enregistré dans « Mes informations ».
+ * haut de ce fichier.
  *
  * `updateMask` restreint la PATCH aux clés fournies (fusion, pas un
  * remplacement complet du document).
@@ -258,6 +256,11 @@ export async function adminPatchDocument(
 /**
  * Vérifie l'identité Firebase de l'appelant (jeton ID du SDK web).
  * Renvoie l'uid, ou null si le jeton est absent/invalide/expiré.
+ *
+ * Logs de diagnostic ajoutés : avant, un échec ici (clé API absente, token
+ * expiré, erreur réseau) renvoyait silencieusement `null`, et l'appelant
+ * (ex: le crawler) affichait juste "401 Authentification requise" sans
+ * aucune indication sur la cause réelle.
  */
 export async function verifyFirebaseIdToken(
   env: GoogleEnv,
@@ -265,7 +268,17 @@ export async function verifyFirebaseIdToken(
 ): Promise<{ uid: string; email?: string } | null> {
   const apiKey = env.FIRESTORE_API_KEY;
   const idToken = authorizationHeader?.startsWith("Bearer ") ? authorizationHeader.slice(7).trim() : "";
-  if (!apiKey || !idToken) return null;
+
+  if (!apiKey) {
+    console.error(
+      "[auth] FIRESTORE_API_KEY absente des variables d'environnement Cloudflare (Settings → Environment variables → Production)."
+    );
+    return null;
+  }
+  if (!idToken) {
+    console.warn("[auth] Aucun header 'Authorization: Bearer <token>' reçu dans la requête.");
+    return null;
+  }
 
   try {
     const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
@@ -273,12 +286,20 @@ export async function verifyFirebaseIdToken(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[auth] Vérification du token Firebase refusée par Google: HTTP ${res.status} ${body.slice(0, 200)}`);
+      return null;
+    }
     const data = (await res.json()) as { users?: Array<{ localId?: string; email?: string }> };
     const user = data.users?.[0];
-    if (!user?.localId) return null;
+    if (!user?.localId) {
+      console.error("[auth] Token valide mais aucun utilisateur associé n'a été trouvé.");
+      return null;
+    }
     return { uid: user.localId, email: user.email };
-  } catch {
+  } catch (e: any) {
+    console.error("[auth] Erreur réseau lors de la vérification du token Firebase:", e?.message || e);
     return null;
   }
 }
