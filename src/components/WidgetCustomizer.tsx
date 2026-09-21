@@ -152,13 +152,13 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
             <Palette className="w-3.5 h-3.5" />
-            <span>Studio de Personnalisation Visuelle</span>
+            <span>Apparence</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            Personnalisez la Bulle de votre Assistant
+            Choisir l'apparence de la bulle
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-            Adaptez l'apparence de la bulle à votre charte graphique : choisissez votre logo, vos couleurs, l'icône IA, les messages d'accueil et prévisualisez le rendu en temps réel.
+            La bulle doit ressembler à votre commerce : choisissez votre logo, vos couleurs et le message d'accueil. Vous voyez le résultat à droite.
           </p>
         </div>
 
@@ -168,10 +168,10 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               type="button"
               onClick={onSave}
               disabled={isSaving}
-              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs shadow-sm shadow-purple-600/20 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
             >
               {isSaving ? <CheckCircle2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-              <span>Enregistrer le style</span>
+              <span>Enregistrer</span>
             </button>
           )}
         </div>
@@ -246,10 +246,10 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Bot className="w-4 h-4 text-purple-600" />
-                  <span>Icône ou Logo de la bulle</span>
+                  <span>Icône du bouton</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Choisissez une icône moderne ou utilisez le logo officiel de votre entreprise.
+                  Choisissez l'image qui apparaîtra sur votre site.
                 </p>
               </div>
 
@@ -323,16 +323,16 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Palette className="w-4 h-4 text-purple-600" />
-                  <span>Couleur Principale & Dégradé</span>
+                  <span>Couleurs</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Sélectionnez l'une de nos palettes prédéfinies ou saisissez votre code couleur hexadécimal exact.
+                  Choisissez une couleur, ou indiquez celle de votre logo.
                 </p>
               </div>
 
               {/* Presets Grid */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Palettes Recommandées</label>
+                <label className="text-xs font-semibold text-slate-700">Couleurs proposées</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {COLOR_PRESETS.map((preset) => {
                     const isCurrent = config.primaryColor.toLowerCase() === preset.primary.toLowerCase();
@@ -404,7 +404,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
 
               {/* Chat Theme Mode (Dark / Light) */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Thème de la Fenêtre de Discussion</label>
+                <label className="text-xs font-semibold text-slate-700">Apparence de la fenêtre de discussion</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -448,16 +448,16 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Layers className="w-4 h-4 text-purple-600" />
-                  <span>Position & Silhouette du Bouton</span>
+                  <span>Emplacement et forme</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Configurez l'ancrage sur votre écran et la géométrie de la bulle flottante.
+                  Choisissez où le bouton apparaît et à quoi il ressemble.
                 </p>
               </div>
 
               {/* Position Choice */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Position sur l'écran</label>
+                <label className="text-xs font-semibold text-slate-700">Emplacement sur la page</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -489,7 +489,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
 
               {/* Shape Choice */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Forme de la Bulle</label>
+                <label className="text-xs font-semibold text-slate-700">Forme du bouton</label>
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { id: 'circle', title: 'Cercle Rond', desc: 'Classique & Doux' },
@@ -515,7 +515,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
 
               {/* Size Choice */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Taille du Bouton Flottant</label>
+                <label className="text-xs font-semibold text-slate-700">Taille du bouton</label>
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { id: 'compact', title: 'Discret (48px)' },
@@ -560,10 +560,10 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-purple-600" />
-                  <span>Textes d'Accroche & Messages</span>
+                  <span>Messages affichés</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Configurez le texte qui invite le visiteur à cliquer et l'en-tête de la discussion.
+                  Écrivez ce que vos visiteurs verront en premier.
                 </p>
               </div>
 
@@ -571,8 +571,8 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="block text-xs font-bold text-slate-900">Bulle d'Accroche Flottante (Teaser)</span>
-                    <span className="block text-[10px] text-slate-500">Mini bulle affichée à côté du bouton pour attirer l'attention</span>
+                    <span className="block text-xs font-bold text-slate-900">Petit message d'accueil</span>
+                    <span className="block text-[10px] text-slate-500">Affiché à côté du bouton pour inviter à discuter</span>
                   </div>
                   <input
                     type="checkbox"
@@ -681,9 +681,9 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-purple-600" />
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Aperçu Réel en Direct</h3>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Aperçu</h3>
               </div>
-              <span className="text-[10px] text-slate-500">Cliquez sur la bulle pour tester</span>
+              <span className="text-[10px] text-slate-500">Cliquez pour essayer</span>
             </div>
 
             {/* Mock Website Canvas */}
@@ -868,16 +868,16 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
             {/* Script Snippet Card */}
             <div className="pt-2">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-mono text-slate-500 truncate">
+                <span className="text-[10px] text-slate-400 truncate">
                   data-theme="{config.themeMode}" · {config.position} · {config.iconType}
                 </span>
                 <button
                   type="button"
                   onClick={handleCopyScript}
-                  className="px-2.5 py-1 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-700 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                  className="px-2.5 py-1 rounded-lg border border-slate-300 hover:bg-white text-slate-600 text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors shrink-0"
                 >
                   {copiedCode ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedCode ? 'Copié' : 'Copier Script'}</span>
+                  <span>{copiedCode ? 'Copié' : 'Copier'}</span>
                 </button>
               </div>
             </div>
