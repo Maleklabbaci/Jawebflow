@@ -11,7 +11,7 @@ import {
   parseFields,
 } from "../../_shared/google.ts";
 
-const FALLBACK_MODELS = ["gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-flash"];
+const FALLBACK_MODELS = ["gemini-1.5-flash-latest", "gemini-1.5-flash-8b-latest", "gemini-1.5-pro-latest"];
 const GEMINI_TIMEOUT_MS = 25000;
 const MAX_PAGES = 15;
 
