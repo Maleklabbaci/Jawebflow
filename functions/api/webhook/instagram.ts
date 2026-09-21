@@ -17,7 +17,7 @@
  * échoue (le motif est écrit dans les journaux Cloudflare).
  */
 
-import { base64, getGoogleAccessToken } from "../../_shared/google.ts";
+import { getGoogleAccessToken } from "../../_shared/google.ts";
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 /** Modèles essayés dans l'ordre si le premier échoue (modèle retiré, quota…). */
@@ -280,7 +280,10 @@ async function hasValidMetaSignature(request: Request, rawBody: string, appSecre
     ["sign"]
   );
   const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
-  return `sha256=${base64(digest)}` === header;
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `sha256=${hex}` === header;
 }
 
 /** Retrouve la connexion Instagram (multi-tenant) d'après le compte qui reçoit le message. */
