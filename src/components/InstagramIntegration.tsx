@@ -102,6 +102,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   const [showAdvancedDevSettings, setShowAdvancedDevSettings] = useState<boolean>(false);
   const [manualTokenInput, setManualTokenInput] = useState<string>('');
   const [manualAccountIdInput, setManualAccountIdInput] = useState<string>('');
+  const [repairingSubscription, setRepairingSubscription] = useState(false);
 
   // Local storage cache keys for offline resilience
   const getCacheKey = (uid: string) => `jawebflow_ig_config_${uid}`;
@@ -544,7 +545,6 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   // Réabonne manuellement le compte connecté aux événements "messages".
   // Nécessaire pour toute connexion établie AVANT ce correctif : le token est
   // valide mais Meta n'a jamais été informé qu'il doit pousser les DM au webhook.
-  const [repairingSubscription, setRepairingSubscription] = useState(false);
   const handleRepairSubscription = async () => {
     if (!user?.uid || !integrationData.accessToken) {
       setNotification({ type: 'error', message: "Aucun jeton d'accès enregistré : reconnectez d'abord votre compte Instagram." });
