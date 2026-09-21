@@ -273,7 +273,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       } else {
         setNotification({
           type: 'error',
-          message: `Compte connecté, mais l'abonnement au webhook "messages" a échoué (${serverResult.subscribeError || 'raison inconnue'}). Cliquez sur « Réparer l'abonnement webhook » ci-dessous, sinon aucun DM ne sera reçu.`
+          message: `Compte connecté, mais la réception des messages privés n'a pas pu être activée. Cliquez sur « Terminer la connexion » ci-dessous.`
         });
       }
     };
@@ -731,7 +731,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           <div className="space-y-3 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-400/30 text-pink-300 text-xs font-bold">
               <Instagram className="w-3.5 h-3.5" />
-              <span>Messages privés Instagram</span>
+              <span>Instagram</span>
             </div>
             
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
@@ -802,13 +802,13 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                       <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
                         <Instagram className="w-4 h-4 text-white" />
                       </div>
-                      <span>Connecter mon Instagram (1 Clic)</span>
+                      <span>Connecter mon Instagram</span>
                     </>
                   )}
                 </button>
 
                 <p className="text-[11px] text-purple-200/80 max-w-xs text-right">
-                  La connexion se fait uniquement via Meta OAuth. Un simple @pseudo ne permet pas d’activer les DMs ni le webhook.
+                  La connexion se fait directement avec votre compte Instagram, en un clic.
                 </p>
               </div>
             )}
@@ -848,7 +848,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-500/30 font-medium flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              Jeton Meta Graph Valide
+              Connexion confirmée
             </span>
           </div>
         </div>
@@ -861,15 +861,12 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
             </div>
             <div className="space-y-1 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-xs font-bold text-emerald-300">
-                  ✅ Autorisation Meta & Abonnement aux Messages Validés
+                <h4 className="text-xs font-semibold text-emerald-300">
+                  Messages privés connectés
                 </h4>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-mono">
-                  subscribed: messages
-                </span>
               </div>
               <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-                Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</strong> est confirmé abonné par Meta aux événements de messages. Les DM entrants seront transmis au webhook.
+Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</strong> est bien relié : les messages privés que vous recevez arrivent directement à votre assistant.
               </p>
             </div>
           </div>
@@ -879,11 +876,12 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
               <AlertCircle className="w-5 h-5" />
             </div>
             <div className="space-y-1 flex-1">
-              <h4 className="text-xs font-bold text-red-300">
-                ⚠️ Compte connecté mais PAS abonné aux messages
+              <h4 className="text-xs font-semibold text-red-300">
+                Connexion incomplète
               </h4>
               <p className="text-[11px] text-red-200/90 leading-relaxed">
-                Meta ne transmettra aucun DM à votre webhook tant que l'abonnement n'est pas confirmé (l'API <span className="font-mono">/subscribed_apps</span> a échoué ou n'a jamais été appelée). C'est très probablement la cause de vos messages sans réponse.
+                Votre compte est relié, mais Instagram n'envoie pas encore vos messages privés à l'assistant.
+                Cliquez sur le bouton ci-dessous pour terminer la connexion.
               </p>
             </div>
             <button
@@ -894,7 +892,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
               {repairingSubscription ? (
                 <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Réparation...</>
               ) : (
-                <><RefreshCw className="w-3.5 h-3.5" /> Réparer l'abonnement webhook</>
+                <><RefreshCw className="w-3.5 h-3.5" /> Terminer la connexion</>
               )}
             </button>
           </div>
@@ -925,7 +923,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                   : 'bg-slate-100 text-slate-500'
               }`}>
-                {integrationData.autoReplyEnabled ? '● Bot Actif' : '○ En Pause'}
+                {integrationData.autoReplyEnabled ? 'Activées' : 'En pause'}
               </span>
             </div>
 
