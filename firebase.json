@@ -1,7 +1,8 @@
 {
-  "firestore": {
+  "firestore": [{
+    "database": "ai-studio-jawebflow-3b5eca8a-3aea-4c7a-8009-6f854b13701c",
     "rules": "firestore.rules"
-  },
+  }],
   "hosting": {
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
