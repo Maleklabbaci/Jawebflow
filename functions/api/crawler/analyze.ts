@@ -1,7 +1,5 @@
 /**
- * JAWEBFLOW — Extraction via données collées par l'utilisateur.
- * Reçoit du texte/JSON extrait depuis le navigateur de l'utilisateur
- * et le synthétise avec Gemini.
+ * JAWEBFLOW — Import universel : texte, PDF, JSON, n'importe quoi.
  */
 
 import {
@@ -16,7 +14,7 @@ const FALLBACK_MODELS = [
   "gemini-1.5-flash-8b-latest",
   "gemini-1.5-pro-latest",
 ];
-const GEMINI_TIMEOUT_MS = 20000;
+const GEMINI_TIMEOUT_MS = 25000;
 
 type KnowledgeNote = {
   id?: string;
@@ -49,89 +47,6 @@ export async function onRequestOptions() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Nettoyage et préparation des données reçues
-// ---------------------------------------------------------------------------
-
-function prepareExtractedData(pages: any[]): string {
-  const parts: string[] = [];
-
-  for (const page of pages) {
-    if (!page) continue;
-
-    parts.push(`\n=== PAGE: ${page.url || "URL inconnue"} ===`);
-    parts.push(`Type: ${page.type || "inconnu"}`);
-
-    // Page produit
-    if (page.type === "PAGE PRODUIT") {
-      if (page.title) parts.push(`Produit: ${page.title}`);
-      if (page.price) parts.push(`Prix: ${page.price}`);
-      if (page.description) parts.push(`Description: ${page.description.slice(0, 1000)}`);
-      if (page.variants?.length) {
-        parts.push(`Variantes: ${page.variants.map((v: any) => `${v.title} — ${v.price}`).join(", ")}`);
-      }
-      if (page.images?.length) parts.push(`Images: ${page.imagesCount || page.images.length} image(s)`);
-    }
-
-    // Page catalogue/accueil
-    else if (page.type?.includes("CATALOGUE") || page.type?.includes("ACCUEIL")) {
-      if (page.totalProductsFound) parts.push(`Produits trouvés: ${page.totalProductsFound}`);
-      if (page.products?.length) {
-        parts.push(`\nListe des produits:`);
-        for (const prod of page.products.slice(0, 50)) {
-          const line = [prod.title, prod.price, prod.link].filter(Boolean).join(" — ");
-          if (line) parts.push(`• ${line}`);
-        }
-      }
-    }
-
-    // Page contact
-    else if (page.type?.includes("CONTACT")) {
-      if (page.phones?.length) parts.push(`Téléphones: ${page.phones.join(", ")}`);
-      if (page.emails?.length) parts.push(`Emails: ${page.emails.join(", ")}`);
-      if (page.whatsapp) parts.push(`WhatsApp: ${page.whatsapp}`);
-      if (page.address) parts.push(`Adresse: ${page.address}`);
-      if (page.socialLinks?.length) parts.push(`Réseaux: ${page.socialLinks.join(", ")}`);
-      if (page.formLinks?.length) parts.push(`Formulaires: ${page.formLinks.join(", ")}`);
-    }
-
-    // Page générale (texte brut)
-    else {
-      if (page.title) parts.push(`Titre: ${page.title}`);
-      if (page.text) parts.push(`Contenu:\n${page.text.slice(0, 3000)}`);
-      if (page.phones?.length) parts.push(`Téléphones: ${page.phones.join(", ")}`);
-      if (page.emails?.length) parts.push(`Emails: ${page.emails.join(", ")}`);
-      if (page.whatsapp) parts.push(`WhatsApp: ${page.whatsapp}`);
-      if (page.links?.length) {
-        const importantLinks = page.links.filter((l: string) =>
-          l.includes("wa.me") || l.includes("instagram") || l.includes("facebook") ||
-          l.includes("tiktok") || l.includes("youtube") || l.startsWith("tel:") ||
-          l.startsWith("mailto:") || l.includes("typeform") || l.includes("tally")
-        );
-        if (importantLinks.length) parts.push(`Liens importants: ${importantLinks.join(", ")}`);
-      }
-      if (page.products?.length) {
-        parts.push(`Produits/Services:`);
-        for (const prod of page.products.slice(0, 30)) {
-          const line = [prod.title, prod.price].filter(Boolean).join(" — ");
-          if (line) parts.push(`• ${line}`);
-        }
-      }
-    }
-
-    // Données brutes si format inconnu
-    if (page.rawText) {
-      parts.push(`Texte brut:\n${page.rawText.slice(0, 3000)}`);
-    }
-  }
-
-  return parts.join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Synthèse Gemini
-// ---------------------------------------------------------------------------
-
 const ALLOWED_CATEGORIES = [
   "services", "tarifs", "livraison", "garanties", "contact", "faq", "general",
 ];
@@ -146,44 +61,44 @@ async function synthesizeWithGemini(
 
 Site : ${siteUrl}
 
-Les données ci-dessous ont été extraites directement depuis le navigateur de l'utilisateur — elles sont 100% fiables et représentent exactement ce que les visiteurs voient sur le site.
+Le contenu ci-dessous provient directement de l'utilisateur (texte collé, PDF, catalogue, description, données extraites de son site, etc.).
 
 RETOURNE UNIQUEMENT un JSON valide sans markdown :
 {
-  "businessName": "nom exact de la marque/entreprise",
-  "businessCategory": "secteur d'activité précis",
-  "businessDescription": "description complète 3-5 phrases",
+  "businessName": "nom exact",
+  "businessCategory": "secteur précis",
+  "businessDescription": "description 3-5 phrases",
   "phone": "numéro principal",
   "email": "email principal",
   "whatsapp": "lien wa.me complet",
   "address": "adresse complète",
-  "contactLinks": ["tous les liens de contact"],
-  "deliveryInfo": "délais, zones, prix livraison",
-  "paymentMethods": "modes de paiement acceptés",
+  "contactLinks": ["lien1", "lien2"],
+  "deliveryInfo": "délais, zones, prix",
+  "paymentMethods": "modes de paiement",
   "openingHours": "horaires",
-  "socialMedia": "réseaux avec URLs complètes",
-  "siteType": "vitrine" ou "ecommerce" ou "service" ou "restaurant" ou "portfolio",
-  "confidence": 95,
+  "socialMedia": "réseaux avec URLs",
+  "siteType": "vitrine|ecommerce|service|restaurant|portfolio",
+  "confidence": 90,
   "knowledgeNotes": [
     {
       "title": "titre précis",
-      "category": "services" ou "tarifs" ou "livraison" ou "garanties" ou "contact" ou "faq" ou "general",
-      "content": "contenu détaillé 3-6 phrases avec toutes les infos"
+      "category": "services|tarifs|livraison|garanties|contact|faq|general",
+      "content": "contenu détaillé 3-6 phrases"
     }
   ]
 }
 
 RÈGLES :
-- Utilise UNIQUEMENT les infos présentes
+- Utilise UNIQUEMENT les infos présentes dans le contenu
 - Ne jamais inventer — champ vide si absent
 - knowledgeNotes : 5-15 fiches couvrant TOUT ce qui est trouvé
-- Pour les produits : crée une fiche par catégorie avec les prix
-- Pour les services : détaille chaque service avec son prix
-- contactLinks : TOUS les moyens de contact (WhatsApp, Instagram, formulaires, tel, email)
-- confidence élevé car données extraites directement du navigateur
+- Crée une fiche par thème trouvé (services, prix, livraison, contact, FAQ, etc.)
+- Si tu trouves des produits avec prix → fiche tarifs détaillée
+- Si tu trouves des contacts → fiche contact avec tous les liens
+- confidence élevé car données fournies directement par l'utilisateur
 
-DONNÉES EXTRAITES :
-${content}`;
+CONTENU FOURNI :
+${content.slice(0, 30000)}`;
 
   const models = Array.from(
     new Set([preferredModel, ...FALLBACK_MODELS].filter(Boolean))
@@ -210,7 +125,6 @@ ${content}`;
         }
       );
       clearTimeout(timer);
-
       if (res.status === 429) { console.warn(`[extract] ${model}: quota`); continue; }
       if (!res.ok) { console.warn(`[extract] ${model}: HTTP ${res.status}`); continue; }
 
@@ -225,28 +139,20 @@ ${content}`;
       return parsed;
     } catch (e: any) {
       clearTimeout(timer);
-      console.warn(`[extract] ${model} échoué:`, e?.message);
+      console.warn(`[extract] ${model}:`, e?.message);
     }
   }
   throw new Error("Tous les modèles Gemini ont échoué");
 }
 
-// ---------------------------------------------------------------------------
-// Fusion notes
-// ---------------------------------------------------------------------------
-
-function mergeKnowledgeNotes(
-  existing: KnowledgeNote[],
-  scanned: KnowledgeNote[]
-): KnowledgeNote[] {
-  const manual = existing.filter((n) => n?.source !== "extracted");
+function mergeKnowledgeNotes(existing: KnowledgeNote[], scanned: KnowledgeNote[]): KnowledgeNote[] {
+  const manual = existing.filter(n => n?.source !== "extracted");
   const seen = new Set<string>();
   const newNotes: KnowledgeNote[] = [];
 
   for (const note of scanned) {
     const cat = ALLOWED_CATEGORIES.includes((note.category || "").toLowerCase())
-      ? note.category!.toLowerCase()
-      : "general";
+      ? note.category!.toLowerCase() : "general";
     if (seen.has(cat)) continue;
     seen.add(cat);
     newNotes.push({
@@ -258,37 +164,95 @@ function mergeKnowledgeNotes(
       source: "extracted",
     });
   }
-
   return [...manual, ...newNotes];
 }
 
 function fillIfEmpty(existing: any, newVal: any): any {
-  const empty =
-    existing === undefined || existing === null || String(existing).trim() === "";
-  return empty ? newVal ?? "" : existing;
+  return (existing === undefined || existing === null || String(existing).trim() === "")
+    ? (newVal ?? "") : existing;
 }
-
-// ---------------------------------------------------------------------------
-// Handler principal
-// ---------------------------------------------------------------------------
 
 export async function onRequestPost(context: { request: Request; env: any }) {
   try {
-    const body = (await context.request.json().catch(() => ({}))) as {
-      pages?: any[];           // Données extraites par le bookmarklet
-      rawText?: string;        // Texte brut collé par l'utilisateur
-      siteUrl?: string;        // URL du site
-      assistantId?: string;
-      mode?: "replace" | "merge"; // Remplacer ou fusionner
-    };
+    const contentType = context.request.headers.get("Content-Type") || "";
 
-    // Validation
-    if (!body.pages?.length && !body.rawText) {
-      return json({ error: "Aucune donnée reçue. Utilisez le bookmarklet ou collez du texte." }, 400);
+    let rawText = "";
+    let siteUrl = "https://monsite.com";
+    let assistantId = "";
+    let mode = "merge";
+    let pages: any[] = [];
+
+    // ── Multipart (PDF, fichiers) ──────────────────────────────────────────
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await context.request.formData();
+      siteUrl = (formData.get("siteUrl") as string) || siteUrl;
+      assistantId = (formData.get("assistantId") as string) || "";
+      mode = (formData.get("mode") as string) || "merge";
+      rawText = (formData.get("rawText") as string) || "";
+
+      // Fichiers uploadés
+      const files = formData.getAll("files");
+      for (const file of files) {
+        if (file instanceof File) {
+          const fileType = file.type;
+          const fileName = file.name;
+
+          if (fileType === "application/pdf" || fileName.endsWith(".pdf")) {
+            // PDF → extrait le texte brut (Gemini peut lire les PDFs via base64)
+            const arrayBuffer = await file.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+            rawText += `\n\n[FICHIER PDF: ${fileName}]\n`;
+
+            // Utilise Gemini pour lire le PDF directement
+            const pdfContent = await extractPdfWithGemini(base64, fileName, context.env.GEMINI_API_KEY);
+            rawText += pdfContent;
+
+          } else if (
+            fileType.includes("text") ||
+            fileName.endsWith(".txt") ||
+            fileName.endsWith(".csv") ||
+            fileName.endsWith(".md")
+          ) {
+            const text = await file.text();
+            rawText += `\n\n[FICHIER: ${fileName}]\n${text}`;
+
+          } else if (fileName.endsWith(".json")) {
+            const text = await file.text();
+            try {
+              const parsed = JSON.parse(text);
+              pages = Array.isArray(parsed) ? parsed : [parsed];
+            } catch {
+              rawText += `\n\n[FICHIER JSON: ${fileName}]\n${text}`;
+            }
+          } else {
+            // Autre fichier → essaie de lire comme texte
+            try {
+              const text = await file.text();
+              rawText += `\n\n[FICHIER: ${fileName}]\n${text.slice(0, 5000)}`;
+            } catch {}
+          }
+        }
+      }
+
+    // ── JSON normal ───────────────────────────────────────────────────────
+    } else {
+      const body = (await context.request.json().catch(() => ({}))) as {
+        rawText?: string;
+        pages?: any[];
+        siteUrl?: string;
+        assistantId?: string;
+        mode?: string;
+      };
+      rawText = body.rawText || "";
+      pages = body.pages || [];
+      siteUrl = body.siteUrl || siteUrl;
+      assistantId = body.assistantId || "";
+      mode = body.mode || "merge";
     }
 
-    if (!body.siteUrl) {
-      return json({ error: "URL du site manquante." }, 400);
+    // Validation
+    if (!rawText.trim() && pages.length === 0) {
+      return json({ error: "Aucune donnée reçue." }, 400);
     }
 
     // Auth
@@ -296,13 +260,10 @@ export async function onRequestPost(context: { request: Request; env: any }) {
     const caller = await verifyFirebaseIdToken(context.env, authHeader);
     if (!caller) return json({ error: "Authentification requise." }, 401);
 
-    // Vérification assistant
+    // Assistant
     let existingFields: Record<string, any> | null = null;
-    if (body.assistantId) {
-      const doc = await adminGetDocument(
-        context.env,
-        `assistants/${body.assistantId}`
-      );
+    if (assistantId) {
+      const doc = await adminGetDocument(context.env, `assistants/${assistantId}`);
       if (doc.ok && doc.fields) {
         const parsed = parseFields(doc.fields);
         if (parsed.userId && parsed.userId !== caller.uid) {
@@ -312,57 +273,61 @@ export async function onRequestPost(context: { request: Request; env: any }) {
       }
     }
 
-    // Prépare le contenu pour Gemini
-    let content = "";
+    // Prépare le contenu
+    let content = rawText.trim();
 
-    if (body.pages?.length) {
-      content = prepareExtractedData(body.pages);
-      console.log(`[extract] ${body.pages.length} page(s) reçue(s) — ${content.length} chars`);
+    if (pages.length > 0) {
+      for (const page of pages) {
+        if (!page) continue;
+        content += `\n\n=== PAGE: ${page.url || "URL"} ===\n`;
+        content += `Type: ${page.type || "général"}\n`;
+        if (page.title) content += `Titre: ${page.title}\n`;
+        if (page.price) content += `Prix: ${page.price}\n`;
+        if (page.description) content += `Description: ${page.description}\n`;
+        if (page.phones?.length) content += `Téléphones: ${page.phones.join(", ")}\n`;
+        if (page.emails?.length) content += `Emails: ${page.emails.join(", ")}\n`;
+        if (page.whatsapp) content += `WhatsApp: ${page.whatsapp}\n`;
+        if (page.links?.length) content += `Liens: ${page.links.join(", ")}\n`;
+        if (page.rawText) content += `Contenu: ${page.rawText.slice(0, 3000)}\n`;
+        if (page.products?.length) {
+          content += `Produits:\n`;
+          page.products.forEach((p: any) => {
+            content += `• ${p.title} — ${p.price || ""} — ${p.link || ""}\n`;
+          });
+        }
+      }
     }
 
-    if (body.rawText) {
-      content += `\n\nTEXTE BRUT FOURNI:\n${body.rawText}`;
-      console.log(`[extract] Texte brut: ${body.rawText.length} chars`);
+    if (content.length < 5) {
+      return json({ error: "Contenu insuffisant." }, 400);
     }
 
-    if (content.length < 10) {
-      return json({ error: "Données insuffisantes pour l'analyse." }, 400);
-    }
-
-    // Synthèse Gemini
     if (!context.env.GEMINI_API_KEY) {
       return json({ error: "GEMINI_API_KEY manquante." }, 500);
     }
 
+    // Synthèse Gemini
     let result: any;
     try {
       result = await synthesizeWithGemini(
-        content,
-        body.siteUrl,
-        context.env.GEMINI_API_KEY,
-        context.env.GEMINI_MODEL
+        content, siteUrl, context.env.GEMINI_API_KEY, context.env.GEMINI_MODEL
       );
     } catch (e: any) {
       console.error("[extract] Gemini échoué:", e?.message);
       return json({ error: "Analyse IA échouée. Réessayez." }, 500);
     }
 
-    // Sauvegarde Firestore
+    // Sauvegarde
     let saved = false;
     let savedNoteCount = 0;
 
-    if (body.assistantId) {
-      const existingNotes: KnowledgeNote[] = Array.isArray(existingFields?.knowledgeNotes)
-        ? existingFields!.knowledgeNotes
-        : [];
-
-      // Mode replace = on vire les anciennes notes extracted
-      // Mode merge = on garde tout
-      const baseNotes = body.mode === "replace"
-        ? existingNotes.filter(n => n?.source !== "extracted")
-        : existingNotes;
-
-      const merged = mergeKnowledgeNotes(baseNotes, result.knowledgeNotes || []);
+    if (assistantId) {
+      const existing: KnowledgeNote[] = Array.isArray(existingFields?.knowledgeNotes)
+        ? existingFields!.knowledgeNotes : [];
+      const base = mode === "replace"
+        ? existing.filter(n => n?.source !== "extracted")
+        : existing;
+      const merged = mergeKnowledgeNotes(base, result.knowledgeNotes || []);
 
       const update = {
         businessName: fillIfEmpty(existingFields?.businessName, result.businessName),
@@ -372,24 +337,17 @@ export async function onRequestPost(context: { request: Request; env: any }) {
         email: fillIfEmpty(existingFields?.email, result.email),
         whatsapp: fillIfEmpty(existingFields?.whatsapp, result.whatsapp),
         address: fillIfEmpty(existingFields?.address, result.address),
-        contactLinks: result.contactLinks?.length
-          ? result.contactLinks
-          : (existingFields?.contactLinks ?? []),
+        contactLinks: result.contactLinks?.length ? result.contactLinks : (existingFields?.contactLinks ?? []),
         deliveryInfo: fillIfEmpty(existingFields?.deliveryInfo, result.deliveryInfo),
         paymentMethods: fillIfEmpty(existingFields?.paymentMethods, result.paymentMethods),
         openingHours: fillIfEmpty(existingFields?.openingHours, result.openingHours),
         socialMedia: fillIfEmpty(existingFields?.socialMedia, result.socialMedia),
-        websiteUrl: fillIfEmpty(existingFields?.websiteUrl, body.siteUrl),
+        websiteUrl: fillIfEmpty(existingFields?.websiteUrl, siteUrl),
         knowledgeNotes: merged,
         lastExtractAt: new Date().toISOString(),
       };
 
-      const write = await adminPatchDocument(
-        context.env,
-        `assistants/${body.assistantId}`,
-        update
-      );
-
+      const write = await adminPatchDocument(context.env, `assistants/${assistantId}`, update);
       if (write.ok) {
         saved = true;
         savedNoteCount = merged.length;
@@ -399,17 +357,39 @@ export async function onRequestPost(context: { request: Request; env: any }) {
       }
     }
 
-    return json({
-      ...result,
-      saved,
-      savedNoteCount,
-      pagesProcessed: body.pages?.length || 0,
-      contentLength: content.length,
-    });
+    return json({ ...result, saved, savedNoteCount });
 
   } catch (err: any) {
     console.error("[extract] Erreur:", err?.message);
     return json({ error: err?.message || "Erreur interne." }, 500);
+  }
+}
+
+// Extraction PDF via Gemini Vision
+async function extractPdfWithGemini(base64: string, fileName: string, apiKey: string): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: `Extrais tout le texte et les informations importantes de ce document PDF (${fileName}). Retourne le texte brut complet.` },
+              { inline_data: { mime_type: "application/pdf", data: base64 } }
+            ]
+          }],
+          generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+        }),
+        signal: AbortSignal.timeout(30000),
+      }
+    );
+    if (!res.ok) return "";
+    const data = (await res.json()) as any;
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  } catch {
+    return "";
   }
 }
 
