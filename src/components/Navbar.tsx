@@ -28,10 +28,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   const navItems: { id: PageId; label: string }[] = [
-    { id: 'home', label: 'Home' },
+    { id: 'home', label: 'Accueil' },
     { id: 'services', label: 'Services' },
-    { id: 'pricing', label: 'Pricing' },
-    { id: 'demo', label: 'Demo' },
+    { id: 'pricing', label: 'Tarifs' },
+    { id: 'demo', label: 'Démo' },
     { id: 'contact', label: 'Contact' },
   ];
 
@@ -88,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <span>{item.label}</span>
                 {isActive && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-purple-400 rounded-full"></span>
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-white rounded-full"></span>
                 )}
               </button>
             );
@@ -108,10 +108,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             <button
               onClick={() => handleItemClick('create-assistant')}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-semibold hover:bg-purple-500/25 transition-all cursor-pointer"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 text-neutral-300 hover:text-white hover:border-white/30 text-xs font-medium transition-colors cursor-pointer"
               title={`Connecté: ${user.email}`}
             >
-              <UserCheck className="w-3.5 h-3.5 text-purple-400" />
+              <UserCheck className="w-3.5 h-3.5" />
               <span className="max-w-[120px] truncate">{profile?.displayName || user.email?.split('@')[0]}</span>
             </button>
           )}
@@ -119,9 +119,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="navbar-cta-btn"
             onClick={onOpenAssistantModal}
-            className="rounded-xl bg-purple-600 hover:bg-purple-500 px-4 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white shadow-md shadow-purple-600/30 hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer flex-shrink-0"
+            className="rounded-lg bg-white hover:bg-neutral-200 px-4 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-neutral-900 transition-colors cursor-pointer flex-shrink-0"
           >
-            <span>{user ? 'Mon Tableau de Bord' : 'Créer mon assistant'}</span>
+            <span>{user ? 'Mon espace' : 'Créer mon assistant'}</span>
           </button>
 
           {/* Mobile Menu Toggle */}
@@ -150,7 +150,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={() => handleItemClick(item.id)}
                 className={`block w-full text-left py-2 text-sm font-medium transition-colors ${
                   isActive
-                    ? 'text-purple-300 font-semibold'
+                    ? 'text-white font-semibold'
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
@@ -173,9 +173,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onOpenAssistantModal();
                 setMobileMenuOpen(false);
               }}
-              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 cursor-pointer"
+              className="w-full py-3 rounded-lg bg-white text-neutral-900 font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>{user ? 'Mon Assistant' : 'Créer mon assistant'}</span>
+              <span>{user ? 'Mon espace' : 'Créer mon assistant'}</span>
             </button>
           </div>
         </div>

@@ -1,34 +1,59 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------
+    // Comptes Super Admin (doit rester synchronisé avec SUPER_ADMIN_EMAILS
+    // dans src/lib/firebase.ts).
+    // ---------------------------------------------------------------
+    function isAdmin() {
+      return signedIn() && request.auth.token.email in [
+        'abdelmaleklabbaci01@gmail.com',
+        'admin@jawebflow.com'
+      ];
+    }
+
     function signedIn() {
       return request.auth != null;
     }
 
     function ownsAssistant(assistantId) {
-      return signedIn() && get(/databases/$(database)/documents/assistants/$(assistantId)).data.userId == request.auth.uid;
+      return signedIn() && exists(/databases/$(database)/documents/assistants/$(assistantId))
+        && get(/databases/$(database)/documents/assistants/$(assistantId)).data.userId == request.auth.uid;
     }
 
     match /users/{userId} {
-      allow read, write: if signedIn() && request.auth.uid == userId;
+      // L'utilisateur gère son profil ; l'admin peut lister pour la console.
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if signedIn() && request.auth.uid == userId;
     }
 
     match /assistants/{assistantId} {
-      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow read: if (signedIn() && resource.data.userId == request.auth.uid) || isAdmin();
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if signedIn() && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid;
+
+      // Sous-collection du scanner de site (écrite par les Functions avec le
+      // compte de service, lue par le tableau de bord du propriétaire).
+      match /knowledge_base/{docId} {
+        allow read: if ownsAssistant(assistantId) || isAdmin();
+        // Les écritures passent par l'API serveur (compte de service) : aucun
+        // client ne doit pouvoir modifier la base de connaissances directement.
+        allow write: if false;
+      }
     }
 
     match /prospects/{prospectId} {
       allow create: if request.resource.data.assistantId is string
-        && request.resource.data.assistantId.size() > 0;
-      allow read, update, delete: if ownsAssistant(resource.data.assistantId);
+        && request.resource.data.assistantId.size() > 0
+        && request.resource.data.assistantId.size() < 200;
+      allow read, update, delete: if ownsAssistant(resource.data.assistantId) || isAdmin();
     }
 
     match /interaction_events/{eventId} {
       allow create: if request.resource.data.assistantId is string;
-      allow read, update, delete: if ownsAssistant(resource.data.assistantId);
+      allow read, update, delete: if ownsAssistant(resource.data.assistantId) || isAdmin();
     }
 
     match /instagram_integrations/{userId} {
@@ -36,12 +61,34 @@ service cloud.firestore {
     }
 
     match /conversation_contexts/{contextId} {
-      allow create: if request.resource.data.assistantId is string;
-      allow read, update, delete: if ownsAssistant(resource.data.assistantId);
+      // Création par le widget (visiteur anonyme) — on borne la taille pour
+      // éviter l'écriture de documents volumineux / le spam de stockage.
+      allow create: if request.resource.data.assistantId is string
+        && request.resource.data.assistantId.size() < 200
+        && request.resource.data.userMessage is string
+        && request.resource.data.userMessage.size() < 5000
+        && request.resource.data.assistantResponse is string
+        && request.resource.data.assistantResponse.size() < 10000;
+      allow read, update, delete: if ownsAssistant(resource.data.assistantId) || isAdmin();
     }
 
     match /evolving_memories/{assistantId} {
-      allow read, write: if ownsAssistant(assistantId);
+      allow read, write: if ownsAssistant(assistantId) || isAdmin();
+    }
+
+    match /usage/{assistantId} {
+      // Compteur de conversations lu par le tableau de bord et l'API.
+      allow read: if ownsAssistant(assistantId) || isAdmin();
+      allow write: if false; // écritures serveur (compte de service) uniquement
+    }
+
+    match /invoices/{invoiceId} {
+      // ⚠️ Cette collection n'avait AUCUNE règle : la console d'administration ne
+      // pouvait donc pas lire les factures (lecture silencieusement en échec).
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.email is string && resource.data.email == request.auth.token.email);
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /{document=**} {

@@ -9,7 +9,12 @@
  * jamais via l'IA (message fixe de secours affiché à la place).
  */
 
-const CHAT_MODEL = 'gemini-3.1-flash-lite';
+import { adminGetDocument } from '../_shared/google.ts';
+
+// Modèle Gemini : surchargeable par variable d'environnement (Pages → Settings →
+// Environment variables) sans redéploiement de code. Les identifiants « 2.5 »
+// sont annoncés en fin de vie (arrêt octobre 2026), d'où ce défaut 3.1.
+const DEFAULT_CHAT_MODEL = 'gemini-3.1-flash-lite';
 
 const BASE_SYSTEM_PROMPT = `Tu es l'assistant IA d'élite pour le support et la vente en ligne (Développé par JawebFlow).
 
@@ -61,29 +66,44 @@ export async function onRequestOptions() {
 
 export async function onRequestPost(context) {
   const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
-  const reply = (text) => new Response(JSON.stringify({ text, message: text, response: text }), { status: 200, headers: cors });
+  // `diagnostics` accompagne chaque réponse pour rendre les pannes visibles
+  // (avant, toute erreur était masquée par unHTTP 200 + phrase de secours, ce qui
+  // rendait le débogage impossible depuis le widget ou le tableau de bord).
+  const reply = (text, diagnostics = []) =>
+    new Response(JSON.stringify({ text, message: text, response: text, diagnostics }), { status: 200, headers: cors });
+
+  const diagnostics = [];
 
   try {
     const { message, assistantId, history } = await context.request.json();
     const env = context.env;
     const apiKey = env.GEMINI_API_KEY;
+    const chatModel = env.GEMINI_MODEL || DEFAULT_CHAT_MODEL;
 
     if (!apiKey || !message?.trim()) {
-      return reply("Saha kho ! Kifach n9der n3awnek ? 😄");
+      if (!apiKey) diagnostics.push('GEMINI_API_KEY absente côté Pages Functions');
+      console.error('[chat] requête refusée:', diagnostics.join(' | ') || 'message vide');
+      return reply("Saha kho ! Kifach n9der n3awnek ? 😄", diagnostics);
     }
 
     // Isolation stricte : sans assistantId valide, on ne pioche dans AUCUNE base
     // (avant, un fallback partagé pouvait mélanger les données entre clients).
     if (!assistantId || !assistantId.trim()) {
-      return reply("Configuration du widget manquante (assistantId). Contacte le support JawebFlow.");
+      diagnostics.push('assistantId manquant dans la requête du widget');
+      return reply("Configuration du widget manquante (assistantId). Contacte le support JawebFlow.", diagnostics);
     }
 
-    // 1. Récupération de la configuration complète de l'assistant depuis Firestore
-    const db = env.FIRESTORE_DATABASE_ID || '(default)';
-    const assistantRes = await fetch(`https://firestore.googleapis.com/v1/projects/${env.FIRESTORE_PROJECT_ID}/databases/${db}/documents/assistants/${assistantId}?key=${env.FIRESTORE_API_KEY}`);
+    // 1. Récupération de la configuration complète de l'assistant depuis Firestore.
+    //    Lecture Admin (compte de service) : une lecture REST avec seulement la clé
+    //    Web est anonyme et se fait refuser par les règles — la config restait alors
+    //    vide et l'IA répondait sans la base de connaissances du client.
     let config = {};
-    if (assistantRes.ok) {
-      config = parseFirestoreDoc(await assistantRes.json()) || {};
+    const configRead = await adminGetDocument(env, `assistants/${assistantId}`);
+    if (configRead.ok) {
+      config = parseFirestoreDoc({ fields: configRead.fields }) || {};
+    } else {
+      diagnostics.push(`config assistant non chargée: ${configRead.error}`);
+      console.error(`[chat] config ${assistantId} non chargée:`, configRead.error);
     }
 
     // 2. Construction du prompt avec toute la base de connaissance réelle de l'assistant
@@ -113,29 +133,43 @@ export async function onRequestPost(context) {
     contents.push({ role: 'user', parts: [{ text: message.trim() }] });
 
     // 4. Appel Gemini — réponse complète (pas de streaming, le front ne le consomme pas)
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${CHAT_MODEL}:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents,
-        generationConfig: { temperature: 0.65, maxOutputTokens: 400 },
+        generationConfig: { temperature: 0.65, maxOutputTokens: 800 },
       })
     });
 
-    if (!geminiRes.ok) throw new Error("Gemini error");
+    if (!geminiRes.ok) {
+      const errBody = await geminiRes.text().catch(() => '');
+      diagnostics.push(`Gemini ${chatModel}: HTTP ${geminiRes.status} ${errBody.slice(0, 200)}`);
+      console.error('[chat] appel Gemini refusé:', diagnostics[diagnostics.length - 1]);
+      throw new Error('Gemini error');
+    }
+
     const geminiData = await geminiRes.json();
     const aiText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-    if (!aiText) throw new Error("Réponse Gemini vide");
+    if (!aiText) {
+      diagnostics.push(`Gemini ${chatModel}: réponse vide (blockReason: ${geminiData?.promptFeedback?.blockReason || 'inconnu'})`);
+      console.error('[chat] réponse Gemini vide:', JSON.stringify(geminiData).slice(0, 300));
+      throw new Error("Réponse Gemini vide");
+    }
 
-    return reply(aiText);
+    return reply(aiText, diagnostics);
   } catch (err) {
+    // Le widget affiche le texte de secours, mais le motif réel reste visible
+    // (journal Cloudflare + tableau de bord + onglet réseau).
     return new Response(JSON.stringify({
       text: "Saha kho, 3ndna un petit souci technique douka. Re-gouli message stp ! 🙏",
       message: "Saha kho, 3ndna un petit souci technique douka. Re-gouli message stp ! 🙏",
-      response: "Saha kho, 3ndna un petit souci technique douka. Re-gouli message stp ! 🙏"
+      response: "Saha kho, 3ndna un petit souci technique douka. Re-gouli message stp ! 🙏",
+      error: err?.message || String(err),
+      diagnostics,
     }), { status: 200, headers: cors });
   }
 }

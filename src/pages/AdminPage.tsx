@@ -55,13 +55,14 @@ import { useAuth } from '../context/AuthContext';
 import { 
   collection, 
   getDocs, 
+  getDoc,
   doc, 
   setDoc, 
   query, 
   orderBy, 
   serverTimestamp 
 } from 'firebase/firestore';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
 
@@ -85,6 +86,7 @@ export function AdminPage() {
   const isSuperAdminLogged = isUserAdmin(authUser, profile);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(isSuperAdminLogged);
   const [adminPassword, setAdminPassword] = useState('');
+  const [adminEmail, setAdminEmail] = useState('admin@jawebflow.com');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
@@ -182,19 +184,27 @@ export function AdminPage() {
     setAuthLoading(true);
     setAuthError('');
 
-    if (adminPassword === 'Malek2001' || adminPassword === 'Admin2026!') {
-      setIsAdminAuthenticated(true);
-      sessionStorage.setItem('jawebflow_admin_auth', 'true');
-      setAuthLoading(false);
-      return;
-    }
-
+    // ⚠️ SÉCURITÉ : des mots de passe Super Admin étaient écrits en dur ici
+    // (« Malek2001 », « Admin2026! »). Comme ce fichier est embarqué dans le
+    // bundle JavaScript public, n'importe quel visiteur pouvait les lire et
+    // ouvrir la console d'administration. L'accès passe désormais uniquement par
+    // Firebase Auth + la liste d'administrateurs (isUserAdmin).
     try {
-      await signInWithEmailAndPassword(auth, 'admin@jawebflow.com', adminPassword);
+      const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
+      const profileSnap = await getDoc(doc(db, 'users', cred.user.uid));
+      const adminProfile = profileSnap.exists() ? (profileSnap.data() as any) : null;
+
+      if (!isUserAdmin(cred.user, adminProfile)) {
+        await signOut(auth);
+        setAuthError("Ce compte n'a pas les droits Super Admin.");
+        return;
+      }
+
       setIsAdminAuthenticated(true);
-      sessionStorage.setItem('jawebflow_admin_auth', 'true');
+      // Pas de drapeau persistant : la session Firebase suffit et expire seule.
+      sessionStorage.removeItem('jawebflow_admin_auth');
     } catch (err: any) {
-      setAuthError('Mot de passe ou accès Super Admin non valide.');
+      setAuthError('Identifiants Super Admin invalides.');
     } finally {
       setAuthLoading(false);
     }

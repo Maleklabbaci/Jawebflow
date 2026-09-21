@@ -133,8 +133,8 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Analytics & Insights</h2>
-          <p className="text-sm text-slate-500">Performances de votre assistant IA et interactions globales.</p>
+          <h2 className="text-2xl font-bold text-slate-900">Clients & statistiques</h2>
+          <p className="text-sm text-slate-500">Ce que fait votre assistant et ce que vos visiteurs recherchent.</p>
         </div>
       </div>
 
@@ -182,7 +182,7 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Charts Section */}
         <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <h3 className="font-bold text-slate-900">Trafic & Interactions (7 derniers jours)</h3>
+          <h3 className="font-bold text-slate-900">Visiteurs des 7 derniers jours</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stats.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -210,14 +210,14 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
           </div>
         </div>
 
-        {/* Top Interactions Ranking */}
+        {/* Questions les plus posées Ranking */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-amber-100 rounded-lg">
               <span className="text-lg">🏆</span>
             </div>
             <div>
-              <h3 className="font-bold text-slate-900">Top Interactions</h3>
+              <h3 className="font-bold text-slate-900">Questions les plus posées</h3>
               <p className="text-[10px] text-slate-500">Boutons et cartes les plus cliqués</p>
             </div>
           </div>

@@ -32,7 +32,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    // Filet de sécurité : si Firebase ne répond pas (réseau lent, onglet
+    // restauré, script bloqué), on ne laisse jamais l'application bloquée sur
+    // l'écran de chargement — on affiche la page publique.
+    const safetyTimer = setTimeout(() => setLoading(false), 6000);
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      clearTimeout(safetyTimer);
       setUser(fbUser);
       if (fbUser) {
         // Real-time listener for user profile document
@@ -60,7 +66,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, []);
 
   const handleGoogleSignIn = async (): Promise<UserProfile> => {

@@ -2,7 +2,50 @@ interface Env {
   FIREBASE_SERVICE_ACCOUNT?: string;
   FIREBASE_DATABASE_ID?: string;
   GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
   INSTAGRAM_VERIFY_TOKEN?: string;
+  META_VERIFY_TOKEN?: string;
+  INSTAGRAM_APP_SECRET?: string;
+}
+
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+
+/** Jeton de vérification du webhook (les deux noms d'env sont acceptés). */
+function resolveVerifyToken(env: Env): string | null {
+  return env.INSTAGRAM_VERIFY_TOKEN || env.META_VERIFY_TOKEN || null;
+}
+
+/**
+ * Vérifie la signature Meta `X-Hub-Signature-256` (HMAC-SHA256 du corps brut).
+ * Sans cette vérification, n'importe qui peut POSTer de faux messages et faire
+ * répondre le bot / consommer le quota Gemini.
+ */
+async function hasValidMetaSignature(request: Request, rawBody: string, appSecret?: string): Promise<boolean> {
+  if (!appSecret) return false;
+  const header = request.headers.get("x-hub-signature-256") || "";
+  if (!header.startsWith("sha256=")) return false;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(appSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  const expected = `sha256=${base64(digest)}`;
+  return expected === header;
+}
+
+/** Base64 standard (padding inclus) — format des signatures Meta `sha256=`. */
+function base64(source: ArrayBuffer | string): string {
+  if (typeof source === "string") {
+    return btoa(unescape(encodeURIComponent(source)));
+  }
+  const bytes = new Uint8Array(source);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
 
 // Convertit une chaîne/buffer en Base64Url
@@ -200,17 +243,38 @@ export async function onRequestGet(context: { request: Request; env: Env }) {
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
 
-  const verifyToken = context.env.INSTAGRAM_VERIFY_TOKEN || "jawebflow_secret_token";
+  // Un jeton par défaut codé en dur rendait la vérification inutile (n'importe
+  // qui pouvait s'abonner au webhook) : on refuse désormais si aucun jeton
+  // n'est configuré côté Cloudflare.
+  const verifyToken = resolveVerifyToken(context.env);
+  if (!verifyToken) {
+    console.error("[instagram] INSTAGRAM_VERIFY_TOKEN / META_VERIFY_TOKEN non configuré : vérification refusée.");
+    return new Response("Webhook non configuré", { status: 503 });
+  }
 
-  if (mode === "subscribe" && token === verifyToken) {
+  if (mode === "subscribe" && token === verifyToken && challenge) {
     return new Response(challenge, { status: 200 });
   }
+  console.warn("[instagram] vérification webhook refusée", { mode, hasToken: Boolean(token) });
   return new Response("Forbidden", { status: 403 });
 }
 
 export async function onRequestPost(context: { request: Request; env: Env }) {
   try {
-    const body = await context.request.json() as any;
+    const rawBody = await context.request.text();
+    const appSecret = context.env.INSTAGRAM_APP_SECRET;
+
+    if (appSecret) {
+      const valid = await hasValidMetaSignature(context.request, rawBody, appSecret);
+      if (!valid) {
+        console.warn("[instagram] signature X-Hub-Signature-256 invalide : requête rejetée.");
+        return new Response("Invalid signature", { status: 401 });
+      }
+    } else {
+      console.warn("[instagram] INSTAGRAM_APP_SECRET absent : signature Meta non vérifiable (à configurer).");
+    }
+
+    const body = JSON.parse(rawBody || "{}") as any;
 
     if (body.object === "instagram") {
       for (const entry of body.entry || []) {
@@ -238,7 +302,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
           if (geminiApiKey) {
             try {
               const geminiResp = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${context.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL}:generateContent?key=${geminiApiKey}`,
                 {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },

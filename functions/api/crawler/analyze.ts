@@ -1,5 +1,9 @@
 interface Env { GEMINI_API_KEY?: string; }
 
+import { adminGetDocument, verifyFirebaseIdToken, isPublicHttpUrl } from "../../_shared/google.ts";
+
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+
 type Page = { url: string; title: string; text: string; status: "done" | "failed" };
 
 function json(data: unknown, status = 200) {
@@ -30,6 +34,7 @@ function cleanHtml(html: string) {
 
 async function fetchPage(url: string): Promise<Page> {
   try {
+    if (!isPublicHttpUrl(url).ok) throw new Error("URL interne refusée");
     const response = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; JawebFlowCrawler/1.0)", "Accept": "text/html,application/xhtml+xml" },
       signal: AbortSignal.timeout(10000)
@@ -60,10 +65,10 @@ function discoverLinks(html: string, baseUrl: string) {
   return [...links].filter(link => link !== baseUrl).slice(0, 8);
 }
 
-async function synthesizeWithGemini(pages: Page[], siteUrl: string, apiKey: string) {
+async function synthesizeWithGemini(pages: Page[], siteUrl: string, apiKey: string, model: string = DEFAULT_GEMINI_MODEL) {
   const dossier = pages.filter(p => p.status === "done").map(p => `PAGE: ${p.title}\nURL: ${p.url}\n${p.text}`).join("\n\n").slice(0, 28000);
   const prompt = `Analyse uniquement les informations réelles ci-dessous extraites du site ${siteUrl}. Ne complète jamais avec des informations inventées. Retourne uniquement un JSON valide avec businessName, businessCategory, businessDescription, phone, email, deliveryInfo, paymentMethods, siteType, confidence et knowledgeNotes. knowledgeNotes doit contenir 4 à 8 fiches utiles, avec title, category, content, enabled:true, source:"scanned".\n\n${dossier}`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(apiKey)}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.1 } })
   });
   if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
@@ -89,10 +94,30 @@ function fallbackFromPages(pages: Page[], siteUrl: string) {
   };
 }
 
-export async function onRequestPost(context: { request: Request; env: Env }) {
+export async function onRequestPost(context: { request: Request; env: any }) {
   try {
-    const body = await context.request.json().catch(() => ({})) as { url?: string };
+    const body = await context.request.json().catch(() => ({})) as { url?: string; assistantId?: string };
     if (!body.url) return json({ error: "URL is required" }, 400);
+
+    // Anti-SSRF : refuse localhost / réseau privé / métadonnées cloud.
+    const urlCheck = isPublicHttpUrl(body.url.startsWith("http") ? body.url : `https://${body.url}`);
+    if (!urlCheck.ok) return json({ error: `URL refusée : ${urlCheck.reason}` }, 400);
+
+    // Le scan peut être enregistré dans la base de connaissances : on exige un
+    // utilisateur authentifié et propriétaire de l'assistant ciblé.
+    const caller = await verifyFirebaseIdToken(context.env, context.request.headers.get("Authorization"));
+    if (!caller) return json({ error: "Authentification requise : connectez-vous pour lancer un scan." }, 401);
+    if (body.assistantId) {
+      const ownerCheck = await adminGetDocument(context.env, `assistants/${body.assistantId}`);
+      if (ownerCheck.ok && ownerCheck.fields) {
+        const ownerId = ownerCheck.fields.userId?.stringValue;
+        if (ownerId && ownerId !== caller.uid) {
+          console.warn(`[crawler] accès refusé: uid=${caller.uid} assistantId=${body.assistantId}`);
+          return json({ error: "Accès refusé : cet assistant ne vous appartient pas." }, 403);
+        }
+      }
+    }
+
     const url = new URL(body.url.startsWith("http") ? body.url : `https://${body.url}`);
     url.hash = "";
     const rootUrl = url.toString();
@@ -105,7 +130,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
 
     let result: any;
     if (context.env.GEMINI_API_KEY) {
-      try { result = await synthesizeWithGemini(pages, rootUrl, context.env.GEMINI_API_KEY); } catch (_) { result = fallbackFromPages(pages, rootUrl); }
+      try { result = await synthesizeWithGemini(pages, rootUrl, context.env.GEMINI_API_KEY, context.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL); } catch (_) { result = fallbackFromPages(pages, rootUrl); }
     } else result = fallbackFromPages(pages, rootUrl);
 
     return json({ ...result, scrapingStrategy: ["Accueil", "Pages internes", "Services et offres", "Tarifs", "FAQ", "Contact"], scannedPages: pages.map(({ url: pageUrl, title, status }) => ({ url: pageUrl, title, status })) });
