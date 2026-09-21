@@ -135,6 +135,54 @@ export function firestoreDocumentsBase(env: GoogleEnv): string {
 }
 
 /**
+ * Convertit un objet Firestore REST `{ fields: {...} }` en objet JS classique.
+ * Sans ça, chaque Function devait réécrire sa propre copie de cette logique
+ * (ce qui a déjà causé des divergences entre le webhook Instagram et le
+ * crawler : l'un savait lire les tableaux imbriqués, l'autre non).
+ */
+export function parseFields(fields: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (value.stringValue !== undefined) out[key] = value.stringValue;
+    else if (value.doubleValue !== undefined) out[key] = value.doubleValue;
+    else if (value.integerValue !== undefined) out[key] = parseInt(value.integerValue, 10);
+    else if (value.booleanValue !== undefined) out[key] = value.booleanValue;
+    else if (value.arrayValue) {
+      out[key] = (value.arrayValue.values || []).map((v: any) =>
+        v.mapValue ? parseFields(v.mapValue.fields || {}) : v.stringValue ?? v.booleanValue ?? v.doubleValue ?? v
+      );
+    } else if (value.mapValue) {
+      out[key] = parseFields(value.mapValue.fields || {});
+    }
+  }
+  return out;
+}
+
+/** Conversion inverse : objet JS classique ➜ format Firestore REST `fields`. */
+export function toFields(obj: Record<string, any>): Record<string, any> {
+  const fields: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === "string") fields[key] = { stringValue: value };
+    else if (typeof value === "number") {
+      fields[key] = Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    } else if (typeof value === "boolean") fields[key] = { booleanValue: value };
+    else if (Array.isArray(value)) {
+      fields[key] = {
+        arrayValue: {
+          values: value.map((item) =>
+            item && typeof item === "object" ? { mapValue: { fields: toFields(item) } } : toFields({ v: item }).v
+          ),
+        },
+      };
+    } else if (typeof value === "object") {
+      fields[key] = { mapValue: { fields: toFields(value) } };
+    }
+  }
+  return fields;
+}
+
+/**
  * Lecture Admin d'un document Firestore.
  * Renvoie `{ ok, status, fields }` — l'appelant DOIT vérifier `ok` au lieu de
  * supposer que la lecture a réussi (c'était la cause des réponses IA vides :
@@ -163,6 +211,47 @@ export async function adminGetDocument(
     return { ok: true, status: 200, fields: data.fields || null };
   } catch (e: any) {
     return { ok: false, status: 500, fields: null, error: e?.message || String(e) };
+  }
+}
+
+/**
+ * Écriture Admin (fusion / PATCH) d'un document Firestore.
+ *
+ * Sans cette fonction, le crawler ne pouvait renvoyer sa synthèse QUE vers le
+ * frontend, qui devait lui-même écrire dans Firestore avec les identifiants
+ * du navigateur — bloqué par les mêmes règles de sécurité mentionnées en
+ * haut de ce fichier. Résultat : le scan « réussissait » côté IA, mais rien
+ * n'était jamais réellement enregistré dans « Mes informations ».
+ *
+ * `updateMask` restreint la PATCH aux clés fournies (fusion, pas un
+ * remplacement complet du document).
+ */
+export async function adminPatchDocument(
+  env: GoogleEnv,
+  path: string,
+  data: Record<string, any>
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  const sa = env.FIREBASE_SERVICE_ACCOUNT;
+  if (!sa) return { ok: false, status: 500, error: "FIREBASE_SERVICE_ACCOUNT manquant" };
+
+  try {
+    const { accessToken } = await getGoogleAccessToken(sa);
+    const mask = Object.keys(data)
+      .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
+      .join("&");
+    const res = await fetch(`${firestoreDocumentsBase(env)}/${path}?${mask}`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: toFields(data) }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, status: res.status, error: `HTTP ${res.status} ${body.slice(0, 200)}` };
+    }
+    return { ok: true, status: 200 };
+  } catch (e: any) {
+    return { ok: false, status: 500, error: e?.message || String(e) };
   }
 }
 
