@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Instagram, 
   CheckCircle2, 
@@ -104,6 +104,11 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   const [manualAccountIdInput, setManualAccountIdInput] = useState<string>('');
   const [repairingSubscription, setRepairingSubscription] = useState(false);
 
+  // Empêche de renvoyer deux fois le même code d'autorisation Meta à
+  // /api/instagram/oauth/exchange (les codes OAuth sont à usage unique ;
+  // un double envoi déclenche l'erreur "invalid client_secret and code").
+  const processedAuthCodesRef = useRef<Set<string>>(new Set());
+
   // Local storage cache keys for offline resilience
   const getCacheKey = (uid: string) => `jawebflow_ig_config_${uid}`;
 
@@ -172,10 +177,15 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     // Process and exchange incoming Instagram Authorization Code with our backend or direct activation
     const processAuthCode = async (rawCode: string) => {
       if (!rawCode) return;
-      setIsConnecting(true);
 
       // Sanitize authorization code (Meta appends #_ at the end)
       const cleanCode = rawCode.split('#')[0].replace(/_$/, '').trim();
+
+      // Garde-fou anti double-soumission : un code Meta ne peut être échangé qu'une fois.
+      if (processedAuthCodesRef.current.has(cleanCode)) return;
+      processedAuthCodesRef.current.add(cleanCode);
+
+      setIsConnecting(true);
 
       let serverResult: any = null;
 
