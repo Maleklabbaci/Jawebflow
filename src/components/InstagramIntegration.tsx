@@ -220,6 +220,10 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       const finalPageName = serverResult.accountName || finalUsername;
       const finalAccessToken = serverResult.accessToken;
 
+      // L'échange serveur tente aussi d'abonner le compte aux événements "messages".
+      // Sans cet abonnement Meta n'enverra jamais les DM entrants au webhook.
+      const isSubscribed = serverResult.subscribed === true;
+
       const updatedPayload: InstagramIntegrationData = {
         ...integrationData,
         connected: true,
@@ -232,7 +236,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         respondToStories: true,
         respondToComments: false,
         lastConnectedAt: new Date().toISOString(),
-        webhookStatus: 'active',
+        webhookStatus: isSubscribed ? 'active' : 'error',
         totalMessagesHandled: integrationData.totalMessagesHandled || 14,
         unresolvedCount: 0
       };
@@ -250,10 +254,17 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       setIntegrationData(updatedPayload);
       setIsConnecting(false);
 
-      setNotification({
-        type: 'success',
-        message: `Compte Instagram (${finalUsername}) connecté avec un jeton Meta réel. L’IA Gemini est prête pour vos DMs.`
-      });
+      if (isSubscribed) {
+        setNotification({
+          type: 'success',
+          message: `Compte Instagram (${finalUsername}) connecté et abonné aux messages avec un jeton Meta réel. L’IA Gemini est prête pour vos DMs.`
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          message: `Compte connecté, mais l'abonnement au webhook "messages" a échoué (${serverResult.subscribeError || 'raison inconnue'}). Cliquez sur « Réparer l'abonnement webhook » ci-dessous, sinon aucun DM ne sera reçu.`
+        });
+      }
     };
 
     // 1. Check for incoming Instagram Authorization Code in direct URL params (e.g. mobile redirect)
@@ -530,6 +541,49 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
   const webhookCallbackUrl = 'https://jawebflow.pages.dev/api/webhook/instagram';
 
+  // Réabonne manuellement le compte connecté aux événements "messages".
+  // Nécessaire pour toute connexion établie AVANT ce correctif : le token est
+  // valide mais Meta n'a jamais été informé qu'il doit pousser les DM au webhook.
+  const [repairingSubscription, setRepairingSubscription] = useState(false);
+  const handleRepairSubscription = async () => {
+    if (!user?.uid || !integrationData.accessToken) {
+      setNotification({ type: 'error', message: "Aucun jeton d'accès enregistré : reconnectez d'abord votre compte Instagram." });
+      return;
+    }
+    setRepairingSubscription(true);
+    try {
+      const res = await fetch('/api/instagram/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: integrationData.accessToken })
+      });
+      const data = await res.json().catch(() => ({}));
+      const success = data?.success === true;
+
+      const updatedPayload: InstagramIntegrationData = {
+        ...integrationData,
+        webhookStatus: success ? 'active' : 'error'
+      };
+      setIntegrationData(updatedPayload);
+      saveLocalCache(user.uid, updatedPayload);
+      try {
+        const docRef = doc(db, 'instagram_integrations', user.uid);
+        await setDoc(docRef, sanitizeFirestoreData({ webhookStatus: updatedPayload.webhookStatus }), { merge: true });
+      } catch (e) { /* offline fallback */ }
+
+      setNotification({
+        type: success ? 'success' : 'error',
+        message: success
+          ? "Abonnement réparé ! Meta va désormais transmettre vos DM Instagram au webhook."
+          : `Échec de la réparation : ${data?.error || 'jeton probablement expiré, reconnectez le compte.'}`
+      });
+    } catch (e: any) {
+      setNotification({ type: 'error', message: e?.message || "Erreur réseau pendant la réparation de l'abonnement." });
+    } finally {
+      setRepairingSubscription(false);
+    }
+  };
+
   const handleSaveManualToken = async () => {
     if (!user || !manualTokenInput.trim()) return;
     setSaveLoading(true);
@@ -554,6 +608,23 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         console.warn('Meta Graph check notice:', mErr);
       }
 
+      // Abonnement obligatoire aux événements "messages" — sans ça, Meta ne
+      // délivrera jamais les DM entrants même avec un token valide.
+      let isSubscribed = false;
+      let subscribeErrorMsg = '';
+      try {
+        const subRes = await fetch('/api/instagram/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: cleanToken })
+        });
+        const subData = await subRes.json().catch(() => ({}));
+        isSubscribed = subData?.success === true;
+        if (!isSubscribed) subscribeErrorMsg = subData?.error || '';
+      } catch (subErr: any) {
+        subscribeErrorMsg = subErr?.message || 'Erreur réseau';
+      }
+
       const updatedPayload: InstagramIntegrationData = {
         ...integrationData,
         connected: true,
@@ -564,11 +635,20 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         pageName: pageName,
         profilePictureUrl: profilePic,
         autoReplyEnabled: true,
-        webhookStatus: 'active',
+        webhookStatus: isSubscribed ? 'active' : 'error',
         lastConnectedAt: new Date().toISOString()
       };
       saveLocalCache(user.uid, updatedPayload);
       setIntegrationData(updatedPayload);
+
+      if (!isSubscribed) {
+        setNotification({
+          type: 'error',
+          message: `Token validé, mais l'abonnement au webhook "messages" a échoué (${subscribeErrorMsg || 'raison inconnue'}). Aucun DM ne sera reçu tant que ce n'est pas réparé.`
+        });
+        setSaveLoading(false);
+        return;
+      }
 
       try {
         const docRef = doc(db, 'instagram_integrations', user.uid);
@@ -736,10 +816,17 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-bold text-sm text-white">Diagnostic & Statut de Liaison Instagram</h3>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Liaison & Webhook Actifs
-                </span>
+                {integrationData.webhookStatus === 'active' ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Liaison & Webhook Actifs
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                    Webhook non abonné — DM non reçus
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 Compte : <span className="text-purple-300 font-semibold">{integrationData.instagramUsername || '@telyaagency'}</span> • Endpoint : <span className="font-mono text-[11px] text-slate-300">jawebflow.pages.dev/api/webhook/instagram</span>
@@ -756,28 +843,51 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         </div>
 
         {/* Essential Mobile Setting & Verified Status */}
-        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center gap-4">
-          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div className="space-y-1 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="text-xs font-bold text-emerald-300">
-                ✅ Autorisation Meta & Accès aux Messages Validés
-              </h4>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-mono">
-                subscribed: messages
-              </span>
+        {integrationData.webhookStatus === 'active' ? (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center gap-4">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5" />
             </div>
-            <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-              Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</strong> a bien accordé toutes les autorisations nécessaires à Meta. 
-              <br />
-              <span className="text-slate-300">
-                Si vous ne voyez pas le menu « Outils connectés » sur votre application mobile Instagram, <strong>c'est tout à fait normal</strong> : sur les comptes professionnels et les versions récentes de l'application, l'accès aux messages est directement géré et validé par Meta sans action manuelle supplémentaire.
-              </span>
-            </p>
+            <div className="space-y-1 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-xs font-bold text-emerald-300">
+                  ✅ Autorisation Meta & Abonnement aux Messages Validés
+                </h4>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-mono">
+                  subscribed: messages
+                </span>
+              </div>
+              <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+                Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</strong> est confirmé abonné par Meta aux événements de messages. Les DM entrants seront transmis au webhook.
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center gap-4">
+            <div className="w-8 h-8 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <h4 className="text-xs font-bold text-red-300">
+                ⚠️ Compte connecté mais PAS abonné aux messages
+              </h4>
+              <p className="text-[11px] text-red-200/90 leading-relaxed">
+                Meta ne transmettra aucun DM à votre webhook tant que l'abonnement n'est pas confirmé (l'API <span className="font-mono">/subscribed_apps</span> a échoué ou n'a jamais été appelée). C'est très probablement la cause de vos messages sans réponse.
+              </p>
+            </div>
+            <button
+              onClick={handleRepairSubscription}
+              disabled={repairingSubscription}
+              className="shrink-0 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
+            >
+              {repairingSubscription ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Réparation...</>
+              ) : (
+                <><RefreshCw className="w-3.5 h-3.5" /> Réparer l'abonnement webhook</>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Grid: Settings & Live Preview Simulation */}
