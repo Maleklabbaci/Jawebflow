@@ -1,41 +1,28 @@
 /**
  * JAWEBFLOW — Webhook Instagram Direct (Cloudflare Pages Function).
  * URL : GET/POST /api/webhook/instagram
- *
- * Correctifs appliqués :
- *   1. Modèles Gemini valides (gemini-2.5-flash, gemini-2.5-flash-lite,
- *      gemini-flash-latest) — les anciens noms (gemini-3.1-flash-lite,
- *      gemini-2.0-flash…) n'existent pas et faisaient échouer l'IA en silence.
- *   2. TIMEOUT STRICT sur chaque appel réseau (Gemini + Firestore) : sans ça,
- *      une réponse lente de Google bloquait l'exécution jusqu'à ce que
- *      Cloudflare tue le Worker à la limite des 30 secondes — sans jamais
- *      répondre au client (bug confirmé par cpuTime≈0 / wallTime=30000ms).
- *   3. Lookups Firestore PARALLÉLISÉS (au lieu de séquentiels) : chercher la
- *      bonne base parmi plusieurs combinaisons project/database une par une
- *      pouvait à elle seule consommer plusieurs secondes.
- *   4. Collecte des messages : plusieurs messages rapprochés sont regroupés
- *      et traités en UNE seule réponse (système de jeton + buffer Firestore).
- *   5. Informations complètes de l'entreprise, historique de la conversation,
- *      repli automatique de modèle, aucune réponse inventée quand l'IA
- *      échoue (le motif est écrit dans les journaux Cloudflare).
  */
 
 import { getGoogleAccessToken } from "../../_shared/google.ts";
 
-/** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
+/** Modèles Gemini 3.x actifs pour ta clé */
+const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const FALLBACK_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-flash-lite-latest",
+];
+
 const GRAPH_VERSION = "v21.0";
 const HISTORY_LIMIT = 6;
 const THREAD_KEEP = 12;
 
-/** Fenêtre d'attente : temps laissé à l'utilisateur pour envoyer d'autres
- * messages avant que le bot ne regroupe tout et réponde une seule fois. */
-const DEBOUNCE_MS = 5000;
+/** Temps d'attente pour regrouper les messages d'un utilisateur (4 sec) */
+const DEBOUNCE_MS = 4000;
 
-/** Timeouts réseau stricts : évite qu'un appel lent bloque tout le webhook
- * jusqu'à la limite globale de 30s imposée par Cloudflare (waitUntil). */
-const GEMINI_TIMEOUT_MS = 8000;
+/** Timeout réseau */
+const GEMINI_TIMEOUT_MS = 12000;
 const FIRESTORE_TIMEOUT_MS = 5000;
 
 const BASE_PROMPT = `Tu es l'assistant IA d'élite pour le support et la vente en ligne (Développé par JawebFlow).
@@ -62,7 +49,7 @@ const INSTAGRAM_ADDENDUM = `
 - Réponses très courtes (1 à 3 phrases), comme un vrai commerçant qui répond en DM.
 - Pas de Markdown lourd (pas de titres #, pas de tableaux) : texte simple + emojis.
 - Termine par une question courte pour faire avancer la conversation (taille, quantité, adresse de livraison…).
-- Si le client a envoyé plusieurs messages à la suite, ils te sont donnés regroupés en un seul bloc : traite-les comme UNE SEULE demande cohérente.`;
+- Si le client a envoyé plusieurs messages à la suite, ils te sont donnés regroupés : traite-les comme UNE SEULE demande.`;
 
 interface Env {
   FIREBASE_SERVICE_ACCOUNT?: string;
@@ -77,17 +64,6 @@ interface Env {
 
 type Target = { project: string; database: string };
 
-// ---------------------------------------------------------------------------
-// Utilitaire réseau : fetch avec timeout strict (AbortController)
-// ---------------------------------------------------------------------------
-
-/**
- * Sans ce garde-fou, un appel réseau lent (Gemini ou Firestore) peut bloquer
- * l'exécution jusqu'à ce que Cloudflare tue le Worker à la limite des 30
- * secondes — sans jamais renvoyer de réponse au client. Chaque appel a donc
- * désormais une durée maximale au-delà de laquelle on abandonne et on passe
- * à l'étape suivante (modèle de repli, cible Firestore suivante, etc.).
- */
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -98,15 +74,6 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
-// ---------------------------------------------------------------------------
-// Firestore (lecture / écriture Admin, avec repli de base de données)
-// ---------------------------------------------------------------------------
-
-/**
- * Bases Firestore à interroger : celle configurée, celle du projet, puis
- * (default). Sans ce repli, une variable FIRESTORE_DATABASE_ID absente faisait
- * échouer TOUTES les lectures Admin (l'IA répondait alors sans aucune info).
- */
 function firestoreTargets(env: Env, saProjectId?: string): Target[] {
   const projects = Array.from(
     new Set([env.FIRESTORE_PROJECT_ID, saProjectId, "gen-lang-client-0772569610"].filter(Boolean))
@@ -164,7 +131,6 @@ function toFields(obj: Record<string, any>): Record<string, any> {
   return fields;
 }
 
-/** Lecture d'une seule cible Firestore, protégée par timeout. */
 async function readFromTarget(accessToken: string, path: string, t: Target) {
   try {
     const res = await fetchWithTimeout(
@@ -180,12 +146,6 @@ async function readFromTarget(accessToken: string, path: string, t: Target) {
   }
 }
 
-/**
- * Lecture Admin d'un document. Si une cible précise est fournie, un seul
- * appel est fait (rapide). Sinon, TOUTES les combinaisons project/database
- * sont essayées EN PARALLÈLE (et non plus une par une) pour éviter que la
- * recherche à l'aveugle ne consomme plusieurs secondes.
- */
 async function readDocument(env: Env, accessToken: string, path: string, target?: Target) {
   if (target) return readFromTarget(accessToken, path, target);
 
@@ -198,7 +158,6 @@ async function readDocument(env: Env, accessToken: string, path: string, target?
   return { ok: false, data: null as any, target: undefined as any };
 }
 
-/** Écriture (fusion) Admin d'un document, protégée par timeout. */
 async function writeDocument(
   env: Env,
   accessToken: string,
@@ -224,11 +183,6 @@ async function writeDocument(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Prompt + IA
-// ---------------------------------------------------------------------------
-
-/** Prompt construit avec la VRAIE base de connaissances de l'entreprise. */
 function buildSystemPrompt(config: any): string {
   let prompt = BASE_PROMPT;
   if (config?.customInstructions) prompt += `\n\n### 🧠 INSTRUCTIONS DU CLIENT :\n${config.customInstructions}`;
@@ -258,12 +212,6 @@ function buildSystemPrompt(config: any): string {
   return prompt + INSTAGRAM_ADDENDUM;
 }
 
-/**
- * Appel Gemini, avec repli automatique sur un autre modèle ET timeout strict
- * par tentative. Sans ce timeout, une réponse lente de Google bloquait tout
- * le webhook jusqu'à la limite des 30 secondes de Cloudflare, sans jamais
- * répondre au client (bug confirmé : cpuTime≈0 / wallTime=30000ms).
- */
 async function generateReply(
   env: Env,
   systemPrompt: string,
@@ -272,7 +220,7 @@ async function generateReply(
 ): Promise<{ text: string | null; diagnostics: string[] }> {
   const diagnostics: string[] = [];
   if (!env.GEMINI_API_KEY) {
-    diagnostics.push("GEMINI_API_KEY absente (Cloudflare → Settings → Environment variables)");
+    diagnostics.push("GEMINI_API_KEY absente");
     return { text: null, diagnostics };
   }
 
@@ -293,11 +241,21 @@ async function generateReply(
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
             contents,
-            generationConfig: { temperature: 0.6, maxOutputTokens: 400 },
+            generationConfig: {
+              temperature: 0.6,
+              maxOutputTokens: 400,
+              thinkingConfig: { thinkingBudget: 0 }, // ⚡ Coupe la latence de réflexion inutile pour du DM
+            },
           }),
         },
         GEMINI_TIMEOUT_MS
       );
+
+      if (res.status === 429) {
+        diagnostics.push(`${model}: Quota 429 dépassé`);
+        break;
+      }
+
       if (!res.ok) {
         diagnostics.push(`${model}: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 160)}`);
         continue;
@@ -313,22 +271,17 @@ async function generateReply(
     } catch (e: any) {
       const isTimeout = e?.name === "AbortError";
       diagnostics.push(
-        `${model}: ${isTimeout ? `timeout après ${GEMINI_TIMEOUT_MS}ms` : e?.message || e} (${Date.now() - startedAt}ms écoulées)`
+        `${model}: ${isTimeout ? `timeout après ${GEMINI_TIMEOUT_MS}ms` : e?.message || e} (${Date.now() - startedAt}ms)`
       );
     }
   }
   return { text: null, diagnostics };
 }
 
-// ---------------------------------------------------------------------------
-// Instagram
-// ---------------------------------------------------------------------------
-
 function resolveVerifyToken(env: Env): string | null {
   return env.INSTAGRAM_VERIFY_TOKEN || env.META_VERIFY_TOKEN || null;
 }
 
-/** Vérifie la signature Meta `X-Hub-Signature-256` (HMAC-SHA256 du corps brut). */
 async function hasValidMetaSignature(request: Request, rawBody: string, appSecret?: string): Promise<boolean> {
   if (!appSecret) return false;
   const header = request.headers.get("x-hub-signature-256") || "";
@@ -347,12 +300,6 @@ async function hasValidMetaSignature(request: Request, rawBody: string, appSecre
   return `sha256=${hex}` === header;
 }
 
-/**
- * Retrouve la connexion Instagram (multi-tenant) d'après le compte qui reçoit
- * le message. Les cibles Firestore possibles sont testées EN PARALLÈLE (et
- * non plus une par une) pour éviter que cette recherche, exécutée à CHAQUE
- * message reçu (avant même le regroupement), ne consomme plusieurs secondes.
- */
 async function findIntegration(env: Env, instagramAccountId: string) {
   if (!env.FIREBASE_SERVICE_ACCOUNT) return null;
 
@@ -398,7 +345,6 @@ async function findIntegration(env: Env, instagramAccountId: string) {
       if (!doc) return null;
       return { doc, target };
     } catch (e: any) {
-      console.error(`[instagram] recherche sur ${target.database} échouée:`, e?.message || e);
       return null;
     }
   });
@@ -418,8 +364,6 @@ async function findIntegration(env: Env, instagramAccountId: string) {
       };
     }
   }
-
-  console.error(`[instagram] aucune connexion trouvée pour le compte ${instagramAccountId}`);
   return null;
 }
 
@@ -434,9 +378,7 @@ async function sendTypingOn(igToken: string, customerId: string) {
       },
       3000
     );
-  } catch {
-    /* purement cosmétique : ne doit jamais bloquer la réponse */
-  }
+  } catch {}
 }
 
 async function sendInstagramMessage(igToken: string, customerId: string, text: string) {
@@ -450,14 +392,8 @@ async function sendInstagramMessage(igToken: string, customerId: string, text: s
       },
       8000
     );
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error("[instagram] envoi du message refusé:", res.status, body.slice(0, 200));
-      return false;
-    }
-    return true;
-  } catch (e: any) {
-    console.error("[instagram] envoi du message impossible (timeout ou réseau):", e?.message || e);
+    return res.ok;
+  } catch {
     return false;
   }
 }
@@ -466,12 +402,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Ajoute le message reçu au buffer partagé du thread (Firestore) et renvoie
- * un jeton unique. Ce jeton sert de "ticket de course" : seule l'invocation
- * qui détient encore le DERNIER jeton posé après le délai d'attente aura le
- * droit de répondre — les autres se retirent silencieusement.
- */
 async function pushPendingMessage(
   env: Env,
   integration: any,
@@ -499,7 +429,6 @@ async function pushPendingMessage(
   return token;
 }
 
-/** Traitement d'un message privé : infos de l'entreprise ➜ IA ➜ réponse. */
 async function handleDirectMessage(env: Env, event: any) {
   const startedAt = Date.now();
   const customerId: string | undefined = event?.sender?.id;
@@ -516,11 +445,10 @@ async function handleDirectMessage(env: Env, event: any) {
   if (!integration?.igToken || !integration.accessToken) return;
 
   if (!integration.autoReplyEnabled) {
-    console.log("[instagram] réponses automatiques en pause pour", integration.integrationId);
+    console.log("[instagram] réponses en pause pour", integration.integrationId);
     return;
   }
 
-  // Historique + buffer en attente (sous-collection privée, écrite par le serveur)
   const threadPath = `instagram_integrations/${integration.integrationId}/threads/${customerId}`;
   const thread = await readDocument(env, integration.accessToken, threadPath, integration.target);
   const threadTarget = thread.ok ? thread.target : integration.target;
@@ -529,13 +457,12 @@ async function handleDirectMessage(env: Env, event: any) {
   const existingPending: Array<{ text: string; mid: string | null }> =
     thread.ok && Array.isArray(thread.data?.pendingMessages) ? thread.data.pendingMessages : [];
 
-  // Anti-doublon : Meta réessaie plusieurs fois le même événement
   if (message?.mid && handledMids.includes(message.mid)) {
-    console.log("[instagram] message déjà traité, doublon ignoré:", message.mid);
+    console.log("[instagram] message déjà traité:", message.mid);
     return;
   }
 
-  // ── 1) On dépose ce message dans le buffer partagé et on récupère notre jeton.
+  // 1) Dépôt dans le buffer
   const myToken = await pushPendingMessage(
     env,
     integration,
@@ -546,42 +473,29 @@ async function handleDirectMessage(env: Env, event: any) {
     hasAttachment,
     message
   );
-  console.log(
-    `[instagram] message mis en file d'attente (jeton ${myToken.slice(0, 8)}) pour ${customerId} :`,
-    text || "[pièce jointe]"
-  );
+  console.log(`[instagram] message mis en attente (${myToken.slice(0, 8)}) :`, text || "[image]");
 
-  // ── 2) On attend : si un autre message arrive entre-temps, il posera un
-  //    nouveau jeton et gagnera la priorité — on s'efface alors sans répondre.
+  // 2) Attente de 4 secondes pour regrouper les messages suivants
   await sleep(DEBOUNCE_MS);
 
   const recheck = await readDocument(env, integration.accessToken, threadPath, threadTarget);
   const currentToken = recheck.data?.pendingToken;
 
   if (currentToken !== myToken) {
-    console.log(
-      `[instagram] un message plus récent est arrivé entre-temps (jeton ${myToken.slice(0, 8)} dépassé) — on laisse l'autre appel répondre.`
-    );
+    console.log(`[instagram] message plus récent arrivé (jeton ${myToken.slice(0, 8)} cédé).`);
     return;
   }
 
-  // ── 3) On est bien le DERNIER message reçu → on regroupe tout le buffer et
-  //    on répond UNE seule fois pour l'ensemble.
+  // 3) Traitement groupé
   const pendingMessages: Array<{ text: string; mid: string | null }> = Array.isArray(recheck.data?.pendingMessages)
     ? recheck.data.pendingMessages
     : [];
 
-  if (pendingMessages.length === 0) {
-    console.log("[instagram] buffer déjà vidé par un autre appel, rien à faire.");
-    return;
-  }
+  if (pendingMessages.length === 0) return;
 
   const groupedText = pendingMessages.map((m) => m.text).filter(Boolean).join("\n");
   const newMids = pendingMessages.map((m) => m.mid).filter(Boolean) as string[];
-  console.log(
-    `[instagram] regroupement de ${pendingMessages.length} message(s) pour ${customerId} (${Date.now() - startedAt}ms écoulées) :`,
-    groupedText
-  );
+  console.log(`[instagram] regroupement de ${pendingMessages.length} message(s) :`, groupedText);
 
   const freshStored = Array.isArray(recheck.data?.messages) ? recheck.data.messages : stored;
   const history = freshStored
@@ -589,38 +503,20 @@ async function handleDirectMessage(env: Env, event: any) {
     .slice(-HISTORY_LIMIT)
     .map((m: any) => ({ role: m.role, text: m.text }));
 
-  // Informations réelles de l'entreprise — on utilise directement la cible
-  // Firestore déjà connue (integration.target) : sans ça, cette lecture
-  // testait toutes les combinaisons project/database possibles, ajoutant
-  // plusieurs secondes inutiles à chaque réponse.
   let config: any = {};
   if (integration.assistantId) {
-    let read = await readDocument(
-      env,
-      integration.accessToken,
-      `assistants/${integration.assistantId}`,
-      integration.target
-    );
-    if (!read.ok) {
-      // Repli rare : l'assistant n'est pas dans la même base que l'intégration.
-      read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`);
-    }
+    let read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`, integration.target);
+    if (!read.ok) read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`);
     if (read.ok) config = read.data;
-    else console.warn("[instagram] configuration de l'entreprise introuvable pour", integration.assistantId);
-  } else {
-    console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
   }
 
-  // Purement cosmétique : ne bloque jamais la suite (pas de await).
   sendTypingOn(integration.igToken, customerId).catch(() => {});
 
-  const incoming = groupedText || "Le client a envoyé une image que tu ne peux pas lire.";
-  console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
+  const incoming = groupedText || "Le client a envoyé une image.";
+  console.log(`[instagram] appel Gemini 3.5 démarré...`);
   const { text: aiText, diagnostics } = await generateReply(env, buildSystemPrompt(config), incoming, history);
-  console.log(`[instagram] diagnostics IA (${Date.now() - startedAt}ms écoulées):`, diagnostics.join(" | "));
+  console.log(`[instagram] diagnostics IA:`, diagnostics.join(" | "));
 
-  // Plus de fausse réponse : si l'IA échoue, message honnête au client et motif
-  // réel écrit dans les journaux Cloudflare.
   const businessName = config?.businessName || "notre équipe";
   const replyText =
     aiText ||
@@ -629,7 +525,7 @@ async function handleDirectMessage(env: Env, event: any) {
       : `Merci pour votre message 🙏 Nous revenons vers vous dans quelques instants (${businessName}).`);
 
   const sent = await sendInstagramMessage(integration.igToken, customerId, replyText);
-  console.log(`[instagram] message envoyé=${sent} (${Date.now() - startedAt}ms écoulées)`);
+  console.log(`[instagram] envoyé=${sent} (${Date.now() - startedAt}ms total)`);
 
   const messages = [
     ...freshStored.map((m: any) => ({ role: m.role, text: m.text })),
@@ -643,17 +539,13 @@ async function handleDirectMessage(env: Env, event: any) {
     threadPath,
     {
       messages,
-      pendingMessages: [], // buffer vidé après traitement
+      pendingMessages: [],
       handledMids: [...handledMids, ...newMids].slice(-30),
       updatedAt: new Date().toISOString(),
     },
     threadTarget
   );
 }
-
-// ---------------------------------------------------------------------------
-// Handlers Cloudflare Pages
-// ---------------------------------------------------------------------------
 
 export async function onRequestOptions() {
   return new Response(null, {
@@ -673,14 +565,10 @@ export async function onRequestGet(context: { request: Request; env: Env }) {
   const challenge = url.searchParams.get("hub.challenge");
 
   const verifyToken = resolveVerifyToken(context.env);
-  if (!verifyToken) {
-    console.error("[instagram] INSTAGRAM_VERIFY_TOKEN / META_VERIFY_TOKEN non configuré : vérification refusée.");
-    return new Response("Webhook non configuré", { status: 503 });
-  }
+  if (!verifyToken) return new Response("Webhook non configuré", { status: 503 });
   if (mode === "subscribe" && token === verifyToken && challenge) {
     return new Response(challenge, { status: 200 });
   }
-  console.warn("[instagram] vérification webhook refusée", { mode, hasToken: Boolean(token) });
   return new Response("Forbidden", { status: 403 });
 }
 
@@ -693,13 +581,8 @@ export async function onRequestPost(context: {
     const rawBody = await context.request.text();
     const appSecret = context.env.INSTAGRAM_APP_SECRET;
 
-    if (appSecret) {
-      if (!(await hasValidMetaSignature(context.request, rawBody, appSecret))) {
-        console.warn("[instagram] signature X-Hub-Signature-256 invalide : requête rejetée.");
-        return new Response("Invalid signature", { status: 401 });
-      }
-    } else {
-      console.warn("[instagram] INSTAGRAM_APP_SECRET absent : signature Meta non vérifiable (à configurer).");
+    if (appSecret && !(await hasValidMetaSignature(context.request, rawBody, appSecret))) {
+      return new Response("Invalid signature", { status: 401 });
     }
 
     const body = JSON.parse(rawBody || "{}");
@@ -712,17 +595,12 @@ export async function onRequestPost(context: {
       for (const messagingEvent of entry.messaging || []) events.push(messagingEvent);
     }
 
-    console.log(`[instagram] webhook reçu : ${events.length} événement(s)`);
-
-    // Réponse immédiate à Meta (sinon Meta considère le webhook en échec et
-    // renvoie l'événement en boucle) ; le traitement (incluant l'attente de
-    // regroupement) continue en arrière-plan via waitUntil.
     const work = (async () => {
       for (const event of events) {
         try {
           await handleDirectMessage(context.env, event);
         } catch (e: any) {
-          console.error("[instagram] traitement d'un message échoué:", e?.message || e);
+          console.error("[instagram] erreur message:", e?.message || e);
         }
       }
     })();
@@ -732,7 +610,6 @@ export async function onRequestPost(context: {
 
     return new Response("EVENT_RECEIVED", { status: 200 });
   } catch (error: any) {
-    console.error("Erreur dans le Webhook Instagram:", error);
     return new Response("EVENT_RECEIVED", { status: 200 });
   }
 }
