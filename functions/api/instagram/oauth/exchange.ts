@@ -1,3 +1,5 @@
+import { subscribeToInstagramMessages } from "../subscribe";
+
 interface Env {
   INSTAGRAM_APP_ID?: string;
   INSTAGRAM_APP_SECRET?: string;
@@ -106,14 +108,31 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       }, 400);
     }
 
-    // 6. Succès
+    // 6. Abonnement obligatoire aux événements "messages" du webhook.
+    // Sans cette étape, Meta ne renverra JAMAIS les DM entrants au callback,
+    // même si le token est valide et le webhook vérifié.
+    let subscribed = false;
+    let subscribeError: string | undefined;
+    try {
+      const subResult = await subscribeToInstagramMessages(accessToken);
+      subscribed = subResult.success;
+      if (!subscribed) {
+        subscribeError = subResult.data?.error?.message || `Échec de l'abonnement webhook (HTTP ${subResult.status}).`;
+      }
+    } catch (subErr: any) {
+      subscribeError = subErr?.message || "Erreur réseau pendant l'abonnement webhook.";
+    }
+
+    // 7. Succès
     return json({
       success: true,
       instagramUserId: String(profile.id),
       instagramUsername: profile.username ? `@${profile.username}` : "@compte_instagram",
       accountName: profile.name || profile.username || "Compte Instagram",
       profilePictureUrl: profile.profile_picture_url || "",
-      accessToken: accessToken
+      accessToken: accessToken,
+      subscribed,
+      subscribeError
     });
 
   } catch (error: any) {
