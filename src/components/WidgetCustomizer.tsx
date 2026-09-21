@@ -36,19 +36,19 @@ interface WidgetCustomizerProps {
 
 // Icon choices with icons and labels
 const ICON_OPTIONS = [
-  { id: 'sparkles', label: 'IA Sparkles', icon: Sparkles },
-  { id: 'bot', label: 'Robot IA', icon: Bot },
+  { id: 'sparkles', label: 'Étoiles', icon: Sparkles },
+  { id: 'bot', label: 'Robot', icon: Bot },
   { id: 'message', label: 'Bulle Message', icon: MessageSquare },
   { id: 'zap', label: 'Éclair Rapide', icon: Zap },
   { id: 'headphone', label: 'Support Client', icon: Headphones },
-  { id: 'brain', label: 'Cerveau IA', icon: Brain },
+  { id: 'brain', label: 'Cerveau', icon: Brain },
   { id: 'shield', label: 'Sécurité & Pro', icon: Shield },
   { id: 'custom_logo', label: 'Logo / Image Personnalisé', icon: ImageIcon },
 ] as const;
 
 // Color presets
 const COLOR_PRESETS = [
-  { name: 'Violet IA', primary: '#9333ea', secondary: '#6366f1' },
+  { name: 'Violet', primary: '#9333ea', secondary: '#6366f1' },
   { name: 'Émeraude Pro', primary: '#059669', secondary: '#10b981' },
   { name: 'Bleu Océan', primary: '#2563eb', secondary: '#06b6d4' },
   { name: 'Sunset Rose', primary: '#e11d48', secondary: '#f97316' },
@@ -126,7 +126,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
     compact: 'rounded-xl'
   }[config.shape || 'circle'];
 
-  const scriptPreview = `<!-- Widget Bulle IA JawebFlow pour ${businessName || 'votre site'} -->
+  const scriptPreview = `<!-- Bulle de discussion JawebFlow pour ${businessName || 'votre site'} -->
 <script 
   src="https://cdn.jawebflow.com/widget.js" 
   data-assistant-id="${widgetId || 'asst_live'}" 

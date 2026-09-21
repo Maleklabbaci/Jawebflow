@@ -5,6 +5,8 @@ import {
   Globe,
   Database,
   MessageSquare,
+  BarChart3,
+  Store,
   Code2,
   Settings,
   Users,
@@ -64,6 +66,48 @@ import { WebhookTestingUtility } from './WebhookTestingUtility';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
 export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'widget' | 'simulator' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
+
+/**
+ * Menu de l'espace client.
+ * Règle : un libellé = une action concrète pour le commerçant.
+ * On évite volontairement le vocabulaire technique (crawler, widget, webhook,
+ * simulateur, CRM, API) qui perdait les utilisateurs non techniques.
+ */
+const NAV_GROUPS: Array<{
+  title: string;
+  items: Array<{ id: DashboardSectionId; label: string; icon: React.ComponentType<{ className?: string }>; pro?: boolean }>;
+}> = [
+  {
+    title: 'Mon assistant',
+    items: [
+      { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
+      { id: 'crawler', label: 'Mon site web', icon: Store, pro: true },
+      { id: 'knowledge', label: 'Mes informations', icon: Database },
+      { id: 'widget', label: 'Apparence', icon: Palette },
+      { id: 'simulator', label: 'Tester l\'assistant', icon: MessageSquare, pro: true },
+    ],
+  },
+  {
+    title: 'Mes résultats',
+    items: [
+      { id: 'leads', label: 'Clients & statistiques', icon: BarChart3, pro: true },
+    ],
+  },
+  {
+    title: 'Installation',
+    items: [
+      { id: 'integration', label: 'Mettre sur mon site', icon: Code2 },
+      { id: 'instagram', label: 'Instagram', icon: Instagram, pro: true },
+    ],
+  },
+  {
+    title: 'Mon compte',
+    items: [
+      { id: 'billing', label: 'Abonnement & factures', icon: CreditCard },
+      { id: 'settings', label: 'Mon profil', icon: User },
+    ],
+  },
+];
 
 interface DashboardPlatformProps {
   initialSection?: string;
@@ -180,6 +224,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Integration Code & Format
   const [integrationTab, setIntegrationTab] = useState<'react' | 'nextjs' | 'html' | 'wordpress' | 'php'>('react');
+  // Les détails techniques (code multi-frameworks, test de webhook) sont masqués
+  // par défaut : l'espace client s'adresse à des commerçants, pas à des devs.
+  const [showAdvancedIntegration, setShowAdvancedIntegration] = useState(false);
+  const [showAdvancedWebhook, setShowAdvancedWebhook] = useState(false);
   const [assistantTone, setAssistantTone] = useState<string>('professionnel');
   const [languages, setLanguages] = useState<{ fr: boolean; darija: boolean; en: boolean; ar: boolean }>({
     fr: true,
@@ -995,12 +1043,12 @@ echo "Réponse de l'Assistant : " . $result['message'];
           {/* Top Platform Header */}
           <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm shadow-purple-600/30">
-                <Sparkles className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white text-sm font-bold">
+                J
               </div>
               <div>
-                <span className="font-bold text-sm text-slate-900 tracking-tight block">Cockpit IA</span>
-                <span className="text-[10px] text-purple-600 font-semibold font-mono block">JawebFlow Studio</span>
+                <span className="font-semibold text-sm text-slate-900 block">JawebFlow</span>
+                <span className="text-[11px] text-slate-400 block">Espace client</span>
               </div>
             </div>
             
@@ -1023,257 +1071,60 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </div>
           </div>
 
-          {/* Assistant Info Pill */}
-          <div className="p-3 mx-3 my-3 rounded-xl bg-purple-50/70 border border-purple-100 flex items-center gap-2.5">
+          {/* Encart assistant : nom + état, en clair */}
+          <div className="p-3 mx-3 my-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-2.5">
             <div className={`w-2 h-2 rounded-full shrink-0 ${isReadyToDeploy ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></div>
             <div className="truncate flex-1">
               <span className="block text-xs font-bold text-slate-900 truncate">
                 {businessName || 'Assistant en configuration'}
               </span>
-              <span className="block text-[10px] font-mono text-purple-700 truncate">
-                ID: {currentWidgetId}
+              <span className="block text-[11px] text-slate-400 truncate">
+                {isReadyToDeploy ? 'En ligne · répond à vos visiteurs' : 'À compléter pour être en ligne'}
               </span>
             </div>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="p-3 space-y-1.5">
-            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Tableau de Bord
-            </div>
-
-            <button
-              type="button"
-              id="nav-dashboard-overview"
-              onClick={() => handleSectionChange('overview')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'overview'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard className="w-4 h-4" />
-                <span>Vue d'ensemble</span>
+          {/* Navigation : libellés simples, pensés pour un commerçant, pas pour un développeur */}
+          <nav className="p-3 space-y-1">
+            {NAV_GROUPS.map((group) => (
+              <div key={group.title} className="pb-1">
+                <div className="px-3 pb-1.5 pt-3 text-[11px] font-semibold text-slate-400">
+                  {group.title}
+                </div>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentSection === item.id;
+                  const badge =
+                    item.id === 'leads' ? String(leadsList.length)
+                    : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length)
+                    : null;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      id={`nav-${item.id}`}
+                      onClick={() => handleSectionChange(item.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-slate-100 text-slate-900 font-semibold'
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50 font-medium'
+                      }`}
+                    >
+                      <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-slate-900' : 'text-slate-400'}`} />
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {badge && badge !== '0' && (
+                        <span className={`text-[11px] tabular-nums ${isActive ? 'text-slate-600' : 'text-slate-400'}`}>
+                          {badge}
+                        </span>
+                      )}
+                      {item.pro && isPlanGated && (
+                        <Lock className="w-3 h-3 text-amber-500" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <ChevronRight className="w-3.5 h-3.5 opacity-50" />
-            </button>
-
-            <button
-              type="button"
-              id="nav-leads-crm"
-              onClick={() => handleSectionChange('leads')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'leads'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Users className="w-4 h-4" />
-                <span>Insights & CRM</span>
-              </div>
-              {isPlanGated ? (
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold flex items-center gap-1 border ${
-                  currentSection === 'leads' ? 'bg-white/20 text-white border-white/30' : 'bg-amber-50 text-amber-800 border-amber-200'
-                }`}>
-                  <Lock className="w-2.5 h-2.5 text-amber-600" />
-                  <span>PRO</span>
-                </span>
-              ) : (
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  currentSection === 'leads' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
-                }`}>
-                  {leadsList.length}
-                </span>
-              )}
-            </button>
-
-            <div className="pt-3 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Configuration IA
-            </div>
-
-            <button
-              type="button"
-              id="nav-step-crawler"
-              onClick={() => handleSectionChange('crawler')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'crawler'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Globe className="w-4 h-4" />
-                <span>Scanner de Site</span>
-              </div>
-              {isPlanGated ? (
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold flex items-center gap-1 border ${
-                  currentSection === 'crawler' ? 'bg-white/20 text-white border-white/30' : 'bg-amber-50 text-amber-800 border-amber-200'
-                }`}>
-                  <Lock className="w-2.5 h-2.5 text-amber-600" />
-                  <span>PRO</span>
-                </span>
-              ) : (
-                websiteUrl && <Check className={`w-3.5 h-3.5 ${currentSection === 'crawler' ? 'text-white' : 'text-emerald-500'}`} />
-              )}
-            </button>
-
-            <button
-              type="button"
-              id="nav-step-knowledge"
-              onClick={() => handleSectionChange('knowledge')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'knowledge'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Database className="w-4 h-4" />
-                <span>Base de Connaissances</span>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                currentSection === 'knowledge' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
-              }`}>
-                {knowledgeNotes.filter(n => n.enabled).length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              id="nav-step-widget"
-              onClick={() => handleSectionChange('widget')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'widget'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Palette className="w-4 h-4" />
-                <span>Apparence & Widget</span>
-              </div>
-              <div 
-                className="w-3 h-3 rounded-full border border-slate-300 shadow-inner" 
-                style={{ backgroundColor: widgetConfig.primaryColor }}
-              />
-            </button>
-
-            <button
-              type="button"
-              id="nav-step-simulator"
-              onClick={() => handleSectionChange('simulator')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'simulator'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Bot className="w-4 h-4" />
-                <span>Testeur & Simulateur</span>
-              </div>
-              {isPlanGated ? (
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold flex items-center gap-1 border ${
-                  currentSection === 'simulator' ? 'bg-white/20 text-white border-white/30' : 'bg-amber-50 text-amber-800 border-amber-200'
-                }`}>
-                  <Lock className="w-2.5 h-2.5 text-amber-600" />
-                  <span>PRO</span>
-                </span>
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 opacity-50" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              id="nav-step-integration"
-              onClick={() => handleSectionChange('integration')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'integration'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Code2 className="w-4 h-4" />
-                <span>Widget Web & Script</span>
-              </div>
-              <ChevronRight className="w-3.5 h-3.5 opacity-50" />
-            </button>
-
-            <button
-              type="button"
-              id="nav-step-instagram"
-              onClick={() => handleSectionChange('instagram')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'instagram'
-                  ? 'bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Instagram className="w-4 h-4 text-pink-500" />
-                <span>Instagram DMs & Pages</span>
-              </div>
-              {isPlanGated ? (
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold flex items-center gap-1 border ${
-                  currentSection === 'instagram' ? 'bg-white/20 text-white border-white/30' : 'bg-amber-50 text-amber-800 border-amber-200'
-                }`}>
-                  <Lock className="w-2.5 h-2.5 text-amber-600" />
-                  <span>PRO</span>
-                </span>
-              ) : (
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                  currentSection === 'instagram' ? 'bg-white/20 text-white' : 'bg-pink-50 text-pink-700 border border-pink-200'
-                }`}>
-                  Nouveau
-                </span>
-              )}
-            </button>
-
-            <div className="pt-3 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Abonnement & Compte
-            </div>
-
-            <button
-              type="button"
-              id="nav-step-billing"
-              onClick={() => handleSectionChange('billing')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'billing'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <CreditCard className="w-4 h-4" />
-                <span>Plan & Facturation</span>
-              </div>
-              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-                currentSection === 'billing' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-              }`}>
-                {activePlan.toUpperCase()}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              id="nav-settings-profile"
-              onClick={() => handleSectionChange('settings')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                currentSection === 'settings'
-                  ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <User className="w-4 h-4" />
-                <span>Mon Compte & Équipe</span>
-              </div>
-              <ChevronRight className="w-3.5 h-3.5 opacity-50" />
-            </button>
+            ))}
           </nav>
         </div>
 
@@ -1333,46 +1184,25 @@ echo "Réponse de l'Assistant : " . $result['message'];
               <Menu className="w-5 h-5" />
             </button>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-400">Espace Assistant</span>
-                <span className="text-xs text-slate-300">/</span>
-                <span className="text-xs font-bold text-purple-700 capitalize">
-                  {currentSection === 'overview' && 'Vue d\'ensemble'}
-                  {currentSection === 'crawler' && 'Scanner le Site'}
-                  {currentSection === 'knowledge' && 'Base de Connaissances'}
-                  {currentSection === 'widget' && 'Apparence & Bulle'}
-                  {currentSection === 'simulator' && 'Testeur & Simulateur'}
-                  {currentSection === 'integration' && 'Code d\'Intégration'}
-                  {currentSection === 'leads' && 'Insights & CRM'}
-                  {currentSection === 'billing' && 'Mon Plan & Facturation'}
-                  {currentSection === 'settings' && 'Mon Compte & Équipe'}
-                </span>
-              </div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900">
-                {businessName || 'Assistant IA Entreprise'}
+              <h1 className="text-base sm:text-lg font-semibold text-slate-900">
+                {currentSection === 'overview' ? `Bonjour${(profile?.displayName || user?.displayName || '').split(' ')[0] ? ` ${(profile?.displayName || user?.displayName || '').split(' ')[0]}` : ''}` : null}
+                {currentSection === 'crawler' && 'Mon site web'}
+                {currentSection === 'knowledge' && 'Mes informations'}
+                {currentSection === 'widget' && 'Apparence de la bulle'}
+                {currentSection === 'simulator' && 'Tester mon assistant'}
+                {currentSection === 'integration' && 'Installer sur mon site'}
+                {currentSection === 'leads' && 'Clients & statistiques'}
+                {currentSection === 'billing' && 'Abonnement & factures'}
+                {currentSection === 'settings' && 'Mon profil'}
+                {currentSection === 'instagram' && 'Instagram'}
               </h1>
+              {currentSection !== 'overview' && (
+                <p className="text-xs text-slate-400">{businessName || 'Assistant en configuration'}</p>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Assistant ID quick copy pill */}
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs">
-              <span className="text-slate-400 text-[11px]">ID :</span>
-              <span className="font-mono font-bold text-slate-800 text-[11px]">{currentWidgetId}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(currentWidgetId);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }}
-                className="ml-1 text-slate-400 hover:text-purple-600 transition-colors"
-                title="Copier l'ID de l'assistant"
-              >
-                {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-              </button>
-            </div>
-
             {/* Quick Save Database Button */}
             <button
               type="button"
@@ -1402,244 +1232,132 @@ echo "Réponse de l'Assistant : " . $result['message'];
         <main className="p-4 sm:p-8 flex-1 max-w-6xl w-full mx-auto">
           
           {/* =================================================================
-              SECTION: OVERVIEW (DASHBOARD GLOBAL)
+              SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
           {currentSection === 'overview' && (
-            <div className="space-y-8 animate-in fade-in duration-200">
-              {/* Hero Status Card */}
-              <div className="p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-sm relative overflow-hidden">
-                <div className="relative z-10 space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{isPlanGated ? 'Compte Découverte (Gratuit)' : 'Cockpit Opérationnel'}</span>
-                    </div>
-                    {isPlanGated && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
-                        <Lock className="w-3 h-3 text-amber-600" />
-                        <span>Fonctionnalités IA & CRM verrouillées</span>
-                      </span>
-                    )}
-                  </div>
+            <div className="space-y-6 animate-in fade-in duration-200">
 
-                  <div className="max-w-2xl space-y-2">
-                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                      {isPlanGated
-                        ? `Préparez l'intégration de ${businessName || 'votre Assistant'}`
-                        : `Bienvenue sur le cockpit de ${businessName || 'votre Assistant'}`
-                      }
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-                      {isPlanGated
-                        ? "Configurez manuellement votre base de connaissances, personnalisez l'apparence de la bulle et intégrez le widget sur votre site avec test webhook. Débloquez un plan pour activer le scan IA, le simulateur interactif et le CRM."
-                        : "Votre assistant IA est prêt à qualifier vos visiteurs, répondre à leurs questions 24h/24 et enregistrer vos prospects."
-                      }
-                    </p>
-                  </div>
+              {/* Message d'accueil + action principale */}
+              <div className="rounded-xl border border-slate-200 bg-white p-6">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {businessName ? `Votre assistant pour ${businessName}` : 'Votre assistant est presque prêt'}
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                  {isReadyToDeploy
+                    ? "Il répond à vos visiteurs en français et en arabe, 24h/24, et enregistre les coordonnées des clients intéressés."
+                    : "Ajoutez vos informations (prix, horaires, livraison) puis installez la bulle sur votre site. Cela prend quelques minutes."}
+                </p>
 
-                  <div className="flex flex-wrap items-center gap-3 pt-2">
-                    {isPlanGated ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSectionChange('knowledge')}
-                          className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs flex items-center gap-2 shadow-sm shadow-purple-600/20 cursor-pointer transition-all"
-                        >
-                          <Database className="w-4 h-4" />
-                          <span>Remplir la Base de Connaissances</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSectionChange('widget')}
-                          className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-2 border border-slate-300 cursor-pointer transition-colors"
-                        >
-                          <Palette className="w-4 h-4 text-purple-600" />
-                          <span>Personnaliser l'Apparence</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSectionChange('billing')}
-                          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm cursor-pointer transition-all"
-                        >
-                          <Crown className="w-4 h-4" />
-                          <span>Débloquer l'IA & CRM</span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSectionChange('simulator')}
-                          className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs flex items-center gap-2 shadow-sm shadow-purple-600/20 cursor-pointer transition-all"
-                        >
-                          <Bot className="w-4 h-4" />
-                          <span>Tester l'Assistant en direct</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSectionChange('integration')}
-                          className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-2 border border-slate-300 cursor-pointer transition-colors"
-                        >
-                          <Code2 className="w-4 h-4 text-purple-600" />
-                          <span>Obtenir le code d'intégration</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {!isReadyToDeploy && (
+                    <button
+                      type="button"
+                      onClick={() => handleSectionChange('knowledge')}
+                      className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                    >
+                      Ajouter mes informations
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSectionChange(isReadyToDeploy ? 'integration' : 'widget')}
+                    className={`rounded-lg px-4 py-2.5 text-sm font-medium ${
+                      isReadyToDeploy
+                        ? 'bg-slate-900 text-white hover:bg-slate-800'
+                        : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {isReadyToDeploy ? 'Mettre sur mon site' : 'Choisir l\'apparence'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSectionChange('simulator')}
+                    className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Tester une conversation
+                  </button>
                 </div>
               </div>
 
-              {/* Step Flow Bento Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {/* Step 1: Knowledge Base (Free) */}
-                <div 
-                  onClick={() => handleSectionChange('knowledge')}
-                  className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-purple-300 hover:shadow-md transition-all cursor-pointer group space-y-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                      <Database className="w-5 h-5" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Inclus (Gratuit)
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">1. Base de Connaissances</h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Créez manuellement vos fiches de tarifs, services, horaires et FAQ pour alimenter l'assistant.
-                    </p>
-                  </div>
+              {/* Trois informations essentielles, sans surcharge */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-sm text-slate-500">Statut de mon assistant</p>
+                  <p className="mt-1.5 flex items-center gap-2 text-base font-semibold text-slate-900">
+                    <span className={`h-2 w-2 rounded-full ${isReadyToDeploy ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                    {isReadyToDeploy ? 'En ligne' : 'En préparation'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {isReadyToDeploy ? 'Répond à vos visiteurs' : 'Complétez les étapes ci-dessous'}
+                  </p>
                 </div>
 
-                {/* Step 2: Widget Appearance (Free) */}
-                <div 
-                  onClick={() => handleSectionChange('widget')}
-                  className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-purple-300 hover:shadow-md transition-all cursor-pointer group space-y-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                      <Palette className="w-5 h-5" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Inclus (Gratuit)
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">2. Apparence & Widget</h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Personnalisez les couleurs, le logo, le titre d'en-tête et les messages d'accueil.
-                    </p>
-                  </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-sm text-slate-500">Clients intéressés</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{leadsList.length}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">Avec nom ou numéro de téléphone</p>
                 </div>
 
-                {/* Step 3: Script & Webhook (Free) */}
-                <div 
-                  onClick={() => handleSectionChange('integration')}
-                  className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-purple-300 hover:shadow-md transition-all cursor-pointer group space-y-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                      <Code2 className="w-5 h-5" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Inclus (Gratuit)
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">3. Widget Web & Webhook</h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Copiez le code d'intégration HTML/React et testez la connectivité webhook vers votre serveur.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Card 1: Crawler */}
-                <div 
-                  onClick={() => handleSectionChange('crawler')}
-                  className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-purple-300 hover:shadow-md transition-all cursor-pointer group space-y-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                      <Globe className="w-5 h-5" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> Scanner IA Actif
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">Scanner de Site par IA</h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Scraping automatique complet de vos pages pour générer vos fiches de connaissances sans saisie manuelle.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Card 2: Simulator */}
-                <div 
-                  onClick={() => handleSectionChange('simulator')}
-                  className={`p-6 rounded-2xl border transition-all cursor-pointer group space-y-4 ${
-                    isPlanGated
-                      ? 'bg-gradient-to-b from-slate-50 to-amber-50/20 border-amber-200/80 hover:border-amber-400 shadow-xs'
-                      : 'bg-white border-slate-200 hover:border-purple-300 hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                      <Bot className="w-5 h-5" />
-                    </div>
-                    {isPlanGated ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-amber-700" /> Verrouillé
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Débloqué
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">Simulateur & Réponses IA</h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Test interactif de dialogues en direct en français, darija et anglais avant déploiement.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Card 3: Leads CRM & Instagram */}
-                <div 
-                  onClick={() => handleSectionChange('leads')}
-                  className={`p-6 rounded-2xl border transition-all cursor-pointer group space-y-4 ${
-                    isPlanGated
-                      ? 'bg-gradient-to-b from-slate-50 to-amber-50/20 border-amber-200/80 hover:border-amber-400 shadow-xs'
-                      : 'bg-white border-slate-200 hover:border-purple-300 hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    {isPlanGated ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-amber-700" /> Verrouillé
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Débloqué
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">Insights CRM & Contacts</h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Collecte et export des prospects (téléphone, email), analytics et gestion des opportunités.
-                    </p>
-                  </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-sm text-slate-500">Informations utilisées</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">
+                    {knowledgeNotes.filter(n => n.enabled).length}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-400">Fiches lues par l'assistant</p>
                 </div>
               </div>
+
+              {/* Ce qu'il reste à faire (3 étapes maximum) */}
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-5 py-3.5">
+                  <h3 className="text-sm font-semibold text-slate-900">À faire</h3>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {[
+                    { done: hasIdentity, label: 'Renseigner le nom de mon entreprise', section: 'settings' as DashboardSectionId },
+                    { done: hasKnowledge, label: 'Ajouter mes informations (prix, livraison, horaires)', section: 'knowledge' as DashboardSectionId },
+                    { done: websiteUrl.trim().length > 0, label: 'Indiquer l\'adresse de mon site web', section: 'crawler' as DashboardSectionId },
+                    { done: isReadyToDeploy, label: 'Installer la bulle sur mon site', section: 'integration' as DashboardSectionId },
+                  ].map((step) => (
+                    <li key={step.label}>
+                      <button
+                        type="button"
+                        onClick={() => handleSectionChange(step.section)}
+                        className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
+                      >
+                        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                          step.done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'
+                        }`}>
+                          {step.done && <Check className="h-3 w-3" />}
+                        </span>
+                        <span className={`flex-1 text-sm ${step.done ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                          {step.label}
+                        </span>
+                        <ChevronRight className="h-4 w-4 text-slate-300" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Rappel du plan, uniquement s'il y a quelque chose à débloquer */}
+              {isPlanGated && (
+                <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Compte découverte</p>
+                    <p className="text-sm text-slate-500">
+                      L'installation et la personnalisation sont incluses. L'activation des réponses automatiques se fait avec un abonnement.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSectionChange('billing')}
+                    className="shrink-0 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                  >
+                    Voir les offres
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1682,7 +1400,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 <div className="space-y-2">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/80 text-purple-700 text-xs font-semibold">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>Scraping & Synthèse IA Multi-Pages</span>
+                    <span>Analyse automatique de mon site</span>
                   </div>
                   <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
                     Scanner votre Site Web
@@ -1920,7 +1638,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
           {currentSection === 'simulator' && (
             isPlanGated ? (
               <LockedFeatureGate
-                title="Testeur & Simulateur en Temps Réel"
+                title="Tester mon assistant"
                 subtitle="Testez l'intelligence conversationnelle de votre assistant en direct, en français, darija ou anglais, avant de le déployer sur votre site public."
                 icon={Bot}
                 featureName="Simulateur IA"
@@ -1938,10 +1656,10 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold">
                     <Bot className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Simulateur en Temps Réel</span>
+                    <span>Aperçu réel</span>
                   </div>
                   <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                    Tester le Comportement de l'Assistant
+                    Voir comment votre assistant répond
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
                     Posez des questions sur vos tarifs, livraisons, services ou écrivez en darija pour vérifier que l'IA exploite parfaitement vos notes de connaissances.
@@ -2053,28 +1771,50 @@ echo "Réponse de l'Assistant : " . $result['message'];
               <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold">
-                      <Code2 className="w-3.5 h-3.5" />
-                      <span>Installation Rapide</span>
+                    <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Environ 3 minutes</span>
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                      Intégrer l'Assistant sur votre Site Web
+                    <h2 className="text-xl font-semibold text-slate-900 tracking-tight">
+                      Mettre la bulle sur mon site
                     </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-                      Copiez le code prêt à l'emploi personnalisé avec l'identifiant de votre compte (<span className="font-mono font-bold text-purple-700">{currentWidgetId}</span>) et vos styles configurés.
+                    <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
+                      Copiez le code ci-dessous et envoyez-le à la personne qui gère votre site
+                      (webmaster, agence, ou votre prestataire Shopify / WordPress). C'est tout :
+                      la bulle apparaîtra automatiquement sur vos pages.
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleCopyCode}
-                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs flex items-center gap-2 shadow-sm shadow-purple-600/20 transition-all cursor-pointer shrink-0"
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>{copied ? 'Code Copié !' : 'Copier le Code'}</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopyCode}
+                      className="px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copied ? 'Code copié' : 'Copier le code'}</span>
+                    </button>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent('Installation de la bulle de discussion sur mon site')}&body=${encodeURIComponent(`Bonjour,\n\nMerci d'installer notre assistant de discussion sur le site.\nCollez ce code juste avant la balise </body> de chaque page :\n\n${widgetScriptHtml}\n\nMerci !`)}`}
+                      className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm flex items-center gap-2"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>Envoyer par e-mail</span>
+                    </a>
+                  </div>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedIntegration((v) => !v)}
+                  className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 cursor-pointer"
+                >
+                  <ChevronRight className={`w-4 h-4 transition-transform ${showAdvancedIntegration ? 'rotate-90' : ''}`} />
+                  <span>Je gère moi-même l'installation (version pour développeur)</span>
+                </button>
+
+                {showAdvancedIntegration && (
+                <>
                 {/* Framework Tabs */}
                 <div className="flex items-center gap-2 border-b border-slate-200 pt-2 overflow-x-auto">
                   {[
@@ -2129,16 +1869,37 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     <code>{getActiveIntegrationCode()}</code>
                   </pre>
                 </div>
+                </>
+                )}
               </div>
 
-              {/* Webhook Connection Testing & Verification Utility */}
-              <WebhookTestingUtility
-                initialWebhookUrl={webhookUrl}
-                assistantId={assistantId || currentWidgetId}
-                businessName={businessName}
-                onSaveWebhookUrl={handleSaveWebhookSetting}
-                isSavingGlobal={isSavingDb}
-              />
+              {/* Outil technique : replié, il n'intéresse que les développeurs */}
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedWebhook((v) => !v)}
+                  className="flex w-full items-center justify-between px-5 py-4 text-left cursor-pointer"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Options avancées</p>
+                    <p className="text-xs text-slate-400">
+                      Connexion à un autre logiciel (CRM, Google Sheets…) — utile uniquement si vous avez un développeur.
+                    </p>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${showAdvancedWebhook ? 'rotate-90' : ''}`} />
+                </button>
+                {showAdvancedWebhook && (
+                  <div className="border-t border-slate-200 p-4">
+                    <WebhookTestingUtility
+                      initialWebhookUrl={webhookUrl}
+                      assistantId={assistantId || currentWidgetId}
+                      businessName={businessName}
+                      onSaveWebhookUrl={handleSaveWebhookSetting}
+                      isSavingGlobal={isSavingDb}
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* Instagram Quick Connect Banner */}
               <div className="p-6 rounded-2xl bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2157,7 +1918,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   onClick={() => handleSectionChange('instagram')}
                   className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shrink-0 cursor-pointer"
                 >
-                  <span>Configurer Instagram</span>
+                  <span>Connecter Instagram</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -2199,10 +1960,10 @@ echo "Réponse de l'Assistant : " . $result['message'];
           {currentSection === 'leads' && (
             isPlanGated ? (
               <LockedFeatureGate
-                title="Insights & CRM des Prospects"
+                title="Clients & statistiques des Prospects"
                 subtitle="Accédez à la liste complète des coordonnées capturées par votre assistant (téléphone, email), filtres de qualification et tags silencieux."
                 icon={Users}
-                featureName="Insights & CRM"
+                featureName="Clients & statistiques"
                 benefits={[
                   "Registre CRM complet avec filtres par statut et recherche instantanée",
                   "Détection technique des visiteurs (appareil, OS, navigateur, langue)",
@@ -3488,12 +3249,12 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         </p>
                       </div>
 
-                      {/* Metric 2: Base de Connaissances */}
+                      {/* Metric 2: Mes informations */}
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-slate-700 flex items-center gap-1.5">
                             <Database className="w-4 h-4 text-indigo-600" />
-                            Base de Connaissances
+                            Mes informations
                           </span>
                           <span className="font-mono font-bold text-slate-900">
                             {knowledgeNotes.filter(n => n.enabled).length} / {activePlan === 'free' ? '3' : activePlan === 'basic' ? '10' : activePlan === 'pro' ? '50' : 'Illimitée'}

@@ -182,7 +182,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-lg font-bold text-slate-900">Base de Connaissances IA</h3>
+            <h3 className="text-lg font-bold text-slate-900">Mes informations</h3>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
               {activeCount} / {notes.length} notes actives
             </span>
@@ -192,7 +192,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            L'IA consulte l'historique et le profil de mémoire évolutif avant chaque réponse pour affiner son ton et son expertise.
+            Ces informations sont celles que votre assistant utilise pour répondre : prix, horaires, livraison, garanties, questions fréquentes.
           </p>
         </div>
 
@@ -273,12 +273,12 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Contenu & Détails pour l'IA *</label>
+            <label className="block text-xs font-semibold text-slate-700">Détails à communiquer *</label>
             <textarea
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               rows={4}
-              placeholder="Détaillez ici les faits réels : prix, étapes, conditions, délais, instructions que l'IA doit répéter fidèlement aux visiteurs..."
+              placeholder="Écrivez simplement les informations exactes : prix, délais, conditions, adresse... Votre assistant les répétera fidèlement."
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs focus:bg-white focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/20 leading-relaxed"
               required
             />
@@ -443,7 +443,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
                     )}
                     {note.source === 'scanned' && (
                       <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-1 rounded-md hidden sm:inline-block">
-                        🤖 Scan IA
+                        Importer depuis mon site
                       </span>
                     )}
 
@@ -483,7 +483,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
                       value={note.content}
                       onChange={(e) => handleUpdateNoteField(note.id, 'content', e.target.value)}
                       rows={Math.min(8, Math.max(3, note.content.split('\n').length + 1))}
-                      placeholder="Contenu de la fiche pour l'IA..."
+                      placeholder="Détail de l'information..."
                       className="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm text-slate-800 focus:bg-white focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/20 leading-relaxed font-sans"
                     />
                     <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
