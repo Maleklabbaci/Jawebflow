@@ -33,16 +33,14 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       redirectUri?: string;
     };
 
-    // 1. Nettoyage du code d'autorisation transmis par Instagram
+    // 1. Nettoyage du code OAuth
     const code = String(body.code || "").split("#")[0].replace(/_$/, "").trim();
     
     const appId = context.env.INSTAGRAM_APP_ID;
     const appSecret = context.env.INSTAGRAM_APP_SECRET;
     
-    // 2. Détermination du redirect_uri (doit correspondre EXACTEMENT à https://jawebflow.pages.dev/)
+    // 2. Alignement exact du redirectUri avec votre configuration Meta (https://jawebflow.pages.dev/)
     let redirectUri = body.redirectUri || context.env.INSTAGRAM_REDIRECT_URI || "https://jawebflow.pages.dev/";
-    
-    // Normalisation : S'assure que l'URL se termine bien par un slash '/' comme configuré sur Meta
     if (redirectUri === "https://jawebflow.pages.dev") {
       redirectUri = "https://jawebflow.pages.dev/";
     }
@@ -75,9 +73,8 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
 
     if (!tokenResponse.ok || !tokenData.access_token) {
       return json({
-        error: tokenData.error_message || tokenData.error?.message || `Meta a refusé l'échange du code d'autorisation (HTTP ${tokenResponse.status}).`,
-        details: tokenData,
-        sentRedirectUri: redirectUri
+        error: tokenData.error_message || tokenData.error?.message || `Meta a refusé l'échange du code (HTTP ${tokenResponse.status}).`,
+        details: tokenData
       }, 400);
     }
 
@@ -93,12 +90,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
         accessToken = String(longLivedData.access_token);
       }
     } catch (_) {
-      // En cas d'échec sur le token long, on conserve le token court
+      // Si l'échange échoue, on conserve le token court
     }
 
-    // 5. Récupération des informations du profil (API v21.0)
+    // 5. Récupération des informations du profil (Sans /v21.0/ pour graph.instagram.com)
     const profileResponse = await fetch(
-      `https://graph.instagram.com/v21.0/me?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`
+      `https://graph.instagram.com/me?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`
     );
     const profile = await profileResponse.json().catch(() => ({})) as any;
 
