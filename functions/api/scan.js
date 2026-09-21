@@ -1,7 +1,14 @@
 /**
  * JAWEBFLOW - SITE SCANNER (CLOUDFLARE EDGE + FIRESTORE)
  * Scanne tout le site (pages, produits, etc.) + Gemini Vision -> Firestore
+ *
+ * SÉCURITÉ : cet endpoint écrit dans `assistants/{assistantId}/...`. Il exige
+ * donc (1) un jeton Firebase de l'utilisateur connecté et (2) la vérification
+ * que l'assistant ciblé lui appartient — sans quoi n'importe qui pouvait
+ * écraser la base de connaissances d'un autre client (et utiliser l'endpoint
+ * comme proxy SSRF).
  */
+import { adminGetDocument, verifyFirebaseIdToken, isPublicHttpUrl, getGoogleAccessToken, firestoreDocumentsBase } from '../_shared/google.ts';
 
 const EMBEDDING_MODEL = 'gemini-embedding-001';
 const VISION_MODEL = 'gemini-3.1-flash-lite';
@@ -48,13 +55,20 @@ async function embedText(text, apiKey) {
 }
 
 async function saveToFirestore(env, path, data) {
-  const db = env.FIRESTORE_DATABASE_ID || '(default)';
-  const url = `https://firestore.googleapis.com/v1/projects/${env.FIRESTORE_PROJECT_ID}/databases/${db}/documents/${path}?key=${env.FIRESTORE_API_KEY}`;
-  await fetch(url, {
+  const sa = env.FIREBASE_SERVICE_ACCOUNT;
+  if (!sa) throw new Error('FIREBASE_SERVICE_ACCOUNT manquant : écriture Firestore impossible');
+  const { accessToken } = await getGoogleAccessToken(sa);
+  const res = await fetch(`${firestoreDocumentsBase(env)}/${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ fields: toFirestoreFields(data) })
   });
+  // Avant, la réponse n'était jamais contrôlée : le scan annonçait « succès »
+  // alors que Firestore refusait l'écriture (règles de sécurité / clé Web seule).
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Écriture Firestore refusée (${res.status}) ${body.slice(0, 200)}`);
+  }
 }
 
 async function analyzeWithVision(imageUrl, apiKey) {
@@ -96,6 +110,29 @@ export async function onRequestPost(context) {
     const env = context.env;
     if (!assistantId || !siteUrl) return new Response(JSON.stringify({ error: "Champs requis" }), { status: 400, headers: cors });
 
+    // 1. Authentification : le scan écrit dans la base de connaissances, donc
+    //    il doit être réservé au propriétaire de l'assistant.
+    const caller = await verifyFirebaseIdToken(env, context.request.headers.get('Authorization'));
+    if (!caller) {
+      return new Response(JSON.stringify({ error: "Authentification requise : connectez-vous pour lancer un scan." }), { status: 401, headers: cors });
+    }
+
+    const ownerCheck = await adminGetDocument(env, `assistants/${assistantId}`);
+    if (!ownerCheck.ok || !ownerCheck.fields) {
+      return new Response(JSON.stringify({ error: `Assistant introuvable (${ownerCheck.error || 'inconnu'})` }), { status: 404, headers: cors });
+    }
+    const ownerId = ownerCheck.fields.userId?.stringValue;
+    if (!ownerId || ownerId !== caller.uid) {
+      console.warn(`[scan] accès refusé: uid=${caller.uid} sur assistantId=${assistantId}`);
+      return new Response(JSON.stringify({ error: "Accès refusé : cet assistant ne vous appartient pas." }), { status: 403, headers: cors });
+    }
+
+    // 2. Anti-SSRF : on refuse les adresses internes (localhost, 10.x, 169.254.x…)
+    const siteCheck = isPublicHttpUrl(siteUrl);
+    if (!siteCheck.ok) {
+      return new Response(JSON.stringify({ error: `URL refusée: ${siteCheck.reason}` }), { status: 400, headers: cors });
+    }
+
     const sitemapRes = await fetch(`${siteUrl}/sitemap.xml`, { headers: { 'User-Agent': 'JawebFlowBot/1.0' } }).catch(() => null);
     let urls = [];
     if (sitemapRes && sitemapRes.ok) {
@@ -109,6 +146,7 @@ export async function onRequestPost(context) {
     let count = 0;
     for (const pageUrl of urls.slice(0, 100)) {
       try {
+        if (!isPublicHttpUrl(pageUrl).ok) continue;
         const pageRes = await fetch(pageUrl, { headers: { 'User-Agent': 'JawebFlowBot/1.0' } });
         if (!pageRes.ok) continue;
         const html = await pageRes.text();
@@ -122,7 +160,7 @@ export async function onRequestPost(context) {
 
         let tags = [];
         if (img && env.GEMINI_API_KEY) {
-          tags = await analyzeWithVision(img, env.GEMINI_API_KEY);
+          if (isPublicHttpUrl(img).ok) tags = await analyzeWithVision(img, env.GEMINI_API_KEY);
         }
 
         const type = pageUrl.includes('product') || price ? 'produit' : 'info';

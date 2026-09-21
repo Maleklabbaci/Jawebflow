@@ -1,14 +1,49 @@
+import { base64 } from '../../_shared/google.ts';
+
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
+
+// Vérification de la signature Meta (HMAC-SHA256 du corps brut) : sans elle,
+// n'importe qui peut POSTer de faux DM et faire répondre le bot.
+async function hasValidMetaSignature(request, rawBody, appSecret) {
+  if (!appSecret) return false;
+  const header = request.headers.get('x-hub-signature-256') || '';
+  if (!header.startsWith('sha256=')) return false;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
+  return `sha256=${base64(digest)}` === header;
+}
+
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  if (url.searchParams.get('hub.mode') === 'subscribe' && url.searchParams.get('hub.verify_token') === context.env.INSTAGRAM_VERIFY_TOKEN) {
-    return new Response(url.searchParams.get('hub.challenge'), { status: 200, headers: { 'Content-Type': 'text/plain' } });
+  const verifyToken = context.env.INSTAGRAM_VERIFY_TOKEN || context.env.META_VERIFY_TOKEN;
+  const challenge = url.searchParams.get('hub.challenge');
+
+  if (!verifyToken) {
+    console.error('[instagram] INSTAGRAM_VERIFY_TOKEN / META_VERIFY_TOKEN non configuré : vérification refusée.');
+    return new Response('Webhook non configuré', { status: 503 });
+  }
+
+  if (url.searchParams.get('hub.mode') === 'subscribe' && url.searchParams.get('hub.verify_token') === verifyToken && challenge) {
+    return new Response(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } });
   }
   return new Response('Forbidden', { status: 403 });
 }
 
 export async function onRequestPost(context) {
   try {
-    const payload = await context.request.json();
+    const rawBody = await context.request.text();
+    const appSecret = context.env.INSTAGRAM_APP_SECRET;
+
+    if (appSecret) {
+      if (!(await hasValidMetaSignature(context.request, rawBody, appSecret))) {
+        console.warn('[instagram] signature X-Hub-Signature-256 invalide : requête rejetée.');
+        return new Response('Invalid signature', { status: 401 });
+      }
+    } else {
+      console.warn('[instagram] INSTAGRAM_APP_SECRET absent : signature Meta non vérifiable (à configurer).');
+    }
+
+    const payload = JSON.parse(rawBody || '{}');
     if (payload.object === 'instagram' || payload.object === 'page') {
       context.waitUntil(handleMessages(payload, context.env));
       return new Response('{"status":"ok"}', { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -42,7 +77,7 @@ async function handleMessages(payload, env) {
 
       // 2. Appel IA Gemini avec Derja / Français
       // TODO: bot Instagram non multi-tenant (pas de base de connaissance ni d'assistantId ici) — à revoir séparément
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiKey}`;
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL}:generateContent?key=${geminiKey}`;
       const gRes = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -51,7 +51,7 @@ import {
   Shield
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, db, isUserAdmin } from '../lib/firebase';
+import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, db, isUserAdmin, auth } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
@@ -654,9 +654,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setScanProgress(35);
       setScanStage("Extraction du contenu textuel, prix, offres et coordonnées...");
 
+      // Le scan écrit dans la base de connaissances : le serveur exige un jeton
+      // Firebase prouvant que l'assistant appartient bien à l'utilisateur connecté.
+      const idToken = await auth.currentUser?.getIdToken().catch(() => null);
       const response = await fetch("/api/crawler/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
+        },
         body: JSON.stringify({
           url: url.startsWith("http") ? url : `https://${url}`,
           assistantId: assistantId || undefined,

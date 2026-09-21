@@ -8,6 +8,7 @@ dotenv.config({ quiet: true });
 
 import express from "express";
 import http from "http";
+import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
@@ -40,6 +41,125 @@ function envValue(name: string): string {
   const raw = (process.env[name] || "").trim().replace(/^["']|["']$/g, "").trim();
   if (!raw || ENV_PLACEHOLDER.test(raw)) return "";
   return raw;
+}
+
+/**
+ * Anti-SSRF : le crawler et le testeur de webhook acceptent une URL fournie par
+ * l'utilisateur. On refuse les adresses internes (localhost, réseau privé,
+ * métadonnées cloud 169.254.169.254) pour ne pas transformer ces endpoints en
+ * proxy vers l'infrastructure interne.
+ */
+function checkPublicUrl(rawUrl: string): { ok: boolean; reason?: string; url?: URL } {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { ok: false, reason: "URL invalide" };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, reason: "Seuls http:// et https:// sont autorisés" };
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    return { ok: false, reason: "Hôte interne refusé" };
+  }
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const a = Number(ipv4[1]);
+    const b = Number(ipv4[2]);
+    const isPrivate =
+      a === 0 || a === 10 || a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127);
+    if (isPrivate) return { ok: false, reason: "Adresse IP interne refusée" };
+  }
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) {
+    return { ok: false, reason: "Adresse IPv6 interne refusée" };
+  }
+  if (!host.includes(".") && !ipv4) {
+    return { ok: false, reason: "Nom d'hôte non qualifié refusé" };
+  }
+  return { ok: true, url: parsed };
+}
+
+/**
+ * Limiteur de débit en mémoire (par IP). Les endpoints IA/scan sont publics et
+ * sans authentification : sans limite, n'importe qui peut épuiser le quota
+ * Gemini ou marteler le crawler. En production (Cloudflare), ajouter en plus
+ * une règle de rate limiting au niveau du pare-feu.
+ */
+function createRateLimiter(options: { windowMs: number; max: number; label: string }) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const now = Date.now();
+    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
+    const entry = hits.get(ip);
+
+    if (!entry || entry.resetAt <= now) {
+      hits.set(ip, { count: 1, resetAt: now + options.windowMs });
+      if (hits.size > 5000) {
+        for (const [key, value] of hits) if (value.resetAt <= now) hits.delete(key);
+      }
+      return next();
+    }
+
+    entry.count += 1;
+    if (entry.count > options.max) {
+      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+      res.setHeader("Retry-After", String(retryAfter));
+      console.warn(`⏱️  Limite de débit atteinte (${options.label}) pour ${ip}`);
+      return res.status(429).json({
+        status: "error",
+        error: "Trop de requêtes",
+        code: "RATE_LIMITED",
+        message: `Trop de requêtes sur ${options.label}. Réessayez dans ${retryAfter} seconde(s).`,
+      });
+    }
+    return next();
+  };
+}
+
+/**
+ * Vérifie le jeton Firebase d'un appelant (`Authorization: Bearer <idToken>`).
+ *
+ * Utilise l'API publique Identity Toolkit avec la clé Web du projet (déjà
+ * présente dans firebase-applet-config.json) : la vérification fonctionne donc
+ * même quand l'Admin Firestore n'est pas disponible.
+ */
+let firebaseWebApiKey = "";
+try {
+  const appletConfig = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf-8"));
+  firebaseWebApiKey = appletConfig?.apiKey || "";
+} catch {
+  // config illisible : la vérification de jeton sera simplement indisponible
+}
+
+async function verifyFirebaseIdTokenFromRequest(
+  req: express.Request
+): Promise<{ uid: string; email?: string } | null> {
+  const header = req.headers.authorization;
+  const idToken = header?.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!firebaseWebApiKey || !idToken) return null;
+
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseWebApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      }
+    );
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const user = data?.users?.[0];
+    if (!user?.localId) return null;
+    return { uid: user.localId, email: user.email };
+  } catch {
+    return null;
+  }
 }
 
 // Initialize Stripe lazily
@@ -110,7 +230,13 @@ async function startServer() {
   // Honour the platform-provided port (Cloud Run / local preview), default 3000.
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(express.json());
+  // `verify` conserve le corps brut : indispensable pour valider la signature
+  // HMAC des webhooks (la sérialisation JSON ne garantit pas les octets reçus).
+  app.use(express.json({
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  }));
 
   // CORS middleware for external PHP / cURL and Web API integration
   app.use((req, res, next) => {
@@ -125,6 +251,9 @@ async function startServer() {
 
   // Default AI Provider Configuration (AgentRouter API & Gemini Fallback)
   const GEMINI_API_KEY = envValue("GEMINI_API_KEY");
+  // Identifiant de modèle centralisé et surchargeable : la génération 2.5 est
+  // annoncée en fin de vie (arrêt octobre 2026), d'où ce défaut 3.1 Flash-Lite.
+  const GEMINI_MODEL = envValue("GEMINI_MODEL") || "gemini-3.1-flash-lite";
   const AGENTROUTER_API_KEY = envValue("AGENTROUTER_API_KEY");
   const AGENTROUTER_BASE_URL = (process.env.AGENTROUTER_BASE_URL || "https://co.agentrouter.org/v1").replace(/\/$/, "");
 
@@ -222,7 +351,7 @@ async function startServer() {
             const evalRes = await ai.models.generateContent({
               // Must be a real Gemini model id: "gemini-3.7-flash" does not exist
               // and made this background learning worker fail every single time.
-              model: "gemini-2.5-flash-lite",
+              model: GEMINI_MODEL,
               contents: `Analyse cet échange pour faire évoluer la mémoire et l'expertise de l'assistant:
 Message Client: "${userMessage}"
 Réponse Assistant: "${assistantResponse}"
@@ -517,19 +646,19 @@ Règles de communication impératives :
       if (GEMINI_API_KEY) {
         try {
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite",
+            model: GEMINI_MODEL,
             contents: userMessage,
             config: { systemInstruction: richSystemInstruction }
           });
           replyText = response.text || "";
           if (replyText) {
-            usedModel = "gemini-2.5-flash-lite";
+            usedModel = GEMINI_MODEL;
             usedProvider = "Gemini";
           }
         } catch (geminiErr) {
           const reason = (geminiErr as Error)?.message || String(geminiErr);
           console.warn("Gemini API error:", reason);
-          providerIssues.push(`gemini-2.5-flash-lite: ${reason}`);
+          providerIssues.push(`${GEMINI_MODEL}: ${reason}`);
         }
       } else {
         providerIssues.push("Gemini ignoré: GEMINI_API_KEY absent");
@@ -627,7 +756,7 @@ Règles de communication impératives :
         status: "success",
         assistantId: assistantId,
         provider: usedProvider || "Unavailable",
-        model: usedModel || "gemini-2.5-flash-lite",
+        model: usedModel || GEMINI_MODEL,
         text: replyText,
         message: replyText,
         response: replyText,
@@ -651,17 +780,25 @@ Règles de communication impératives :
     }
   };
 
-  app.post("/api/chat", handleApiChat);
-  app.get("/api/chat", handleApiChat);
-  app.post("/api/v1/chat", handleApiChat);
-  app.get("/api/v1/chat", handleApiChat);
+  // Limites de débit : /api/chat est public (widget) et les endpoints de scan /
+  // test sont coûteux — sans limite, le quota IA peut être épuisé par un tiers.
+  const chatRateLimit = createRateLimiter({ windowMs: 60_000, max: 60, label: "/api/chat" });
+  const heavyRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, label: "scan & tests webhook" });
+
+  app.post("/api/chat", chatRateLimit, handleApiChat);
+  app.get("/api/chat", chatRateLimit, handleApiChat);
+  app.post("/api/v1/chat", chatRateLimit, handleApiChat);
+  app.get("/api/v1/chat", chatRateLimit, handleApiChat);
 
   // 📦 Standalone Widget Script CDN Distribution
   app.get(["/widget.js", "/cdn/widget.js"], (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Content-Type", "application/javascript; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=3600");
-    const widgetPath = path.join(process.cwd(), "public", "widget.js");
+    // Une seule source de vérité : `public/cdn/widget.js` (la copie maintenue,
+    // utilisée par le snippet d'installation). `public/widget.js` divergeait et
+    // servait un code différent selon l'URL appelée.
+    const widgetPath = path.join(process.cwd(), "public", "cdn", "widget.js");
     res.sendFile(widgetPath);
   });
 
@@ -758,7 +895,7 @@ Règles de communication impératives :
   });
 
   // Proxy Webhook Ping Test (Bypasses browser CORS & tests endpoint connectivity)
-  app.post("/api/webhook/test-ping", async (req, res) => {
+  app.post("/api/webhook/test-ping", heavyRateLimit, async (req, res) => {
     try {
       const { webhookUrl, payload, testType } = req.body;
       if (!webhookUrl || typeof webhookUrl !== 'string' || !webhookUrl.trim()) {
@@ -770,11 +907,14 @@ Règles de communication impératives :
       }
 
       const trimmedUrl = webhookUrl.trim();
-      if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      const pingTarget = trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') ? trimmedUrl : `https://${trimmedUrl}`;
+      // Anti-SSRF : cet endpoint effectue un fetch vers l'URL fournie.
+      const pingCheck = checkPublicUrl(pingTarget);
+      if (!pingCheck.ok) {
         return res.status(400).json({
           success: false,
-          message: "L'URL doit obligatoirement commencer par https:// ou http://",
-          error: "Protocole URL invalide"
+          message: `URL refusée : ${pingCheck.reason}`,
+          error: "URL invalide"
         });
       }
 
@@ -877,7 +1017,7 @@ Règles de communication impératives :
   });
 
   // Deep Multi-Page Crawler & AI Knowledge Generator
-  app.post("/api/crawler/analyze", async (req, res) => {
+  app.post("/api/crawler/analyze", heavyRateLimit, async (req, res) => {
     try {
       let { url, assistantId, userId } = req.body;
       if (!url) {
@@ -887,6 +1027,36 @@ Règles de communication impératives :
       url = url.trim();
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
         url = `https://${url}`;
+      }
+
+      // Anti-SSRF : pas de fetch vers localhost / réseau privé / métadonnées cloud.
+      const urlCheck = checkPublicUrl(url);
+      if (!urlCheck.ok) {
+        return res.status(400).json({ error: `URL refusée : ${urlCheck.reason}` });
+      }
+
+      // Le scan alimente la base de connaissances d'un assistant : on s'assure
+      // que l'appelant est bien authentifié et propriétaire de cet assistant.
+      if (db) {
+        const caller = await verifyFirebaseIdTokenFromRequest(req);
+        if (!caller) {
+          return res.status(401).json({
+            error: "Authentification requise",
+            code: "AUTH_REQUIRED",
+            message: "Connectez-vous pour lancer un scan de site.",
+          });
+        }
+        if (assistantId) {
+          try {
+            const ownedDoc = await db.collection("assistants").doc(assistantId).get();
+            const ownerId = ownedDoc?.exists ? ownedDoc.data()?.userId : null;
+            if (ownerId && ownerId !== caller.uid) {
+              return res.status(403).json({ error: "Accès refusé : cet assistant ne vous appartient pas." });
+            }
+          } catch (ownershipErr) {
+            console.warn("Vérification de propriété ignorée:", (ownershipErr as Error)?.message || ownershipErr);
+          }
+        }
       }
 
       let parsedBase: URL;
@@ -1165,7 +1335,7 @@ IMPORTANT :
 - Réponds UNIQUEMENT en JSON valide.`;
 
           const aiResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite",
+            model: GEMINI_MODEL,
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1623,8 +1793,19 @@ IMPORTANT :
 
     console.log("🔍 Meta Webhook Verification Request:", { mode, token, challenge, path: req.path });
 
-    // When Meta sends the verification challenge
-    if (challenge) {
+    // ⚠️ La vérification du jeton était contournée : le challenge était renvoyé
+    // pour n'importe quelle valeur de `hub.verify_token` (la liste validTokens
+    // n'était jamais utilisée), ce qui laissait n'importe qui s'abonner au
+    // webhook. On exige maintenant un jeton valide.
+    const tokenIsValid = Boolean(token) && validTokens.includes(String(token));
+
+    if (mode === "subscribe" && !tokenIsValid) {
+      console.warn("⛔ Meta Webhook: jeton de vérification invalide ou absent.");
+      res.setHeader("Content-Type", "text/plain");
+      return res.status(403).send("Forbidden");
+    }
+
+    if (challenge && tokenIsValid) {
       console.log("✅ Meta Webhook challenge verified and sent back:", challenge);
       res.setHeader("Content-Type", "text/plain");
       return res.status(200).send(String(challenge));
@@ -1686,6 +1867,24 @@ IMPORTANT :
   // Instagram Direct Inbound Message Webhook (POST) - Direct Meta Graph API Integration
   app.post(webhookRoutes, async (req, res) => {
     try {
+      // Vérification de la signature Meta (X-Hub-Signature-256). Activée dès que
+      // INSTAGRAM_APP_SECRET est configuré : sans elle, n'importe qui peut
+      // POSTer de faux DM et faire répondre le bot (spam + quota IA).
+      const appSecret = envValue("INSTAGRAM_APP_SECRET");
+      if (appSecret) {
+        const signatureHeader = String(req.headers["x-hub-signature-256"] || "");
+        const rawBody = (req as any).rawBody as Buffer | undefined;
+        const expected = rawBody
+          ? `sha256=${crypto.createHmac("sha256", appSecret).update(rawBody).digest("base64")}`
+          : "";
+        if (!signatureHeader || !expected || signatureHeader !== expected) {
+          console.warn("⛔ Webhook Instagram: signature X-Hub-Signature-256 invalide.");
+          return res.status(401).json({ error: "Invalid signature" });
+        }
+      } else {
+        console.warn("ℹ️  Webhook Instagram: INSTAGRAM_APP_SECRET absent, signature non vérifiée.");
+      }
+
       const body = req.body;
       console.log("📥 Instagram Message Webhook received:", JSON.stringify(body));
 
@@ -1743,7 +1942,7 @@ IMPORTANT :
               let botReplyText = "";
               try {
                 const aiRes = await ai.models.generateContent({
-                  model: "gemini-2.5-flash-lite",
+                  model: GEMINI_MODEL,
                   contents: incomingUserText,
                   config: {
                     systemInstruction: `Vous êtes l'assistant IA officiel sur Instagram pour "${storeName}" en Algérie.
@@ -2092,7 +2291,7 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
 
       // Use Gemini flash lite with real business context
       const aiRes = await ai.models.generateContent({
-        model: "gemini-2.5-flash-lite",
+        model: GEMINI_MODEL,
         contents: textToTest,
         config: {
           systemInstruction: `Vous êtes l'assistant IA Instagram officiel de Telya Agency en Algérie.
@@ -2105,7 +2304,7 @@ Livraison disponible dans les 58 wilayas d'Algérie sous 24h/48h. Paiement à la
         success: true,
         userMessage: textToTest,
         aiResponse: aiRes.text?.trim(),
-        modelUsed: 'gemini-2.5-flash-lite'
+        modelUsed: GEMINI_MODEL
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });

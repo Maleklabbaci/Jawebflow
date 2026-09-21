@@ -3,7 +3,10 @@
   window.__JAWEBFLOW_WIDGET_LOADED__ = true;
 
   // --- Config depuis la balise <script> ---
-  var scripts = document.querySelectorAll('script[data-assistant-id]');
+  // Détection robuste : certains clients collent le snippet sans
+  // data-assistant-id -> on retombe sur le script widget.js lui-même
+  // (sinon l'assistant retombait sur l'identifiant par défaut « asst_live »).
+  var scripts = document.querySelectorAll('script[data-assistant-id], script[src*="widget.js"]');
   var scriptEl = scripts[scripts.length - 1] || document.currentScript;
 
   var assistantId = (scriptEl && scriptEl.getAttribute('data-assistant-id')) || 'asst_live';
@@ -159,17 +162,22 @@
 
   // --- Appel reel a l'IA JawebFlow ---
   function askAssistant(userMessage, onDone) {
-    fetch((apiOrigin || '') + '/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assistantId: assistantId,
-        sessionId: visitorId,
-        message: userMessage,
-        website: window.location.origin,
-        channel: 'web_widget'
+      fetch((apiOrigin || '') + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: assistantId,
+          sessionId: visitorId,
+          message: userMessage,
+          website: window.location.origin,
+          channel: 'web_widget',
+          // Historique court : sans lui, le bot oubliait le contexte de la
+          // conversation à chaque message.
+          history: messages.slice(-6).map(function (m) {
+            return { sender: m.sender === 'user' ? 'user' : 'bot', text: m.text };
+          })
+        })
       })
-    })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var reply = (data && (data.text || data.message || data.response)) ||

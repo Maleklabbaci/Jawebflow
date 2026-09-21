@@ -10,3 +10,6 @@ coverage/
 # Runtime secrets and token caches
 instagram_tokens_cache.json
 .env
+
+# Wrangler (Cloudflare) local state
+.wrangler/
