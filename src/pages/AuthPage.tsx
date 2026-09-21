@@ -128,7 +128,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onNav
       <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-semibold backdrop-blur-xl mb-4 shadow-lg shadow-purple-950/30">
           <Lock className="w-3.5 h-3.5 text-purple-400" />
-          <span>Espace Sécurisé · Connexion Cloud Firestore</span>
+          <span>Espace client sécurisé</span>
         </div>
 
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-neutral-100 mb-3 leading-tight">
@@ -137,8 +137,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onNav
 
         <p className="text-sm sm:text-base text-neutral-300 leading-relaxed max-w-xl mx-auto">
           {authMode === 'login' 
-            ? 'Connectez-vous pour accéder à votre interface de contrôle, gérer votre base de connaissances et configurer votre assistant IA.'
-            : 'Inscrivez-vous pour activer l’assistant intelligent de votre site web et l’analyse automatique.'}
+            ? 'Connectez-vous pour retrouver votre assistant, vos informations et les clients intéressés.'
+            : 'Créez votre compte pour installer la bulle de discussion sur votre site en quelques minutes.'}
         </p>
       </div>
 
@@ -343,16 +343,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onNav
               <Sparkles className="w-5 h-5" />
             </div>
 
-            <h3 className="text-lg font-bold text-white mb-2">Pourquoi créer votre compte ?</h3>
+            <h3 className="text-lg font-bold text-white mb-2">Ce que vous retrouvez dans votre espace</h3>
             <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed mb-6">
-              Votre assistant IA apprend en temps réel à partir de votre site web et répond à vos prospects 24/7 sur tous les canaux.
+              Votre assistant répond à vos visiteurs jour et nuit, en français et en arabe, et vous transmet les coordonnées des clients intéressés.
             </p>
 
             <div className="space-y-3.5">
               {[
-                { icon: Zap, title: 'Crawler IA 1-Click', desc: 'Analyse automatique de vos pages et génération de FAQ.' },
-                { icon: ShieldCheck, title: 'Sauvegarde Cloud Firestore', desc: 'Vos données et règles sont stockées de façon sécurisée.' },
-                { icon: Check, title: 'Intégration Script Universelle', desc: 'Ajoutez votre assistant sur WordPress, Webflow, Shopify ou HTML.' },
+                { icon: Zap, title: 'Analyse de votre site', desc: 'Vos prix, horaires et produits importés automatiquement.' },
+                { icon: ShieldCheck, title: 'Données en sécurité', desc: 'Vos informations sont enregistrées et sauvegardées.' },
+                { icon: Check, title: 'Installation simple', desc: 'WordPress, Shopify, Webflow ou site sur mesure : un copier-coller suffit.' },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
                   <item.icon className="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" />
@@ -367,7 +367,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onNav
 
           <div className="mt-6 pt-4 border-t border-white/5 text-[11px] text-neutral-400 flex items-center gap-2">
             <Lock className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-            <span>Données de connexion cryptées et sécurisées.</span>
+            <span>Connexion protégée. Vos données restent confidentielles.</span>
           </div>
         </div>
       </div>

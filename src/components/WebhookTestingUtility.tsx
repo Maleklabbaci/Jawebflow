@@ -260,19 +260,19 @@ export const WebhookTestingUtility: React.FC<WebhookTestingUtilityProps> = ({
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
             <Zap className="w-3.5 h-3.5" />
-            <span>Automatisation & Webhooks</span>
+            <span>Connexion à mes outils</span>
           </div>
           <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <span>Testeur & Vérificateur de Webhook</span>
+            <span>Transférer mes clients vers un autre outil</span>
             {isCurrentUrlVerified && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                Vérifié & Actif
+                Connecté
               </span>
             )}
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-            Transmettez instantanément chaque prospect capturé (nom, téléphone, email, besoin qualifié) à votre serveur, CRM ou workflow Make / Zapier.
+            Chaque nouveau client intéressé peut être envoyé automatiquement vers votre outil habituel (Google Sheets, Make, Zapier, votre logiciel de gestion…).
           </p>
         </div>
 

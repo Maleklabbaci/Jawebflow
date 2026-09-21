@@ -641,15 +641,15 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           <div className="space-y-3 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-400/30 text-pink-300 text-xs font-bold">
               <Instagram className="w-3.5 h-3.5" />
-              <span>Intégration Officielle Instagram Direct</span>
+              <span>Messages privés Instagram</span>
             </div>
             
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Connecter votre Assistant IA à Instagram
+              Répondre automatiquement à mes messages Instagram
             </h1>
             
             <p className="text-xs sm:text-sm text-purple-200/90 leading-relaxed">
-              Laissez l'intelligence artificielle JawebFlow répondre automatiquement à 100% de vos messages privés (DMs), questions de tarifs, livraison 58 wilayas et stories Instagram 24h/24 en Darija et Français.
+              Votre assistant répond à votre place dans vos messages privés et vos stories : questions de prix, de livraison, de disponibilité… jour et nuit, en darija et en français.
             </p>
           </div>
 
@@ -735,7 +735,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-bold text-sm text-white">Diagnostic & Statut de Liaison Instagram</h3>
+                <h3 className="font-bold text-sm text-white">État de la connexion Instagram</h3>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   Liaison & Webhook Actifs
@@ -794,7 +794,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                   <Sliders className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">Règles de Réponses Automatiques</h3>
+                  <h3 className="font-bold text-slate-900 text-base">Réponses automatiques</h3>
                   <p className="text-xs text-slate-500">Configurez sur quels types de messages l'IA intervient.</p>
                 </div>
               </div>
@@ -905,7 +905,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                   <Lock className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-800 text-xs sm:text-sm">Paramètres Avancés & Token Manuel</h4>
+                  <h4 className="font-bold text-slate-800 text-xs sm:text-sm">Réglages avancés</h4>
                   <p className="text-[11px] text-slate-400">Pour les développeurs souhaitant lier manuellement un jeton d'accès Meta Graph API</p>
                 </div>
               </div>

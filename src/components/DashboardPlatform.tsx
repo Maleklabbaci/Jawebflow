@@ -228,6 +228,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   // par défaut : l'espace client s'adresse à des commerçants, pas à des devs.
   const [showAdvancedIntegration, setShowAdvancedIntegration] = useState(false);
   const [showAdvancedWebhook, setShowAdvancedWebhook] = useState(false);
+  const [showLeadTech, setShowLeadTech] = useState(false);
   const [assistantTone, setAssistantTone] = useState<string>('professionnel');
   const [languages, setLanguages] = useState<{ fr: boolean; darija: boolean; en: boolean; ar: boolean }>({
     fr: true,
@@ -883,7 +884,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const liveScriptCdnUrl = typeof window !== 'undefined' ? `${window.location.origin}/widget.js` : 'https://cdn.jawebflow.com/widget.js';
   
   // Universal Embed Script HTML
-  const widgetScriptHtml = `<!-- Widget Bulle IA JawebFlow pour ${businessName || 'votre site'} -->
+  const widgetScriptHtml = `<!-- Bulle de discussion JawebFlow pour ${businessName || 'votre site'} -->
 <script 
   src="${liveScriptCdnUrl}" 
   data-assistant-id="${currentWidgetId}" 
@@ -1402,11 +1403,13 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>Analyse automatique de mon site</span>
                   </div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                    Scanner votre Site Web
+                  <h2 className="text-xl font-semibold text-slate-900 tracking-tight">
+                    Importer les informations de mon site
                   </h2>
-                  <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-                    Entrez l'adresse de votre site internet ou boutique. Notre crawler explore automatiquement vos pages clés (Services, Tarifs, FAQ, Livraison, Contact) et notre IA génère des fiches de connaissances prêtes à alimenter votre assistant conversationnel.
+                  <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
+                    Indiquez l'adresse de votre site : nous lisons automatiquement vos pages
+                    (services, prix, livraison, contact) et préparons les informations que votre
+                    assistant utilisera pour répondre. Vous pourrez tout modifier ensuite.
                   </p>
                 </div>
 
@@ -1421,7 +1424,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   className="space-y-3"
                 >
                   <label htmlFor="crawler-url-input" className="block text-xs font-semibold text-slate-700">
-                    Adresse URL du site web à explorer
+                    Adresse de mon site
                   </label>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-1">
@@ -1431,31 +1434,31 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         type="url"
                         value={crawlerUrl}
                         onChange={(e) => setCrawlerUrl(e.target.value)}
-                        placeholder="https://votresite.com ou entreprise.dz..."
-                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm placeholder:text-slate-400 focus:bg-white focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/20 transition-all"
+                        placeholder="votresite.com"
+                        className="w-full pl-10 pr-4 py-3 rounded-lg bg-white border border-slate-300 text-slate-900 text-sm placeholder:text-slate-400 focus:border-slate-900 focus:outline-none transition-colors"
                       />
                     </div>
                     <button
                       type="submit"
                       disabled={isScanning || (!crawlerUrl.trim() && !websiteUrl.trim())}
-                      className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-[0.99] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm shadow-purple-600/25 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+                      className="px-6 py-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
                     >
                       {isScanning ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Scan profond en cours...</span>
+                          <span>Lecture de votre site en cours…</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Lancer le Scan Complet</span>
+                          <span>Importer les informations</span>
                         </>
                       )}
                     </button>
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-slate-400">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Scraping sécurisé conforme robots.txt · Détection automatique des wilayas et moyens de paiement</span>
+                    <span>Nous respectons les règles du site (robots.txt). Rien n'est publié sans votre validation.</span>
                   </div>
                 </form>
 
@@ -1909,7 +1912,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   </div>
                   <div>
                     <h4 className="font-bold text-sm text-slate-900">Vous souhaitez aussi connecter votre compte Instagram ?</h4>
-                    <p className="text-xs text-slate-600">Connectez vos messages privés (DMs) et pages officielles avec l'OAuth Firebase.</p>
+                    <p className="text-xs text-slate-600">Recevez vos messages privés directement dans votre espace et laissez l'assistant répondre.</p>
                   </div>
                 </div>
 
@@ -1960,7 +1963,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
           {currentSection === 'leads' && (
             isPlanGated ? (
               <LockedFeatureGate
-                title="Clients & statistiques des Prospects"
+                title="Clients & statistiques"
                 subtitle="Accédez à la liste complète des coordonnées capturées par votre assistant (téléphone, email), filtres de qualification et tags silencieux."
                 icon={Users}
                 featureName="Clients & statistiques"
@@ -1968,7 +1971,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   "Registre CRM complet avec filtres par statut et recherche instantanée",
                   "Détection technique des visiteurs (appareil, OS, navigateur, langue)",
                   "Export CSV complet et format publicitaire Google & Facebook Ads",
-                  "Analytics en direct sur l'engagement et les taux de conversion"
+                  "Nombre de visiteurs, de conversations et de clients intéressés"
                 ]}
                 onUpgradeClick={() => handleSectionChange('billing')}
               />
@@ -2023,7 +2026,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       insightsTab === 'analytics' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    📈 Aperçu & Insights
+                    Vue d'ensemble
                   </button>
                   <button
                     onClick={() => setInsightsTab('prospects')}
@@ -2031,7 +2034,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       insightsTab === 'prospects' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    👥 Base CRM Prospects
+                    Mes clients
                   </button>
                 </div>
 
@@ -2045,14 +2048,14 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="inline-block px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold uppercase tracking-wider">
-                          Exportation de Données
+                          Export
                         </span>
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        <span className="text-[10px] text-slate-400">{totalTracked} Prospects enregistrés</span>
+                        <span className="text-[10px] text-slate-400">{totalTracked} clients enregistrés</span>
                       </div>
-                      <h3 className="text-base font-bold tracking-tight">Téléchargement & Exploitation des Prospects</h3>
+                      <h3 className="text-base font-bold tracking-tight">Exporter mes clients</h3>
                       <p className="text-xs text-indigo-200/90 leading-relaxed max-w-xl">
-                        Téléchargez instantanément vos leads au format CSV pour votre CRM, ou utilisez l'export optimisé pour vos audiences publicitaires Facebook & Google.
+                        Téléchargez la liste de vos clients intéressés (nom, téléphone, besoin) pour l'importer dans vos contacts, WhatsApp ou vos publicités Facebook.
                       </p>
                     </div>
 
@@ -2155,7 +2158,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4 flex-1 transition-all`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
                       <div>
-                        <h3 className="font-bold text-slate-900 text-lg">Registre des Prospects</h3>
+                        <h3 className="font-bold text-slate-900 text-lg">Mes clients intéressés</h3>
                         <p className="text-xs text-slate-500">Filtrage dynamique et recherche approfondie en temps réel</p>
                       </div>
 
@@ -2285,7 +2288,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           ) : (
                             <tr>
                               <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
-                                Aucun prospect ne correspond à vos critères de recherche.
+                                Aucun client ne correspond à votre recherche.
                               </td>
                             </tr>
                           )}
@@ -2423,11 +2426,22 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           </div>
                         </div>
 
+                        {/* Les détails techniques intéressent rarement le commerçant : repliés par défaut */}
+                        <button
+                          type="button"
+                          onClick={() => setShowLeadTech((v) => !v)}
+                          className="flex w-full items-center gap-2 text-xs font-medium text-slate-400 hover:text-slate-700 cursor-pointer"
+                        >
+                          <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showLeadTech ? 'rotate-90' : ''}`} />
+                          <span>Détails techniques (appareil, langue, publicité)</span>
+                        </button>
+                        {showLeadTech && (
+                        <>
                         {/* Bento Grid: Profil Technique du Navigateur */}
                         <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
                           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                             <Monitor className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Visitor Tags & Profil Technique</span>
+                            <span>Profil de l'appareil</span>
                           </h4>
                           
                           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -2460,7 +2474,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
                           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                             <Target className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Données publicitaires & Tags</span>
+                            <span>Origine de la visite</span>
                           </h4>
 
                           <div className="space-y-2 text-xs">
@@ -2514,7 +2528,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           </div>
                         </div>
 
-                        {/* Bento Grid: Session & Engagement Details */}
+                        {/* Bento Grid: Navigation sur le site */}
                         <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
                           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -2559,10 +2573,12 @@ echo "Réponse de l'Assistant : " . $result['message'];
                             <div className="col-span-2 truncate"><strong className="text-slate-400">UserAgent:</strong> {lead.userAgent}</div>
                           </div>
                         </div>
+                        </>
+                        )}
 
                         {/* Detailed Chat Logs */}
                         <div className="flex-1 flex flex-col min-h-[200px] max-h-[300px] space-y-2">
-                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Journal de Discussion</h4>
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Conversation</h4>
                           <div className="flex-1 overflow-y-auto p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
                             {lead.messages && lead.messages.length > 0 ? (
                               lead.messages.map((m: any, idx: number) => (
@@ -3216,7 +3232,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h2 className="text-lg font-bold text-slate-900">Consommation & Quotas</h2>
+                        <h2 className="text-lg font-bold text-slate-900">Mon utilisation</h2>
                         <p className="text-xs text-slate-500">Mises à jour en temps réel selon les spécifications exactes de votre forfait.</p>
                       </div>
                       <span className="text-xs font-mono font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-100">
@@ -3245,7 +3261,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           />
                         </div>
                         <p className="text-[11px] text-slate-500">
-                          {leadsList.length} prospect(s) capturé(s) · Synchro Firestore
+                          {leadsList.length} client(s) intéressé(s) enregistré(s)
                         </p>
                       </div>
 
@@ -3313,7 +3329,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
               {/* Plans Comparison Section */}
               <div className="space-y-6 pt-4">
                 <div className="text-center max-w-xl mx-auto">
-                  <h2 className="text-xl font-extrabold text-slate-900">Choisissez le Forfait Adapté à Votre Croissance</h2>
+                  <h2 className="text-xl font-extrabold text-slate-900">Changer d'abonnement</h2>
                   <p className="text-xs text-slate-500 mt-1">
                     Tarification rigoureusement identique aux formules officielles JawebFlow. Basculez en un clic.
                   </p>
