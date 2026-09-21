@@ -89,7 +89,6 @@ async function getGoogleAccessToken(saJson: string): Promise<{ accessToken: stri
 async function getInstagramDataAdmin(recipientId: string, saJson: string) {
   const { accessToken, projectId } = await getGoogleAccessToken(saJson);
 
-  // 1. Recherche du document instagram_integrations où instagramUserId == recipientId
   const queryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
   const queryResp = await fetch(queryUrl, {
     method: "POST",
@@ -126,7 +125,6 @@ async function getInstagramDataAdmin(recipientId: string, saJson: string) {
 
   let systemPrompt = "Tu es un assistant IA serviable et professionnel répondant sur Instagram Direct.";
 
-  // 2. Si un assistantId existe, on va lire ses instructions dans la collection assistants
   if (assistantId) {
     try {
       const docUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/assistants/${assistantId}`;
@@ -169,6 +167,18 @@ async function sendInstagramMessage(recipientId: string, text: string, accessTok
 }
 
 // --- ENDPOINTS CLOUDFLARE FUNCTIONS ---
+
+// Gestion des requêtes OPTIONS (CORS) - CORRIGE L'ERREUR DE DÉPLOIEMENT
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    }
+  });
+}
 
 // Validation du Webhook par Meta (GET)
 export async function onRequestGet(context: { request: Request; env: Env }) {
@@ -252,4 +262,4 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
   }
 }
 
-export default { onRequestPost, onRequestGet };
+export default { onRequestPost, onRequestGet, onRequestOptions };
