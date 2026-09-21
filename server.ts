@@ -30,11 +30,24 @@ process.on("uncaughtException", (err: any) => {
   console.error("⚠️  Uncaught exception (server kept alive):", err?.stack || err?.message || err);
 });
 
+// .env.example ships placeholder values such as GEMINI_API_KEY="MY_GEMINI_API_KEY".
+// Those are non-empty strings, so a naive `if (process.env.X)` considered the
+// integration "configured" and every request failed with an obscure provider
+// error. Treat placeholders as missing.
+const ENV_PLACEHOLDER = /^(my_|your_|change[_-]?me|replace|placeholder|todo|xxx|<)/i;
+
+function envValue(name: string): string {
+  const raw = (process.env[name] || "").trim().replace(/^["']|["']$/g, "").trim();
+  if (!raw || ENV_PLACEHOLDER.test(raw)) return "";
+  return raw;
+}
+
 // Initialize Stripe lazily
 let stripeClient: Stripe | null = null;
 function getStripe(): Stripe | null {
-  if (!stripeClient && process.env.STRIPE_SECRET_KEY) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+  const stripeKey = envValue("STRIPE_SECRET_KEY");
+  if (!stripeClient && stripeKey) {
+    stripeClient = new Stripe(stripeKey);
   }
   return stripeClient;
 }
@@ -111,12 +124,13 @@ async function startServer() {
   });
 
   // Default AI Provider Configuration (AgentRouter API & Gemini Fallback)
-  const AGENTROUTER_API_KEY = process.env.AGENTROUTER_API_KEY || "";
+  const GEMINI_API_KEY = envValue("GEMINI_API_KEY");
+  const AGENTROUTER_API_KEY = envValue("AGENTROUTER_API_KEY");
   const AGENTROUTER_BASE_URL = (process.env.AGENTROUTER_BASE_URL || "https://co.agentrouter.org/v1").replace(/\/$/, "");
 
   // Fallback Gemini API client
   const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY || "",
+    apiKey: GEMINI_API_KEY,
     httpOptions: {
       headers: { 'User-Agent': 'aistudio-build' }
     }
@@ -355,12 +369,36 @@ Génère une mise à jour d'apprentissage sous forme de JSON strict:
 • Modes de paiement en Algérie : BaridiMob, CCP, virement bancaire et carte bancaire sécurisée.`;
       }
 
+      // The assistant's plan decides whether AI replies are allowed at all
+      // (Free plan = 0 AI credit). We must therefore distinguish "explicitly on
+      // the free plan" from "plan could not be verified": treating an
+      // unverifiable plan as "free" used to disable the AI for every assistant
+      // whenever the server had no Firestore Admin access (local dev, preview
+      // environments without Application Default Credentials).
+      let planVerified = isJawebFlowOfficial;
+      let assistantFound = isJawebFlowOfficial;
+
       if (db && assistantId && !isJawebFlowOfficial) {
         try {
+          let assistantData: any = null;
+
           const assistantDoc = await db.collection("assistants").doc(assistantId).get();
           if (assistantDoc && assistantDoc.exists) {
-            const assistantData = assistantDoc.data();
-            plan = assistantData?.plan || 'free';
+            assistantData = assistantDoc.data();
+          }
+
+          // Integrations pass the public widgetId rather than the document id.
+          if (!assistantData) {
+            const byWidgetId = await db.collection("assistants").where("widgetId", "==", assistantId).limit(1).get();
+            if (!byWidgetId.empty) {
+              assistantData = byWidgetId.docs[0].data();
+            }
+          }
+
+          if (assistantData) {
+            assistantFound = true;
+            planVerified = true;
+            plan = assistantData.plan || 'free';
             assistantName = assistantData?.name || assistantData?.businessName || 'JawebFlow';
             websiteUrl = assistantData?.website || assistantData?.websiteUrl || websiteUrl;
 
@@ -377,6 +415,7 @@ Génère une mise à jour d'apprentissage sous forme de JSON strict:
               knowledgeBaseText += `\nPages du site indexées: ${pagesSummary}`;
             }
           }
+
           const usageDoc = await db.collection("usage").doc(assistantId).get();
           if (usageDoc && usageDoc.exists) {
             usage = usageDoc.data()?.count || 0;
@@ -435,7 +474,26 @@ Règles de communication impératives :
       };
       const limit = limits[plan] !== undefined ? limits[plan] : 0;
 
-      if (plan === 'free' || usage >= limit) {
+      // Assistant id exists but is unknown to the platform: tell the integrator
+      // instead of blaming the "free plan", which sent users chasing the wrong fix.
+      if (!planVerified && !assistantFound && db) {
+        return res.status(404).json({
+          status: "error",
+          error: "Assistant introuvable.",
+          code: "ASSISTANT_NOT_FOUND",
+          message:
+            "Aucun assistant ne correspond à cet identifiant. Vérifiez l'assistantId (identifiant du document Firestore ou widgetId) transmis à /api/chat.",
+        });
+      }
+
+      // When Firestore Admin is unavailable the plan cannot be verified: keep the
+      // AI usable (degraded mode) instead of locking out paid assistants.
+      if (!planVerified) {
+        console.warn(
+          "⚠️  Plan de l'assistant non vérifiable (Firebase Admin indisponible) — réponse IA autorisée en mode dégradé pour:",
+          assistantId
+        );
+      } else if (plan === 'free' || usage >= limit) {
         return res.status(403).json({
           status: "error",
           error: plan === 'free' 
@@ -451,9 +509,12 @@ Règles de communication impératives :
       let replyText = "";
       let usedModel = "";
       let usedProvider = "";
+      // Human-readable trace of what was attempted, surfaced in the 503 payload
+      // so a missing/expired key is obvious instead of a generic outage message.
+      const providerIssues: string[] = [];
 
       // 1. Primary AI Provider: Google Gemini API (Fast, reliable, secure)
-      if (process.env.GEMINI_API_KEY) {
+      if (GEMINI_API_KEY) {
         try {
           const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-lite",
@@ -466,13 +527,17 @@ Règles de communication impératives :
             usedProvider = "Gemini";
           }
         } catch (geminiErr) {
-          console.warn("Gemini API error:", (geminiErr as Error)?.message || geminiErr);
+          const reason = (geminiErr as Error)?.message || String(geminiErr);
+          console.warn("Gemini API error:", reason);
+          providerIssues.push(`gemini-2.5-flash-lite: ${reason}`);
         }
+      } else {
+        providerIssues.push("Gemini ignoré: GEMINI_API_KEY absent");
       }
 
       // JawebFlow doit rester sur Gemini ; aucun fallback silencieux pour son assistant officiel.
       // Pour les assistants clients, AgentRouter reste disponible comme secours optionnel.
-      if (!replyText && !isJawebFlowOfficial) {
+      if (!replyText && !isJawebFlowOfficial && AGENTROUTER_API_KEY) {
         const requestedModel = req.body?.model || process.env.AGENTROUTER_MODEL;
         const candidateModels = Array.from(new Set([
           requestedModel,
@@ -516,21 +581,35 @@ Règles de communication impératives :
                   break; 
                 }
               }
+              providerIssues.push(`agentrouter ${modelName}: réponse vide`);
+            } else {
+              const bodyText = await agentRouterRes.text().catch(() => "");
+              const reason = `HTTP ${agentRouterRes.status} ${bodyText.slice(0, 160)}`.trim();
+              console.warn("AgentRouter API error:", reason);
+              providerIssues.push(`agentrouter ${modelName}: ${reason}`);
             }
           } catch (arErr) {
-            // Silent fallback handling
+            const reason = (arErr as Error)?.message || String(arErr);
+            console.warn("AgentRouter request failed:", reason);
+            providerIssues.push(`agentrouter ${modelName}: ${reason}`);
           }
         }
+      } else if (!replyText && !isJawebFlowOfficial && !AGENTROUTER_API_KEY) {
+        providerIssues.push("AgentRouter ignoré: AGENTROUTER_API_KEY absent");
       }
       
       // If no AI provider succeeded or API key is exhausted / 0 credit
       if (!replyText) {
+        console.error("❌ Aucun fournisseur IA n'a répondu:", providerIssues.join(" | ") || "aucune clé API configurée");
         return res.status(503).json({
           status: "error",
           error: "Service temporairement indisponible",
           code: "SERVICE_UNAVAILABLE",
           message: "Bonjour ! Notre conseiller automatique est momentanément indisponible. Merci de nous laisser vos coordonnées ou de réessayer dans un instant.",
-          response: "Bonjour ! Notre conseiller automatique est momentanément indisponible. Merci de nous laisser vos coordonnées ou de réessayer dans un instant."
+          response: "Bonjour ! Notre conseiller automatique est momentanément indisponible. Merci de nous laisser vos coordonnées ou de réessayer dans un instant.",
+          // Diagnostics for the integrator (no secrets): tells whether the keys
+          // are missing or the provider refused the request.
+          diagnostics: providerIssues
         });
       }
 
@@ -1031,9 +1110,9 @@ Règles de communication impératives :
 
       // 3. Gemini AI Synthesis
       let generatedResult: any = null;
-      if (process.env.GEMINI_API_KEY) {
+      if (GEMINI_API_KEY) {
         try {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
           const prompt = `Tu es un expert senior en scraping de données web et extraction de données d'entreprise réelles pour alimenter un assistant conversationnel (WhatsApp, Instagram, Web).
 
 Voici le corpus de DONNÉES RÉELLES extraites du site web "${url}" (y compris le scraping profond du HTML et des textes dynamiques de l'application) :
@@ -1228,12 +1307,12 @@ IMPORTANT :
       const stripe = getStripe();
 
       // SlickPay DZD Integration (slickpay.dz API)
-      if (paymentMethod === 'slickpay_dzd' && process.env.SLICKPAY_PUBLIC_KEY && process.env.APP_URL) {
+      if (paymentMethod === 'slickpay_dzd' && envValue("SLICKPAY_PUBLIC_KEY") && envValue("APP_URL")) {
         try {
           const slickpayRes = await fetch("https://api.slickpay.dz/api/v2/users/invoices", {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${process.env.SLICKPAY_PUBLIC_KEY}`,
+              "Authorization": `Bearer ${envValue("SLICKPAY_PUBLIC_KEY")}`,
               "Content-Type": "application/json",
               "Accept": "application/json"
             },
@@ -2042,14 +2121,14 @@ Livraison disponible dans les 58 wilayas d'Algérie sous 24h/48h. Paiement à la
       node: process.version,
       firebaseAdmin: firebaseAdminStatus,
       aiProviders: {
-        agentRouter: Boolean(process.env.AGENTROUTER_API_KEY),
-        gemini: Boolean(process.env.GEMINI_API_KEY),
+        agentRouter: Boolean(AGENTROUTER_API_KEY),
+        gemini: Boolean(GEMINI_API_KEY),
       },
       payments: {
-        stripe: Boolean(process.env.STRIPE_SECRET_KEY),
-        slickpay: Boolean(process.env.SLICKPAY_PUBLIC_KEY && process.env.SLICKPAY_SECRET_KEY),
+        stripe: Boolean(envValue("STRIPE_SECRET_KEY")),
+        slickpay: Boolean(envValue("SLICKPAY_PUBLIC_KEY") && envValue("SLICKPAY_SECRET_KEY")),
       },
-      instagram: Boolean(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET),
+      instagram: Boolean(envValue("INSTAGRAM_APP_ID") && envValue("INSTAGRAM_APP_SECRET")),
       timestamp: new Date().toISOString(),
     });
   });

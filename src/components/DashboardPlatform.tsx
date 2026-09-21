@@ -790,7 +790,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         botReply = data.text || data.message || data.response || '';
       } else {
         const errData = await response.json().catch(() => ({}));
+        // The cockpit is the owner's own test console: keep the technical reason
+        // visible so a missing API key is not mistaken for a broken assistant.
+        const diagnostics: string[] = Array.isArray(errData.diagnostics) ? errData.diagnostics : [];
+        if (diagnostics.length > 0) {
+          console.warn(`Simulateur — aucune réponse IA (${errData.code || response.status}):`, diagnostics);
+        } else if (errData.code) {
+          console.warn(`Simulateur — réponse ${response.status} (${errData.code}):`, errData.error || errData.message);
+        }
         botReply = errData.message || 'Bonjour ! L\'assistant est momentanément indisponible. Veuillez vérifier vos réglages ou réessayer dans un instant.';
+        if (diagnostics.length > 0) {
+          botReply += `\n\nDiagnostic technique : ${diagnostics.slice(0, 3).join(' | ')}`;
+        }
       }
 
       if (!botReply) {
