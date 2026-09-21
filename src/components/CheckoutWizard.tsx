@@ -159,13 +159,10 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded border border-purple-200">
-                Guichet Client Officiel
-              </span>
-              <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">Cryptage 256-Bit SSL</span>
+              <span className="text-xs text-slate-500">Paiement sécurisé</span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-0.5">
-              Paiement & Activation en 4 Étapes Simples
+            <h1 className="text-xl font-semibold text-slate-900 mt-0.5">
+              Activer mon abonnement
             </h1>
           </div>
         </div>
@@ -175,7 +172,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
           onClick={() => setBillingViewMode('overview')}
           className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer self-start sm:self-auto"
         >
-          ← Annuler / Mes Factures
+          ← Retour
         </button>
       </div>
 
@@ -183,12 +180,12 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
       <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
-          <span className="text-xs font-bold text-slate-300">
-            Passerelles Certifiées : SlickPay (Edahabia, CIB, BaridiMob DZD) & Cartes Internationales
+          <span className="text-xs text-slate-300">
+            Carte algérienne (Edahabia, CIB, BaridiMob) ou carte internationale
           </span>
         </div>
         <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 shrink-0">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Activation Immédiate
+          <CheckCircle2 className="w-3.5 h-3.5" /> Activation immédiate
         </span>
       </div>
 
@@ -299,7 +296,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <span className="text-xs font-bold text-purple-600 uppercase tracking-wider block">Étape 1 sur 4</span>
-                <h2 className="text-lg font-bold text-slate-900">Choisissez votre Formule & Période</h2>
+                <h2 className="text-lg font-bold text-slate-900">Choisir une formule</h2>
               </div>
 
               {/* Cycle Switch */}
@@ -339,7 +336,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-extrabold text-slate-900 text-base">Plan Basic</h3>
+                    <h3 className="font-extrabold text-slate-900 text-base">Basic</h3>
                     {selectedCheckoutPlan === 'basic' && (
                       <span className="p-1 rounded-full bg-purple-600 text-white">
                         <Check className="w-3.5 h-3.5" />
@@ -379,7 +376,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-extrabold text-slate-900 text-base">Plan Pro / Business</h3>
+                    <h3 className="font-extrabold text-slate-900 text-base">Pro</h3>
                     {selectedCheckoutPlan === 'pro' && (
                       <span className="p-1 rounded-full bg-purple-600 text-white">
                         <Check className="w-3.5 h-3.5" />
@@ -416,7 +413,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-extrabold text-slate-900 text-base">Plan Enterprise</h3>
+                    <h3 className="font-extrabold text-slate-900 text-base">Entreprise</h3>
                     {selectedCheckoutPlan === 'enterprise' && (
                       <span className="p-1 rounded-full bg-purple-600 text-white">
                         <Check className="w-3.5 h-3.5" />
@@ -462,13 +459,13 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
           <div className="space-y-6 animate-in fade-in duration-200">
             <div className="pb-3 border-b border-slate-100">
               <span className="text-xs font-bold text-purple-600 uppercase tracking-wider block">Étape 2 sur 4</span>
-              <h2 className="text-lg font-bold text-slate-900">Vos Coordonnées de Facturation</h2>
+              <h2 className="text-lg font-bold text-slate-900">Vos coordonnées</h2>
               <p className="text-xs text-slate-500 mt-0.5">Ces informations figureront directement sur votre facture certifiée JawebFlow.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Nom complet / Responsable *</label>
+                <label className="block font-bold text-slate-800 mb-1">Nom et prénom *</label>
                 <input
                   type="text"
                   value={checkoutName}
@@ -479,7 +476,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Adresse Email *</label>
+                <label className="block font-bold text-slate-800 mb-1">Adresse e-mail *</label>
                 <input
                   type="email"
                   value={checkoutEmail}
@@ -490,7 +487,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Nom de l'Entreprise / Commerce</label>
+                <label className="block font-bold text-slate-800 mb-1">Nom de votre commerce</label>
                 <input
                   type="text"
                   value={checkoutCompany}
@@ -501,7 +498,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Téléphone Mobile (Optionnel)</label>
+                <label className="block font-bold text-slate-800 mb-1">Téléphone (facultatif)</label>
                 <input
                   type="text"
                   value={checkoutPhone}
@@ -539,7 +536,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
           <div className="space-y-6 animate-in fade-in duration-200">
             <div className="pb-3 border-b border-slate-100">
               <span className="text-xs font-bold text-purple-600 uppercase tracking-wider block">Étape 3 sur 4</span>
-              <h2 className="text-lg font-bold text-slate-900">Choisissez votre Mode de Règlement</h2>
+              <h2 className="text-lg font-bold text-slate-900">Choisir un moyen de paiement</h2>
               <p className="text-xs text-slate-500 mt-0.5">Toutes les méthodes sont sécurisées et certifiées.</p>
             </div>
 
@@ -742,7 +739,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                 onClick={() => setCheckoutStep(4)}
                 className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
               >
-                <span>Continuer : Récapitulatif & Activation (Étape 4/4)</span>
+                <span>Continuer (étape 4 sur 4)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -754,7 +751,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
           <div className="space-y-6 animate-in fade-in duration-200">
             <div className="pb-3 border-b border-slate-100">
               <span className="text-xs font-bold text-purple-600 uppercase tracking-wider block">Étape 4 sur 4</span>
-              <h2 className="text-lg font-bold text-slate-900">Récapitulatif & Activation Immédiate</h2>
+              <h2 className="text-lg font-bold text-slate-900">Récapitulatif</h2>
               <p className="text-xs text-slate-500 mt-0.5">Vérifiez vos éléments avant de valider l'activation en direct.</p>
             </div>
 
@@ -762,7 +759,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
               {/* Left Order Summary Box */}
               <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                  <span className="text-xs font-bold uppercase tracking-wider text-purple-400">Récapitulatif Commande</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-400">Votre commande</span>
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-500/30">
                     Prêt à valider
                   </span>
@@ -772,7 +769,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                   <div className="flex justify-between">
                     <span className="text-slate-400">Formule sélectionnée :</span>
                     <span className="font-extrabold text-white">
-                      {selectedCheckoutPlan === 'basic' ? 'Plan Basic' : selectedCheckoutPlan === 'pro' ? 'Plan Pro / Business' : 'Plan Enterprise'}
+                      {selectedCheckoutPlan === 'basic' ? 'Basic' : selectedCheckoutPlan === 'pro' ? 'Pro' : 'Entreprise'}
                     </span>
                   </div>
                   <div className="flex justify-between">
