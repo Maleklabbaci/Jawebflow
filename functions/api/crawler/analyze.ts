@@ -13,7 +13,7 @@ import {
 
 const FALLBACK_MODELS = ["gemini-1.5-flash-latest", "gemini-1.5-flash-8b-latest", "gemini-1.5-pro-latest"];
 const GEMINI_TIMEOUT_MS = 25000;
-const MAX_PAGES = 15;
+const MAX_PAGES = 8;
 
 type Page = { url: string; title: string; text: string; status: "done" | "failed" };
 type KnowledgeNote = {
