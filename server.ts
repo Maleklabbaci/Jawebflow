@@ -1,10 +1,34 @@
+import dotenv from "dotenv";
+
+// Load .env before anything reads process.env: without this the documented
+// variables (AGENTROUTER_API_KEY, GEMINI_API_KEY, STRIPE_*, SLICKPAY_*,
+// INSTAGRAM_*) were silently ignored when running locally, which disabled the
+// AI replies, payments and Instagram integration even with a filled .env file.
+dotenv.config({ quiet: true });
+
 import express from "express";
+import http from "http";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import { initializeApp } from "firebase-admin/app";
+import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import Stripe from "stripe";
+
+// ---------------------------------------------------------------------------
+// Process resilience
+// ---------------------------------------------------------------------------
+// A single floating rejection must never take the whole site down: the Node
+// runtime exits the process on unhandled rejections by default, and third-party
+// SDKs (Firestore Admin, gRPC/gax, Stripe, fetch) are known to leak rejections
+// from background work. Log loudly and keep serving instead of crashing.
+process.on("unhandledRejection", (reason: any) => {
+  console.error("⚠️  Unhandled promise rejection (server kept alive):", reason?.message || reason);
+});
+process.on("uncaughtException", (err: any) => {
+  console.error("⚠️  Uncaught exception (server kept alive):", err?.stack || err?.message || err);
+});
 
 // Initialize Stripe lazily
 let stripeClient: Stripe | null = null;
@@ -15,18 +39,54 @@ function getStripe(): Stripe | null {
   return stripeClient;
 }
 
-// Initialize Firebase Admin safely
-import fs from "fs";
+// Initialize Firebase Admin safely.
+//
+// IMPORTANT: creating a Firestore client is cheap, but the first query needs
+// real Application Default Credentials. Without them the Admin SDK throws
+// NO_ADC_FOUND *and* leaks unhandled rejections from its internal gRPC client
+// pool, which used to crash the whole server. So we validate the credential
+// first and only expose `db` when it actually works; every route already
+// degrades gracefully when `db` is null.
 let db: any = null;
-try {
-  const configStr = fs.readFileSync("firebase-applet-config.json", "utf-8");
-  const config = JSON.parse(configStr);
-  const app = initializeApp({ 
-    projectId: config.projectId
-  });
-  db = getFirestore(app, config.firestoreDatabaseId || undefined);
-} catch (e) {
-  console.warn("Firebase admin initialization notice:", e);
+let firebaseAdminStatus: "initializing" | "ready" | "unavailable" = "initializing";
+
+async function initFirebaseAdmin(): Promise<void> {
+  let config: any;
+  try {
+    config = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf-8"));
+  } catch (e) {
+    firebaseAdminStatus = "unavailable";
+    console.warn("Firebase admin disabled: firebase-applet-config.json unreadable:", (e as Error)?.message || e);
+    return;
+  }
+
+  try {
+    const app = initializeApp({ projectId: config.projectId });
+
+    // Fast credential probe (~50ms when absent, no network retry storm).
+    const credential = applicationDefault();
+    const token = await credential.getAccessToken();
+
+    if (!token?.access_token) {
+      firebaseAdminStatus = "unavailable";
+      console.warn(
+        "Firebase admin disabled: Application Default Credentials returned no access token. " +
+          "Set GOOGLE_APPLICATION_CREDENTIALS or run on a platform with an attached service account " +
+          "to enable server-side Firestore features."
+      );
+      return;
+    }
+
+    db = getFirestore(app, config.firestoreDatabaseId || undefined);
+    firebaseAdminStatus = "ready";
+    console.log("✅ Firebase Admin / Firestore ready (project:", config.projectId + ")");
+  } catch (e) {
+    firebaseAdminStatus = "unavailable";
+    console.warn(
+      "Firebase admin disabled (no usable Application Default Credentials in this environment):",
+      (e as Error)?.message || e
+    );
+  }
 }
 
 // In-memory cache for Instagram integrations across requests during server runtime
@@ -34,7 +94,8 @@ const instagramTokensCache = new Map<string, any>();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Honour the platform-provided port (Cloud Run / local preview), default 3000.
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
 
@@ -145,7 +206,9 @@ async function startServer() {
         (async () => {
           try {
             const evalRes = await ai.models.generateContent({
-              model: "gemini-3.7-flash",
+              // Must be a real Gemini model id: "gemini-3.7-flash" does not exist
+              // and made this background learning worker fail every single time.
+              model: "gemini-2.5-flash-lite",
               contents: `Analyse cet échange pour faire évoluer la mémoire et l'expertise de l'assistant:
 Message Client: "${userMessage}"
 Réponse Assistant: "${assistantResponse}"
@@ -493,14 +556,16 @@ Règles de communication impératives :
       });
 
       // 🧠 ASYNCHRONOUS EVOLVING CONTEXT & CONVERSATION HISTORY MIDDLEWARE
-      // Persists conversation to Firestore and evolves assistant preferences & tonality
-      saveConversationAndEvolveContext({
+      // Persists conversation to Firestore and evolves assistant preferences & tonality.
+      // Fire-and-forget on purpose, but the rejection is always handled: an
+      // unhandled rejection here would kill the whole server process.
+      void saveConversationAndEvolveContext({
         assistantId,
         sessionId,
         channel,
         userMessage,
         assistantResponse: replyText
-      });
+      }).catch((e) => console.debug("Background context persistence skipped:", (e as Error)?.message || e));
     } catch (error) {
       console.error("AI API proxy error:", error);
       res.status(500).json({ status: "error", error: "Failed to generate response" });
@@ -1724,13 +1789,13 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
               }
 
               // 🧠 3. Instagram Conversation Continuous Self-Learning & History Middleware
-              saveConversationAndEvolveContext({
+              void saveConversationAndEvolveContext({
                 assistantId,
                 sessionId: `ig_sender_${senderId}`,
                 channel: "instagram",
                 userMessage: incomingUserText,
                 assistantResponse: botReplyText
-              });
+              }).catch((e) => console.debug("Background context persistence skipped:", (e as Error)?.message || e));
             }
           }
         }
@@ -1968,9 +2033,49 @@ Livraison disponible dans les 58 wilayas d'Algérie sous 24h/48h. Paiement à la
     }
   });
 
+  // 🔍 Health / diagnostics: shows at a glance whether the server-side
+  // integrations are actually configured (missing keys used to be invisible).
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      uptimeSeconds: Math.round(process.uptime()),
+      node: process.version,
+      firebaseAdmin: firebaseAdminStatus,
+      aiProviders: {
+        agentRouter: Boolean(process.env.AGENTROUTER_API_KEY),
+        gemini: Boolean(process.env.GEMINI_API_KEY),
+      },
+      payments: {
+        stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+        slickpay: Boolean(process.env.SLICKPAY_PUBLIC_KEY && process.env.SLICKPAY_SECRET_KEY),
+      },
+      instagram: Boolean(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Single HTTP server for the app: in dev it also carries Vite's HMR
+  // websocket, so HMR keeps working when the app is reached through a
+  // reverse proxy / preview host on the same port.
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
+    // Hosts allowed to reach the dev server. Defaults to permissive so that
+    // proxied/preview hosts (e.g. *.e2b.app) work out of the box; set
+    // ALLOWED_HOSTS="a.com,b.com" to restrict it explicitly.
+    const allowedHosts = process.env.ALLOWED_HOSTS
+      ? process.env.ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
+      : true;
+
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts,
+        // Requests arrive through a proxy that terminates TLS, so accept any
+        // Origin for dev-server asset/API calls.
+        cors: true,
+        hmr: { server: httpServer },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -1982,8 +2087,23 @@ Livraison disponible dans les 58 wilayas d'Algérie sous 24h/48h. Paiement à la
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // A busy port is fatal and must be reported instead of silently swallowed.
+  httpServer.on("error", (err: any) => {
+    if (err?.code === "EADDRINUSE") {
+      console.error(`❌ Port ${PORT} is already in use. Stop the conflicting process or set PORT=<other>.`);
+      process.exit(1);
+    }
+    console.error("HTTP server error:", err);
+  });
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+
+    // Resolve Admin credentials in the background so it never delays boot.
+    // Until it resolves, routes that need Firestore simply skip it.
+    initFirebaseAdmin().catch((e) => {
+      console.warn("Firebase admin initialization notice:", (e as Error)?.message || e);
+    });
   });
 }
 
