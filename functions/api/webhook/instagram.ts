@@ -1,11 +1,34 @@
 /**
  * JAWEBFLOW — Webhook Instagram Direct (Cloudflare Pages Function).
  * URL : GET/POST /api/webhook/instagram
+ *
+ * Correctifs appliqués :
+ *   1. Modèles Gemini valides (gemini-3.5-flash-lite, gemini-3.5-flash,
+ *      gemini-3.1-flash-lite) — les anciens noms (gemini-2.0-flash,
+ *      gemini-2.5-flash...) sont soit inexistants soit retirés pour les
+ *      nouvelles clés API (confirmé par les logs : erreurs HTTP 404/429).
+ *   2. thinkingConfig désactivé (thinkingBudget: 0) : les modèles Gemini 3.x
+ *      activent par défaut un mode "réflexion" qui ajoutait 8-10 secondes de
+ *      latence inutile pour du simple chat en DM.
+ *   3. TIMEOUT STRICT sur chaque appel réseau (Gemini + Firestore) : sans ça,
+ *      une réponse lente bloquait l'exécution jusqu'à ce que Cloudflare tue
+ *      le Worker à la limite des 30 secondes — sans jamais répondre au client.
+ *   4. Lookups Firestore PARALLÉLISÉS (au lieu de séquentiels).
+ *   5. Collecte des messages : plusieurs messages rapprochés (moins de
+ *      DEBOUNCE_MS) sont regroupés et traités en UNE seule réponse (système
+ *      de jeton + buffer Firestore).
+ *   6. PROMPT VERROUILLÉ : l'IA refuse désormais explicitement de répondre à
+ *      toute question hors du périmètre de l'entreprise (politique, culture
+ *      générale, code, autre entreprise...) au lieu de risquer de sortir du
+ *      sujet ou d'halluciner une réponse.
+ *   7. Informations complètes de l'entreprise, historique de la conversation,
+ *      repli automatique de modèle, aucune réponse inventée quand l'IA
+ *      échoue (le motif est écrit dans les journaux Cloudflare).
  */
 
 import { getGoogleAccessToken } from "../../_shared/google.ts";
 
-/** Modèles Gemini 3.x actifs pour ta clé */
+/** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 const FALLBACK_MODELS = [
   "gemini-3.5-flash-lite",
@@ -18,10 +41,12 @@ const GRAPH_VERSION = "v21.0";
 const HISTORY_LIMIT = 6;
 const THREAD_KEEP = 12;
 
-/** Temps d'attente pour regrouper les messages d'un utilisateur (4 sec) */
+/** Fenêtre d'attente : temps laissé à l'utilisateur pour envoyer d'autres
+ * messages avant que le bot ne regroupe tout et réponde une seule fois. */
 const DEBOUNCE_MS = 4000;
 
-/** Timeout réseau */
+/** Timeouts réseau stricts : évite qu'un appel lent bloque tout le webhook
+ * jusqu'à la limite globale de 30s imposée par Cloudflare (waitUntil). */
 const GEMINI_TIMEOUT_MS = 12000;
 const FIRESTORE_TIMEOUT_MS = 5000;
 
@@ -49,7 +74,7 @@ const INSTAGRAM_ADDENDUM = `
 - Réponses très courtes (1 à 3 phrases), comme un vrai commerçant qui répond en DM.
 - Pas de Markdown lourd (pas de titres #, pas de tableaux) : texte simple + emojis.
 - Termine par une question courte pour faire avancer la conversation (taille, quantité, adresse de livraison…).
-- Si le client a envoyé plusieurs messages à la suite, ils te sont donnés regroupés : traite-les comme UNE SEULE demande.`;
+- Si le client a envoyé plusieurs messages à la suite, ils te sont donnés regroupés en un seul bloc : traite-les comme UNE SEULE demande cohérente.`;
 
 interface Env {
   FIREBASE_SERVICE_ACCOUNT?: string;
@@ -64,6 +89,10 @@ interface Env {
 
 type Target = { project: string; database: string };
 
+// ---------------------------------------------------------------------------
+// Utilitaire réseau : fetch avec timeout strict (AbortController)
+// ---------------------------------------------------------------------------
+
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -73,6 +102,10 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
     clearTimeout(id);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Firestore (lecture / écriture Admin, avec repli de base de données)
+// ---------------------------------------------------------------------------
 
 function firestoreTargets(env: Env, saProjectId?: string): Target[] {
   const projects = Array.from(
@@ -183,8 +216,24 @@ async function writeDocument(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Prompt + IA
+// ---------------------------------------------------------------------------
+
+/** Prompt construit avec la VRAIE base de connaissances de l'entreprise.
+ * Verrouillé pour empêcher l'IA de répondre à des sujets hors périmètre
+ * (politique, culture générale, code, autre entreprise, conseils perso...). */
 function buildSystemPrompt(config: any): string {
   let prompt = BASE_PROMPT;
+
+  prompt += `\n\n### 🔒 PÉRIMÈTRE STRICT (VERROUILLÉ)
+Tu ne réponds QU'AUX questions concernant l'entreprise "${config?.businessName || "cette entreprise"}", ses services, ses produits, ses prix, sa livraison, ses garanties et son contact.
+
+Si le visiteur pose une question qui N'A RIEN À VOIR avec l'entreprise (météo, politique, culture générale, code informatique, une autre entreprise, un conseil personnel, etc.), tu dois OBLIGATOIREMENT répondre par une variante de :
+"Je suis là uniquement pour vous renseigner sur nos services 😊. Avez-vous une question sur nos produits, nos tarifs ou notre livraison ?"
+
+Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucune information générale qui ne provient pas de la base ci-dessous.`;
+
   if (config?.customInstructions) prompt += `\n\n### 🧠 INSTRUCTIONS DU CLIENT :\n${config.customInstructions}`;
   if (config?.businessName) prompt += `\n\n### 🏢 ENTREPRISE :\n"${config.businessName}"`;
   if (config?.businessCategory) prompt += `\nSecteur : ${config.businessCategory}`;
@@ -199,19 +248,25 @@ function buildSystemPrompt(config: any): string {
     ? config.knowledgeNotes.filter((n: any) => n && n.enabled !== false)
     : [];
   if (notes.length > 0) {
-    prompt += `\n\n### 📋 BASE DE CONNAISSANCE DE L'ENTREPRISE (source de vérité) :\n`;
+    prompt += `\n\n### 📋 BASE DE CONNAISSANCE DE L'ENTREPRISE (SEULE SOURCE DE VÉRITÉ AUTORISÉE) :\n`;
     for (const note of notes) prompt += `- [${note.category || note.title || "Note"}] ${note.content || ""}\n`;
+    prompt += `\n⚠️ Tu ne dois RIEN affirmer qui ne soit pas écrit ci-dessus ou dans les sections FAQ/Tarifs/Règles. Si l'information n'y est pas, dis que tu vas vérifier et propose de laisser un numéro de téléphone.`;
   }
   if (config?.faqText) prompt += `\n\n### ❓ FAQ :\n${config.faqText}`;
   if (config?.pricingServicesText) prompt += `\n\n### 💰 TARIFS & SERVICES :\n${config.pricingServicesText}`;
   if (config?.specialRulesText) prompt += `\n\n### ⚠️ RÈGLES SPÉCIALES :\n${config.specialRulesText}`;
 
   if (notes.length === 0 && !config?.faqText && !config?.pricingServicesText && !config?.specialRulesText) {
-    prompt += `\n\n### ⚠️ ATTENTION\nAucune information détaillée n'est encore enregistrée : reste vague sur les prix et les délais, et propose de laisser un numéro de téléphone pour être rappelé.`;
+    prompt += `\n\n### ⚠️ ATTENTION\nAucune information détaillée n'est encore enregistrée : reste vague sur les prix et les délais, et propose de laisser un numéro de téléphone pour être rappelé. Ne réponds à AUCUNE question générale en l'absence d'informations.`;
   }
+
+  prompt += `\n\n### 🚫 RAPPEL FINAL
+Si tu hésites entre répondre normalement ou refuser car hors-sujet : REFUSE et recentre la conversation sur l'entreprise.`;
+
   return prompt + INSTAGRAM_ADDENDUM;
 }
 
+/** Appel Gemini, avec repli automatique sur un autre modèle ET timeout strict. */
 async function generateReply(
   env: Env,
   systemPrompt: string,
@@ -220,7 +275,7 @@ async function generateReply(
 ): Promise<{ text: string | null; diagnostics: string[] }> {
   const diagnostics: string[] = [];
   if (!env.GEMINI_API_KEY) {
-    diagnostics.push("GEMINI_API_KEY absente");
+    diagnostics.push("GEMINI_API_KEY absente (Cloudflare → Settings → Environment variables)");
     return { text: null, diagnostics };
   }
 
@@ -244,7 +299,7 @@ async function generateReply(
             generationConfig: {
               temperature: 0.6,
               maxOutputTokens: 400,
-              thinkingConfig: { thinkingBudget: 0 }, // ⚡ Coupe la latence de réflexion inutile pour du DM
+              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
         },
@@ -252,7 +307,7 @@ async function generateReply(
       );
 
       if (res.status === 429) {
-        diagnostics.push(`${model}: Quota 429 dépassé`);
+        diagnostics.push(`${model}: QUOTA DÉPASSÉ (429)`);
         break;
       }
 
@@ -277,6 +332,10 @@ async function generateReply(
   }
   return { text: null, diagnostics };
 }
+
+// ---------------------------------------------------------------------------
+// Instagram
+// ---------------------------------------------------------------------------
 
 function resolveVerifyToken(env: Env): string | null {
   return env.INSTAGRAM_VERIFY_TOKEN || env.META_VERIFY_TOKEN || null;
@@ -345,6 +404,7 @@ async function findIntegration(env: Env, instagramAccountId: string) {
       if (!doc) return null;
       return { doc, target };
     } catch (e: any) {
+      console.error(`[instagram] recherche sur ${target.database} échouée:`, e?.message || e);
       return null;
     }
   });
@@ -364,6 +424,8 @@ async function findIntegration(env: Env, instagramAccountId: string) {
       };
     }
   }
+
+  console.error(`[instagram] aucune connexion trouvée pour le compte ${instagramAccountId}`);
   return null;
 }
 
@@ -378,7 +440,9 @@ async function sendTypingOn(igToken: string, customerId: string) {
       },
       3000
     );
-  } catch {}
+  } catch {
+    /* purement cosmétique */
+  }
 }
 
 async function sendInstagramMessage(igToken: string, customerId: string, text: string) {
@@ -392,8 +456,14 @@ async function sendInstagramMessage(igToken: string, customerId: string, text: s
       },
       8000
     );
-    return res.ok;
-  } catch {
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error("[instagram] envoi du message refusé:", res.status, body.slice(0, 200));
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error("[instagram] envoi du message impossible (timeout ou réseau):", e?.message || e);
     return false;
   }
 }
@@ -429,6 +499,7 @@ async function pushPendingMessage(
   return token;
 }
 
+/** Traitement d'un message privé : infos de l'entreprise ➜ IA ➜ réponse. */
 async function handleDirectMessage(env: Env, event: any) {
   const startedAt = Date.now();
   const customerId: string | undefined = event?.sender?.id;
@@ -445,7 +516,7 @@ async function handleDirectMessage(env: Env, event: any) {
   if (!integration?.igToken || !integration.accessToken) return;
 
   if (!integration.autoReplyEnabled) {
-    console.log("[instagram] réponses en pause pour", integration.integrationId);
+    console.log("[instagram] réponses automatiques en pause pour", integration.integrationId);
     return;
   }
 
@@ -458,11 +529,11 @@ async function handleDirectMessage(env: Env, event: any) {
     thread.ok && Array.isArray(thread.data?.pendingMessages) ? thread.data.pendingMessages : [];
 
   if (message?.mid && handledMids.includes(message.mid)) {
-    console.log("[instagram] message déjà traité:", message.mid);
+    console.log("[instagram] message déjà traité, doublon ignoré:", message.mid);
     return;
   }
 
-  // 1) Dépôt dans le buffer
+  // 1) Dépôt dans le buffer partagé
   const myToken = await pushPendingMessage(
     env,
     integration,
@@ -473,16 +544,16 @@ async function handleDirectMessage(env: Env, event: any) {
     hasAttachment,
     message
   );
-  console.log(`[instagram] message mis en attente (${myToken.slice(0, 8)}) :`, text || "[image]");
+  console.log(`[instagram] message mis en attente (${myToken.slice(0, 8)}) pour ${customerId} :`, text || "[pièce jointe]");
 
-  // 2) Attente de 4 secondes pour regrouper les messages suivants
+  // 2) Attente pour regrouper les messages suivants
   await sleep(DEBOUNCE_MS);
 
   const recheck = await readDocument(env, integration.accessToken, threadPath, threadTarget);
   const currentToken = recheck.data?.pendingToken;
 
   if (currentToken !== myToken) {
-    console.log(`[instagram] message plus récent arrivé (jeton ${myToken.slice(0, 8)} cédé).`);
+    console.log(`[instagram] un message plus récent est arrivé (jeton ${myToken.slice(0, 8)} cédé).`);
     return;
   }
 
@@ -491,11 +562,17 @@ async function handleDirectMessage(env: Env, event: any) {
     ? recheck.data.pendingMessages
     : [];
 
-  if (pendingMessages.length === 0) return;
+  if (pendingMessages.length === 0) {
+    console.log("[instagram] buffer déjà vidé par un autre appel, rien à faire.");
+    return;
+  }
 
   const groupedText = pendingMessages.map((m) => m.text).filter(Boolean).join("\n");
   const newMids = pendingMessages.map((m) => m.mid).filter(Boolean) as string[];
-  console.log(`[instagram] regroupement de ${pendingMessages.length} message(s) :`, groupedText);
+  console.log(
+    `[instagram] regroupement de ${pendingMessages.length} message(s) pour ${customerId} (${Date.now() - startedAt}ms écoulées) :`,
+    groupedText
+  );
 
   const freshStored = Array.isArray(recheck.data?.messages) ? recheck.data.messages : stored;
   const history = freshStored
@@ -505,17 +582,27 @@ async function handleDirectMessage(env: Env, event: any) {
 
   let config: any = {};
   if (integration.assistantId) {
-    let read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`, integration.target);
-    if (!read.ok) read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`);
+    let read = await readDocument(
+      env,
+      integration.accessToken,
+      `assistants/${integration.assistantId}`,
+      integration.target
+    );
+    if (!read.ok) {
+      read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`);
+    }
     if (read.ok) config = read.data;
+    else console.warn("[instagram] configuration de l'entreprise introuvable pour", integration.assistantId);
+  } else {
+    console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
   }
 
   sendTypingOn(integration.igToken, customerId).catch(() => {});
 
-  const incoming = groupedText || "Le client a envoyé une image.";
-  console.log(`[instagram] appel Gemini 3.5 démarré...`);
+  const incoming = groupedText || "Le client a envoyé une image que tu ne peux pas lire.";
+  console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
   const { text: aiText, diagnostics } = await generateReply(env, buildSystemPrompt(config), incoming, history);
-  console.log(`[instagram] diagnostics IA:`, diagnostics.join(" | "));
+  console.log(`[instagram] diagnostics IA (${Date.now() - startedAt}ms écoulées):`, diagnostics.join(" | "));
 
   const businessName = config?.businessName || "notre équipe";
   const replyText =
@@ -525,7 +612,7 @@ async function handleDirectMessage(env: Env, event: any) {
       : `Merci pour votre message 🙏 Nous revenons vers vous dans quelques instants (${businessName}).`);
 
   const sent = await sendInstagramMessage(integration.igToken, customerId, replyText);
-  console.log(`[instagram] envoyé=${sent} (${Date.now() - startedAt}ms total)`);
+  console.log(`[instagram] message envoyé=${sent} (${Date.now() - startedAt}ms écoulées)`);
 
   const messages = [
     ...freshStored.map((m: any) => ({ role: m.role, text: m.text })),
@@ -547,6 +634,10 @@ async function handleDirectMessage(env: Env, event: any) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Handlers Cloudflare Pages
+// ---------------------------------------------------------------------------
+
 export async function onRequestOptions() {
   return new Response(null, {
     status: 204,
@@ -565,10 +656,14 @@ export async function onRequestGet(context: { request: Request; env: Env }) {
   const challenge = url.searchParams.get("hub.challenge");
 
   const verifyToken = resolveVerifyToken(context.env);
-  if (!verifyToken) return new Response("Webhook non configuré", { status: 503 });
+  if (!verifyToken) {
+    console.error("[instagram] INSTAGRAM_VERIFY_TOKEN / META_VERIFY_TOKEN non configuré : vérification refusée.");
+    return new Response("Webhook non configuré", { status: 503 });
+  }
   if (mode === "subscribe" && token === verifyToken && challenge) {
     return new Response(challenge, { status: 200 });
   }
+  console.warn("[instagram] vérification webhook refusée", { mode, hasToken: Boolean(token) });
   return new Response("Forbidden", { status: 403 });
 }
 
@@ -581,8 +676,13 @@ export async function onRequestPost(context: {
     const rawBody = await context.request.text();
     const appSecret = context.env.INSTAGRAM_APP_SECRET;
 
-    if (appSecret && !(await hasValidMetaSignature(context.request, rawBody, appSecret))) {
-      return new Response("Invalid signature", { status: 401 });
+    if (appSecret) {
+      if (!(await hasValidMetaSignature(context.request, rawBody, appSecret))) {
+        console.warn("[instagram] signature X-Hub-Signature-256 invalide : requête rejetée.");
+        return new Response("Invalid signature", { status: 401 });
+      }
+    } else {
+      console.warn("[instagram] INSTAGRAM_APP_SECRET absent : signature Meta non vérifiable (à configurer).");
     }
 
     const body = JSON.parse(rawBody || "{}");
@@ -595,12 +695,14 @@ export async function onRequestPost(context: {
       for (const messagingEvent of entry.messaging || []) events.push(messagingEvent);
     }
 
+    console.log(`[instagram] webhook reçu : ${events.length} événement(s)`);
+
     const work = (async () => {
       for (const event of events) {
         try {
           await handleDirectMessage(context.env, event);
         } catch (e: any) {
-          console.error("[instagram] erreur message:", e?.message || e);
+          console.error("[instagram] traitement d'un message échoué:", e?.message || e);
         }
       }
     })();
@@ -610,6 +712,7 @@ export async function onRequestPost(context: {
 
     return new Response("EVENT_RECEIVED", { status: 200 });
   } catch (error: any) {
+    console.error("Erreur dans le Webhook Instagram:", error);
     return new Response("EVENT_RECEIVED", { status: 200 });
   }
 }
