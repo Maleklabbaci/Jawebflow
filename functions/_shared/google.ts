@@ -129,7 +129,12 @@ export async function getGoogleAccessToken(
 
 /** Chemin REST Firestore (documents) pour un projet base de données donné. */
 export function firestoreDocumentsBase(env: GoogleEnv): string {
-  const project = env.FIRESTORE_PROJECT_ID;
+  // Fallback sur le project_id du service account si FIRESTORE_PROJECT_ID absent
+  const sa = env.FIREBASE_SERVICE_ACCOUNT ? (() => {
+    try { return JSON.parse(env.FIREBASE_SERVICE_ACCOUNT); } catch { return null; }
+  })() : null;
+  
+  const project = env.FIRESTORE_PROJECT_ID || sa?.project_id || "gen-lang-client-0772569610";
   const db = env.FIRESTORE_DATABASE_ID || "(default)";
   return `https://firestore.googleapis.com/v1/projects/${project}/databases/${db}/documents`;
 }
