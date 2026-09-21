@@ -21,7 +21,7 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, on
         {/* Section Tag */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-xs font-semibold text-purple-200 mb-5 backdrop-blur-xl">
           <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-          <span>Démarrage immédiat</span>
+          <span>Commencer</span>
         </div>
 
         {/* Heading */}
@@ -31,12 +31,12 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, on
         >
           Offrez à votre entreprise <br className="hidden sm:inline" />
           <span className="text-purple-300">
-            un accueil client 24h/24.
+            quelqu'un qui répond à votre place.
           </span>
         </h2>
 
         <p className="text-sm sm:text-base md:text-lg text-neutral-200/90 max-w-xl mx-auto mb-6 sm:mb-10 leading-relaxed font-normal drop-shadow-sm">
-          Vos visiteurs méritent des réponses précises et instantanées, dans leur langue et selon vos informations officielles.
+          Mise en place en quelques minutes. Vous gardez la main sur vos informations à tout moment.
         </p>
 
         {/* CTA Button */}
@@ -44,7 +44,7 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, on
           <button
             id="cta-action-btn"
             onClick={onOpenAssistantModal}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm sm:text-base shadow-lg shadow-purple-600/30 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-white hover:bg-neutral-200 text-neutral-900 font-semibold text-sm sm:text-base transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>Créer mon assistant</span>
             <ArrowRight className="w-4 h-4 shrink-0" />
@@ -54,13 +54,13 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, on
         {/* Security & Reliability micro-labels */}
         <div className="mt-8 sm:mt-10 pt-6 sm:pt-8 border-t border-white/10 flex flex-wrap items-center justify-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-neutral-300">
           <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-purple-400 shrink-0" />
-            Calibré pour tout site web & business
+            <ShieldCheck className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-neutral-500 shrink-0" />
+            Pour tout type de site
           </span>
           <span className="hidden sm:inline">•</span>
-          <span>Support multilingue</span>
+          <span>Français & darija</span>
           <span className="hidden sm:inline">•</span>
-          <span>Intégration en 1 ligne</span>
+          <span>Installation rapide</span>
         </div>
       </div>
 

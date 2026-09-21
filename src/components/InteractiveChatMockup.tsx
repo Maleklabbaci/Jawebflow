@@ -659,7 +659,7 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
                 <button
                   type="button"
                   onClick={() => setWidgetOpen(true)}
-                  className="px-3 sm:px-3.5 py-2 rounded-2xl bg-neutral-950/90 border border-purple-500/40 text-xs text-white shadow-xl flex items-center gap-2 cursor-pointer hover:border-purple-400 transition-all max-w-[calc(100vw-6rem)] sm:max-w-xs"
+                  className="px-3 sm:px-3.5 py-2 rounded-lg bg-neutral-950/90 border border-white/15 text-xs text-white shadow-xl flex items-center gap-2 cursor-pointer hover:border-white/30 transition-colors max-w-[calc(100vw-6rem)] sm:max-w-xs"
                 >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
                   <span className="truncate">Une question ? Discutons en direct 👋</span>
@@ -668,7 +668,7 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
                 <button
                   type="button"
                   onClick={() => setWidgetOpen(true)}
-                  className="p-3 sm:p-3.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white shadow-xl shadow-purple-600/40 hover:scale-105 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                  className="p-3 sm:p-3.5 rounded-full bg-neutral-900 text-white shadow-lg hover:bg-neutral-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
                   aria-label="Ouvrir le chat"
                 >
                   <MessageSquare className="w-5 h-5" />
@@ -678,39 +678,19 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
           </div>
         </div>
 
-        {/* Action Bar Below Preview: Embed Snippet & Creator Trigger */}
+        {/* Barre d'action simple : pas de code affiché au visiteur */}
         <div className="p-4 bg-neutral-900/95 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-neutral-300 w-full sm:w-auto">
-            <Code2 className="w-4 h-4 text-purple-400 shrink-0" />
-            <span className="font-mono text-[11px] truncate max-w-[280px] sm:max-w-md text-neutral-400">
-              {scriptCode}
-            </span>
-          </div>
+          <p className="text-neutral-400 text-center sm:text-left">
+            Voilà exactement ce que verront vos visiteurs.
+          </p>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <button
-              onClick={handleCopyScript}
-              className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer shrink-0 font-medium"
-            >
-              {copiedCode ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-300">Code copié</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>Copier le script</span>
-                </>
-              )}
-            </button>
-
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end">
             {onOpenAssistantModal && (
               <button
                 onClick={onOpenAssistantModal}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/30 cursor-pointer shrink-0"
+                className="px-4 py-2 rounded-lg bg-white text-neutral-900 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
               >
-                <span>Installer sur mon site</span>
+                <span>Créer mon assistant</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}

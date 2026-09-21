@@ -35,24 +35,24 @@ export const ProcessSection: React.FC<ProcessSectionProps> = ({ onOpenAssistantM
   const steps = [
     {
       number: '01',
-      title: 'Rassemblez',
+      title: 'Vos informations',
       description: 'Ajoutez vos textes et documents : services, tarifs, offres, FAQ ou catalogues.',
       icon: FileText,
-      detail: 'Import direct de plaquettes PDF, fiches prestations, grilles tarifaires, zones de livraison ou conditions de collaboration.',
+      detail: 'Vous écrivez vos informations dans votre espace, ou nous les importons depuis votre site en un clic.',
     },
     {
       number: '02',
-      title: 'Générez',
-      description: 'Un identifiant individuel et un script de widget sont préparés pour votre entreprise.',
+      title: 'Votre assistant',
+      description: 'Votre assistant est prêt : il connaît vos informations et votre façon de parler à vos clients.',
       icon: Cpu,
-      detail: 'Votre assistant assimile votre domaine d\'expertise, vos modalités de travail et le style de réponse adapté à vos clients.',
+      detail: 'Vos réponses restent les vôtres : l\'assistant ne dit rien que vous ne lui avez pas appris.',
     },
     {
       number: '03',
-      title: 'Installez',
-      description: 'Collez une ligne de code sur votre site web et laissez l\'assistant convertir vos visiteurs.',
+      title: 'Votre site',
+      description: 'La bulle apparaît sur votre site : la discussion démarre et vous recevez les coordonnées des clients intéressés.',
       icon: Code2,
-      detail: 'Compatible avec tout site web (WordPress, Webflow, Shopify, Wix, Next.js, HTML sur-mesure) sans ralentir le chargement.',
+      detail: 'WordPress, Shopify, Wix ou site sur mesure : le code se colle une seule fois, sans ralentir votre site.',
     },
   ];
 
