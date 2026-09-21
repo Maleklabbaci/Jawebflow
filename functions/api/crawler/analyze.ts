@@ -1,14 +1,5 @@
 /**
  * JAWEBFLOW — Scanner de site web (Cloudflare Pages Function).
- *
- * Correctifs appliqués :
- *   1. Modèles Gemini fiables avec repli automatique + timeout strict.
- *   2. Détection des sites SPA (React/Next/Vue côté client, ex: Vercel) :
- *      repli sur sitemap.xml, chemins courants, et métadonnées SEO.
- *   3. ÉCRITURE RÉELLE dans Firestore via adminPatchDocument (avant, rien
- *      n'était jamais sauvegardé côté serveur).
- *   4. Fusion intelligente : les notes ajoutées manuellement ne sont
- *      JAMAIS écrasées. Seules les notes source:"scanned" sont remplacées.
  */
 
 import {
@@ -19,8 +10,8 @@ import {
   parseFields,
 } from "../../_shared/google.ts";
 
-const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
-const GEMINI_TIMEOUT_MS = 15000;
+const FALLBACK_MODELS = ["gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-flash"];
+const GEMINI_TIMEOUT_MS = 25000;
 
 type Page = { url: string; title: string; text: string; status: "done" | "failed" };
 type KnowledgeNote = {
@@ -68,9 +59,14 @@ function cleanHtml(html: string) {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ")
-    .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
-    .replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n")
+    .trim();
 }
 
 function looksLikeEmptySPA(html: string): boolean {
@@ -87,8 +83,9 @@ function extractMetaFallback(html: string, url: string): { title: string; descri
     new URL(url).pathname ||
     url;
   const description =
-    html.match(/<meta\s+(?:name|property)=["'](?:description|og:description)["']\s+content=["']([^"']+)["']/i)?.[1] ||
-    "";
+    html.match(
+      /<meta\s+(?:name|property)=["'](?:description|og:description)["']\s+content=["']([^"']+)["']/i
+    )?.[1] || "";
   return { title: title.trim(), description: description.trim() };
 }
 
@@ -96,7 +93,10 @@ async function fetchPage(url: string): Promise<Page> {
   try {
     if (!isPublicHttpUrl(url).ok) throw new Error("URL interne refusée");
     const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; JawebFlowCrawler/1.0)", Accept: "text/html,application/xhtml+xml" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; JawebFlowCrawler/1.0)",
+        Accept: "text/html,application/xhtml+xml",
+      },
       signal: AbortSignal.timeout(10000),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -104,7 +104,10 @@ async function fetchPage(url: string): Promise<Page> {
     const cleaned = cleanHtml(html);
 
     if (cleaned.length > 60) {
-      const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || new URL(url).pathname || "Page web";
+      const title =
+        html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ||
+        new URL(url).pathname ||
+        "Page web";
       return { url, title, text: cleaned.slice(0, 9000), status: "done" };
     }
 
@@ -132,7 +135,7 @@ function discoverLinks(html: string, baseUrl: string) {
         if (link.hostname === base.hostname) links.add(link.toString());
       }
     } catch (_) {
-      /* lien invalide, on ignore */
+      /* lien invalide */
     }
   }
   return [...links].filter((link) => link !== baseUrl).slice(0, 8);
@@ -152,25 +155,24 @@ async function discoverViaSitemap(baseUrl: string): Promise<string[]> {
 }
 
 const COMMON_PATHS = [
-  "/services",
-  "/tarifs",
-  "/prix",
-  "/pricing",
-  "/contact",
-  "/livraison",
-  "/faq",
-  "/a-propos",
-  "/about",
-  "/produits",
+  "/services", "/tarifs", "/prix", "/pricing", "/contact",
+  "/livraison", "/faq", "/a-propos", "/about", "/produits",
 ];
 
 // ---------------------------------------------------------------------------
 // Synthèse IA
 // ---------------------------------------------------------------------------
 
-const ALLOWED_CATEGORIES = ["services", "tarifs", "livraison", "garanties", "contact", "faq", "general"];
+const ALLOWED_CATEGORIES = [
+  "services", "tarifs", "livraison", "garanties", "contact", "faq", "general",
+];
 
-async function synthesizeWithGemini(pages: Page[], siteUrl: string, apiKey: string, preferredModel?: string) {
+async function synthesizeWithGemini(
+  pages: Page[],
+  siteUrl: string,
+  apiKey: string,
+  preferredModel?: string
+) {
   const dossier = pages
     .filter((p) => p.status === "done")
     .map((p) => `PAGE: ${p.title}\nURL: ${p.url}\n${p.text}`)
@@ -200,7 +202,9 @@ knowledgeNotes doit contenir entre 3 et 8 fiches utiles et concises (2 à 4 phra
 CONTENU DU SITE :
 ${dossier}`;
 
-  const models = Array.from(new Set([preferredModel, ...FALLBACK_MODELS].filter(Boolean))) as string[];
+  const models = Array.from(
+    new Set([preferredModel, ...FALLBACK_MODELS].filter(Boolean))
+  ) as string[];
   const errors: string[] = [];
 
   for (const model of models) {
@@ -217,7 +221,6 @@ ${dossier}`;
             generationConfig: {
               responseMimeType: "application/json",
               temperature: 0.1,
-              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
           signal: controller.signal,
@@ -227,10 +230,11 @@ ${dossier}`;
 
       if (response.status === 429) {
         errors.push(`${model}: quota dépassé (429)`);
-        break;
+        continue;
       }
       if (!response.ok) {
-        errors.push(`${model}: HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 150)}`);
+        const errBody = await response.text().catch(() => "");
+        errors.push(`${model}: HTTP ${response.status} ${errBody.slice(0, 150)}`);
         continue;
       }
 
@@ -241,12 +245,16 @@ ${dossier}`;
         continue;
       }
 
-      const parsed = JSON.parse(text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim());
-      console.log(`[crawler] synthèse Gemini réussie avec ${model}`);
+      const parsed = JSON.parse(
+        text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim()
+      );
+      console.log(`[crawler] ✅ synthèse Gemini réussie avec ${model}`);
       return parsed;
     } catch (e: any) {
       clearTimeout(timer);
-      errors.push(`${model}: ${e?.name === "AbortError" ? "timeout" : e?.message || e}`);
+      errors.push(
+        `${model}: ${e?.name === "AbortError" ? "timeout" : e?.message || e}`
+      );
     }
   }
   throw new Error(`Tous les modèles Gemini ont échoué: ${errors.join(" | ")}`);
@@ -264,28 +272,37 @@ function fallbackFromPages(pages: Page[], siteUrl: string) {
     confidence: 50,
     businessName: title,
     businessCategory: "Activité détectée sur le site",
-    businessDescription: excerpt(good[0]?.text || `Contenu public récupéré depuis ${siteUrl}.`),
+    businessDescription: excerpt(
+      good[0]?.text || `Contenu public récupéré depuis ${siteUrl}.`
+    ),
     phone: phones[0] || "",
     email: emails[0] || "",
     deliveryInfo: "",
     paymentMethods: "",
     knowledgeNotes: good.slice(0, 8).map((p) => ({
       title: p.title,
-      category: /contact/i.test(p.url) ? "contact" : /prix|tarif/i.test(p.text) ? "tarifs" : "general",
+      category: /contact/i.test(p.url)
+        ? "contact"
+        : /prix|tarif/i.test(p.text)
+        ? "tarifs"
+        : "general",
       content: excerpt(p.text),
     })),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Fusion avec les notes existantes
+// Fusion notes
 // ---------------------------------------------------------------------------
 
-function mergeKnowledgeNotes(existing: KnowledgeNote[], scannedRaw: KnowledgeNote[]): KnowledgeNote[] {
+function mergeKnowledgeNotes(
+  existing: KnowledgeNote[],
+  scannedRaw: KnowledgeNote[]
+): KnowledgeNote[] {
   const manualNotes = existing.filter((n) => n && n.source !== "scanned");
-
   const seenCategories = new Set<string>();
   const scannedNotes: KnowledgeNote[] = [];
+
   for (const note of scannedRaw) {
     const category = ALLOWED_CATEGORIES.includes((note.category || "").toLowerCase())
       ? (note.category as string).toLowerCase()
@@ -306,7 +323,10 @@ function mergeKnowledgeNotes(existing: KnowledgeNote[], scannedRaw: KnowledgeNot
 }
 
 function fillIfEmpty(existingValue: any, newValue: any): any {
-  const existingIsEmpty = existingValue === undefined || existingValue === null || String(existingValue).trim() === "";
+  const existingIsEmpty =
+    existingValue === undefined ||
+    existingValue === null ||
+    String(existingValue).trim() === "";
   return existingIsEmpty ? newValue || "" : existingValue;
 }
 
@@ -316,30 +336,62 @@ function fillIfEmpty(existingValue: any, newValue: any): any {
 
 export async function onRequestPost(context: { request: Request; env: any }) {
   try {
-    const body = (await context.request.json().catch(() => ({}))) as { url?: string; assistantId?: string };
+    // ── 1. Lecture du body ──────────────────────────────────────────────────
+    const body = (await context.request.json().catch(() => ({}))) as {
+      url?: string;
+      assistantId?: string;
+    };
+
     if (!body.url) return json({ error: "URL is required" }, 400);
 
-    const urlCheck = isPublicHttpUrl(body.url.startsWith("http") ? body.url : `https://${body.url}`);
+    const rawUrl = body.url.startsWith("http") ? body.url : `https://${body.url}`;
+    const urlCheck = isPublicHttpUrl(rawUrl);
     if (!urlCheck.ok) return json({ error: `URL refusée : ${urlCheck.reason}` }, 400);
 
-    const caller = await verifyFirebaseIdToken(context.env, context.request.headers.get("Authorization"));
-    if (!caller) return json({ error: "Authentification requise : connectez-vous pour lancer un scan." }, 401);
+    // ── 2. Authentification ─────────────────────────────────────────────────
+    const authHeader = context.request.headers.get("Authorization");
 
+    // LOG DIAGNOSTIC — visible dans Cloudflare Logs
+    console.log("[crawler] FIRESTORE_API_KEY présente:", !!context.env.FIRESTORE_API_KEY);
+    console.log("[crawler] Authorization header présent:", !!authHeader);
+    console.log("[crawler] Authorization header (début):", authHeader?.slice(0, 40) ?? "absent");
+
+    const caller = await verifyFirebaseIdToken(context.env, authHeader);
+
+    console.log("[crawler] caller:", caller ? `uid=${caller.uid}` : "null → 401");
+
+    if (!caller) {
+      return json(
+        { error: "Authentification requise : connectez-vous pour lancer un scan." },
+        401
+      );
+    }
+
+    // ── 3. Vérification propriétaire assistant ──────────────────────────────
     let existingAssistantFields: Record<string, any> | null = null;
     if (body.assistantId) {
-      const ownerCheck = await adminGetDocument(context.env, `assistants/${body.assistantId}`);
+      const ownerCheck = await adminGetDocument(
+        context.env,
+        `assistants/${body.assistantId}`
+      );
       if (ownerCheck.ok && ownerCheck.fields) {
         const parsed = parseFields(ownerCheck.fields);
         const ownerId = parsed.userId;
         if (ownerId && ownerId !== caller.uid) {
-          console.warn(`[crawler] accès refusé: uid=${caller.uid} assistantId=${body.assistantId}`);
-          return json({ error: "Accès refusé : cet assistant ne vous appartient pas." }, 403);
+          console.warn(
+            `[crawler] accès refusé: uid=${caller.uid} assistantId=${body.assistantId}`
+          );
+          return json(
+            { error: "Accès refusé : cet assistant ne vous appartient pas." },
+            403
+          );
         }
         existingAssistantFields = parsed;
       }
     }
 
-    const url = new URL(body.url.startsWith("http") ? body.url : `https://${body.url}`);
+    // ── 4. Crawl ────────────────────────────────────────────────────────────
+    const url = new URL(rawUrl);
     url.hash = "";
     const rootUrl = url.toString();
 
@@ -347,7 +399,8 @@ export async function onRequestPost(context: { request: Request; env: any }) {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; JawebFlowCrawler/1.0)" },
       signal: AbortSignal.timeout(10000),
     });
-    if (!rootResponse.ok) return json({ error: `Le site a répondu HTTP ${rootResponse.status}.` }, 502);
+    if (!rootResponse.ok)
+      return json({ error: `Le site a répondu HTTP ${rootResponse.status}.` }, 502);
 
     const rootHtml = await rootResponse.text();
     const isSPA = looksLikeEmptySPA(rootHtml);
@@ -359,79 +412,114 @@ export async function onRequestPost(context: { request: Request; env: any }) {
       const commonLinks = COMMON_PATHS.map((path) => new URL(path, rootUrl).toString());
       links = [...new Set([...sitemapLinks, ...commonLinks])].slice(0, 10);
       console.log(
-        `[crawler] site détecté comme SPA (${new URL(rootUrl).hostname}) : ${links.length} chemin(s) testé(s) en repli.`
+        `[crawler] SPA détecté (${new URL(rootUrl).hostname}) : ${links.length} chemin(s) testés.`
       );
     }
 
-    const pages = [await fetchPage(rootUrl), ...(await Promise.all(links.map(fetchPage)))];
+    const pages = [
+      await fetchPage(rootUrl),
+      ...(await Promise.all(links.map(fetchPage))),
+    ];
     const usablePages = pages.filter((p) => p.status === "done" && p.text.length > 15);
 
     console.log(
-      `[crawler] scan de ${rootUrl} : ${pages.length} page(s) testée(s), ${usablePages.length} exploitable(s), SPA=${isSPA}`
+      `[crawler] scan ${rootUrl} : ${pages.length} pages, ${usablePages.length} exploitables, SPA=${isSPA}`
     );
 
     if (usablePages.length === 0) {
       return json(
         {
           error: isSPA
-            ? "Ce site semble être une application JavaScript (React/Next/Vue) dont le contenu ne se charge qu'après exécution du code dans un navigateur. Le scan automatique ne peut lire que le HTML initial. Ajoutez vos informations manuellement via « Ajouter une Note »."
-            : "Aucun contenu HTML exploitable n'a été trouvé sur ce site.",
+            ? "Site JavaScript (React/Next/Vue) : contenu non accessible sans navigateur. Ajoutez vos informations manuellement."
+            : "Aucun contenu HTML exploitable trouvé.",
         },
         502
       );
     }
 
+    // ── 5. Synthèse IA ──────────────────────────────────────────────────────
     let result: any;
     if (context.env.GEMINI_API_KEY) {
       try {
-        result = await synthesizeWithGemini(pages, rootUrl, context.env.GEMINI_API_KEY, context.env.GEMINI_MODEL);
+        result = await synthesizeWithGemini(
+          pages,
+          rootUrl,
+          context.env.GEMINI_API_KEY,
+          context.env.GEMINI_MODEL
+        );
       } catch (e: any) {
-        console.error("[crawler] Gemini a échoué, repli sur extraction brute:", e?.message || e);
+        console.error("[crawler] Gemini échoué, repli extraction brute:", e?.message || e);
         result = fallbackFromPages(pages, rootUrl);
       }
     } else {
       result = fallbackFromPages(pages, rootUrl);
     }
 
+    // ── 6. Sauvegarde Firestore ─────────────────────────────────────────────
     let saved = false;
     let savedNoteCount = 0;
+
     if (body.assistantId) {
-      const existingNotes: KnowledgeNote[] = Array.isArray(existingAssistantFields?.knowledgeNotes)
+      const existingNotes: KnowledgeNote[] = Array.isArray(
+        existingAssistantFields?.knowledgeNotes
+      )
         ? existingAssistantFields!.knowledgeNotes
         : [];
+
       const mergedNotes = mergeKnowledgeNotes(existingNotes, result.knowledgeNotes || []);
 
       const updateData = {
         businessName: fillIfEmpty(existingAssistantFields?.businessName, result.businessName),
-        businessCategory: fillIfEmpty(existingAssistantFields?.businessCategory, result.businessCategory),
-        businessDescription: fillIfEmpty(existingAssistantFields?.businessDescription, result.businessDescription),
+        businessCategory: fillIfEmpty(
+          existingAssistantFields?.businessCategory,
+          result.businessCategory
+        ),
+        businessDescription: fillIfEmpty(
+          existingAssistantFields?.businessDescription,
+          result.businessDescription
+        ),
         phone: fillIfEmpty(existingAssistantFields?.phone, result.phone),
         email: fillIfEmpty(existingAssistantFields?.email, result.email),
         deliveryInfo: fillIfEmpty(existingAssistantFields?.deliveryInfo, result.deliveryInfo),
-        paymentMethods: fillIfEmpty(existingAssistantFields?.paymentMethods, result.paymentMethods),
+        paymentMethods: fillIfEmpty(
+          existingAssistantFields?.paymentMethods,
+          result.paymentMethods
+        ),
         websiteUrl: fillIfEmpty(existingAssistantFields?.websiteUrl, rootUrl),
         knowledgeNotes: mergedNotes,
         lastScanAt: new Date().toISOString(),
       };
 
-      const writeResult = await adminPatchDocument(context.env, `assistants/${body.assistantId}`, updateData);
+      const writeResult = await adminPatchDocument(
+        context.env,
+        `assistants/${body.assistantId}`,
+        updateData
+      );
+
       if (writeResult.ok) {
         saved = true;
         savedNoteCount = mergedNotes.length;
-        console.log(`[crawler] ${mergedNotes.length} note(s) enregistrée(s) pour assistantId=${body.assistantId}`);
+        console.log(
+          `[crawler] ✅ ${mergedNotes.length} note(s) enregistrée(s) pour assistantId=${body.assistantId}`
+        );
       } else {
-        console.error(`[crawler] échec d'écriture Firestore:`, writeResult.error);
+        console.error("[crawler] ❌ échec écriture Firestore:", writeResult.error);
       }
     }
 
+    // ── 7. Réponse ──────────────────────────────────────────────────────────
     return json({
       ...result,
       saved,
       savedNoteCount,
       scrapingStrategy: isSPA
         ? ["Détection SPA", "Sitemap", "Chemins courants", "Métadonnées SEO"]
-        : ["Accueil", "Pages internes", "Services et offres", "Tarifs", "FAQ", "Contact"],
-      scannedPages: pages.map(({ url: pageUrl, title, status }) => ({ url: pageUrl, title, status })),
+        : ["Accueil", "Pages internes", "Services", "Tarifs", "FAQ", "Contact"],
+      scannedPages: pages.map(({ url: pageUrl, title, status }) => ({
+        url: pageUrl,
+        title,
+        status,
+      })),
     });
   } catch (error: any) {
     console.error("[crawler] erreur générale:", error?.message || error);
