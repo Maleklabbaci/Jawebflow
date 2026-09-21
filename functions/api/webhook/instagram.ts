@@ -2,29 +2,30 @@
  * JAWEBFLOW — Webhook Instagram Direct (Cloudflare Pages Function).
  * URL : GET/POST /api/webhook/instagram
  *
- * Correctif « l'assistant répond toujours Bonjour ! Comment puis-je vous aider ? »
- *
- * Avant, ce webhook avait sa propre logique d'IA, plus pauvre que celle du site :
- *   1. la phrase « Bonjour ! Comment puis-je vous aider aujourd'hui ? » servait de
- *      valeur par défaut et n'était remplacée QUE si l'IA répondait — la moindre
- *      panne (clé absente, modèle retiré par Google) envoyait donc ce texte fixe ;
- *   2. seuls le nom et la description de l'entreprise étaient lus : la base de
- *      connaissances (prix, livraison, FAQ, tarifs) n'arrivait jamais à l'IA ;
- *   3. aucune mémoire : impossible de répondre à un suivi (« et le prix ? »).
- *
- * Désormais : informations complètes de l'entreprise, historique de la
- * conversation, repli automatique de modèle, aucune réponse inventée quand l'IA
- * échoue (le motif est écrit dans les journaux Cloudflare).
+ * Correctifs appliqués :
+ *   1. Modèles Gemini invalides remplacés (gemini-3.1-flash-lite n'existe pas,
+ *      ce qui faisait échouer l'IA en silence et renvoyait le message par
+ *      défaut à chaque fois) ;
+ *   2. Collecte des messages : si l'utilisateur envoie plusieurs messages
+ *      rapprochés (moins de DEBOUNCE_MS), ils sont regroupés et traités en
+ *      UNE seule réponse au lieu de répondre à chacun séparément ;
+ *   3. Informations complètes de l'entreprise, historique de la conversation,
+ *      repli automatique de modèle, aucune réponse inventée quand l'IA échoue
+ *      (le motif est écrit dans les journaux Cloudflare).
  */
 
 import { getGoogleAccessToken } from "../../_shared/google.ts";
 
-const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
-/** Modèles essayés dans l'ordre si le premier échoue (modèle retiré, quota…). */
-const FALLBACK_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash"];
+/** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
+const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
+const FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
 const GRAPH_VERSION = "v21.0";
 const HISTORY_LIMIT = 6;
 const THREAD_KEEP = 12;
+
+/** Fenêtre d'attente : temps laissé à l'utilisateur pour envoyer d'autres
+ * messages avant que le bot ne regroupe tout et réponde une seule fois. */
+const DEBOUNCE_MS = 7000;
 
 const BASE_PROMPT = `Tu es l'assistant IA d'élite pour le support et la vente en ligne (Développé par JawebFlow).
 
@@ -49,7 +50,8 @@ const INSTAGRAM_ADDENDUM = `
 ### 💬 CANAL : MESSAGES PRIVÉS INSTAGRAM
 - Réponses très courtes (1 à 3 phrases), comme un vrai commerçant qui répond en DM.
 - Pas de Markdown lourd (pas de titres #, pas de tableaux) : texte simple + emojis.
-- Termine par une question courte pour faire avancer la conversation (taille, quantité, adresse de livraison…).`;
+- Termine par une question courte pour faire avancer la conversation (taille, quantité, adresse de livraison…).
+- Si le client a envoyé plusieurs messages à la suite, ils te sont donnés regroupés en un seul bloc : traite-les comme UNE SEULE demande cohérente.`;
 
 interface Env {
   FIREBASE_SERVICE_ACCOUNT?: string;
@@ -372,6 +374,43 @@ async function sendInstagramMessage(igToken: string, customerId: string, text: s
   return true;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Ajoute le message reçu au buffer partagé du thread (Firestore) et renvoie
+ * un jeton unique. Ce jeton sert de "ticket de course" : seule l'invocation
+ * qui détient encore le DERNIER jeton posé après le délai d'attente aura le
+ * droit de répondre — les autres se retirent silencieusement.
+ */
+async function pushPendingMessage(
+  env: Env,
+  integration: any,
+  threadPath: string,
+  target: Target | undefined,
+  existingPending: Array<{ text: string; mid: string | null }>,
+  text: string,
+  hasAttachment: boolean,
+  message: any
+): Promise<string> {
+  const token = crypto.randomUUID();
+  const pendingMessages = [
+    ...existingPending,
+    { text: text || (hasAttachment ? "[image envoyée]" : ""), mid: message?.mid || null },
+  ];
+
+  await writeDocument(
+    env,
+    integration.accessToken,
+    threadPath,
+    { pendingMessages, pendingToken: token },
+    target
+  );
+
+  return token;
+}
+
 /** Traitement d'un message privé : infos de l'entreprise ➜ IA ➜ réponse. */
 async function handleDirectMessage(env: Env, event: any) {
   const customerId: string | undefined = event?.sender?.id;
@@ -392,21 +431,74 @@ async function handleDirectMessage(env: Env, event: any) {
     return;
   }
 
-  // Historique de la conversation (sous-collection privée, écrite par le serveur)
+  // Historique + buffer en attente (sous-collection privée, écrite par le serveur)
   const threadPath = `instagram_integrations/${integration.integrationId}/threads/${customerId}`;
   const thread = await readDocument(env, integration.accessToken, threadPath, integration.target);
+  const threadTarget = thread.ok ? thread.target : integration.target;
   const stored = thread.ok && Array.isArray(thread.data?.messages) ? thread.data.messages : [];
   const handledMids: string[] = thread.ok && Array.isArray(thread.data?.handledMids) ? thread.data.handledMids : [];
-  const history = stored
-    .filter((m: any) => (m?.role === "user" || m?.role === "model") && typeof m.text === "string")
-    .slice(-HISTORY_LIMIT)
-    .map((m: any) => ({ role: m.role, text: m.text }));
+  const existingPending: Array<{ text: string; mid: string | null }> =
+    thread.ok && Array.isArray(thread.data?.pendingMessages) ? thread.data.pendingMessages : [];
 
   // Anti-doublon : Meta réessaie plusieurs fois le même événement
   if (message?.mid && handledMids.includes(message.mid)) {
     console.log("[instagram] message déjà traité, doublon ignoré:", message.mid);
     return;
   }
+
+  // ── 1) On dépose ce message dans le buffer partagé et on récupère notre jeton.
+  const myToken = await pushPendingMessage(
+    env,
+    integration,
+    threadPath,
+    threadTarget,
+    existingPending,
+    text,
+    hasAttachment,
+    message
+  );
+  console.log(
+    `[instagram] message mis en file d'attente (jeton ${myToken.slice(0, 8)}) pour ${customerId} :`,
+    text || "[pièce jointe]"
+  );
+
+  // ── 2) On attend : si un autre message arrive entre-temps, il posera un
+  //    nouveau jeton et gagnera la priorité — on s'efface alors sans répondre.
+  await sleep(DEBOUNCE_MS);
+
+  const recheck = await readDocument(env, integration.accessToken, threadPath, threadTarget);
+  const currentToken = recheck.data?.pendingToken;
+
+  if (currentToken !== myToken) {
+    console.log(
+      `[instagram] un message plus récent est arrivé entre-temps (jeton ${myToken.slice(0, 8)} dépassé) — on laisse l'autre appel répondre.`
+    );
+    return;
+  }
+
+  // ── 3) On est bien le DERNIER message reçu → on regroupe tout le buffer et
+  //    on répond UNE seule fois pour l'ensemble.
+  const pendingMessages: Array<{ text: string; mid: string | null }> = Array.isArray(recheck.data?.pendingMessages)
+    ? recheck.data.pendingMessages
+    : [];
+
+  if (pendingMessages.length === 0) {
+    console.log("[instagram] buffer déjà vidé par un autre appel, rien à faire.");
+    return;
+  }
+
+  const groupedText = pendingMessages.map((m) => m.text).filter(Boolean).join("\n");
+  const newMids = pendingMessages.map((m) => m.mid).filter(Boolean) as string[];
+  console.log(
+    `[instagram] regroupement de ${pendingMessages.length} message(s) pour ${customerId} :`,
+    groupedText
+  );
+
+  const freshStored = Array.isArray(recheck.data?.messages) ? recheck.data.messages : stored;
+  const history = freshStored
+    .filter((m: any) => (m?.role === "user" || m?.role === "model") && typeof m.text === "string")
+    .slice(-HISTORY_LIMIT)
+    .map((m: any) => ({ role: m.role, text: m.text }));
 
   // Informations réelles de l'entreprise
   let config: any = {};
@@ -420,7 +512,7 @@ async function handleDirectMessage(env: Env, event: any) {
 
   await sendTypingOn(integration.igToken, customerId);
 
-  const incoming = text || "Le client a envoyé une image que tu ne peux pas lire.";
+  const incoming = groupedText || "Le client a envoyé une image que tu ne peux pas lire.";
   const { text: aiText, diagnostics } = await generateReply(env, buildSystemPrompt(config), incoming, history);
   console.log("[instagram] diagnostics IA:", diagnostics.join(" | "));
 
@@ -429,15 +521,15 @@ async function handleDirectMessage(env: Env, event: any) {
   const businessName = config?.businessName || "notre équipe";
   const replyText =
     aiText ||
-    (hasAttachment && !text
+    (hasAttachment && !groupedText
       ? "Merci pour votre message 🙏 Pouvez-vous nous écrire votre demande en texte ?"
       : `Merci pour votre message 🙏 Nous revenons vers vous dans quelques instants (${businessName}).`);
 
   const sent = await sendInstagramMessage(integration.igToken, customerId, replyText);
 
   const messages = [
-    ...stored.map((m: any) => ({ role: m.role, text: m.text })),
-    ...(text ? [{ role: "user", text }] : []),
+    ...freshStored.map((m: any) => ({ role: m.role, text: m.text })),
+    ...(groupedText ? [{ role: "user", text: groupedText }] : []),
     ...(sent ? [{ role: "model", text: replyText }] : []),
   ].slice(-THREAD_KEEP);
 
@@ -447,10 +539,11 @@ async function handleDirectMessage(env: Env, event: any) {
     threadPath,
     {
       messages,
-      handledMids: [...handledMids, ...(message?.mid ? [message.mid] : [])].slice(-30),
+      pendingMessages: [], // buffer vidé après traitement
+      handledMids: [...handledMids, ...newMids].slice(-30),
       updatedAt: new Date().toISOString(),
     },
-    thread.ok ? thread.target : integration.target
+    threadTarget
   );
 }
 
@@ -515,8 +608,11 @@ export async function onRequestPost(context: {
       for (const messagingEvent of entry.messaging || []) events.push(messagingEvent);
     }
 
+    console.log(`[instagram] webhook reçu : ${events.length} événement(s)`);
+
     // Réponse immédiate à Meta (sinon Meta considère le webhook en échec et
-    // renvoie l'événement en boucle) ; le traitement continue en arrière-plan.
+    // renvoie l'événement en boucle) ; le traitement (incluant l'attente de
+    // regroupement) continue en arrière-plan via waitUntil.
     const work = (async () => {
       for (const event of events) {
         try {
