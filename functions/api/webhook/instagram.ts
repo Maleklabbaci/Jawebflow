@@ -17,8 +17,8 @@
 import { getGoogleAccessToken } from "../../_shared/google.ts";
 
 /** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
-const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
-const FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
 const GRAPH_VERSION = "v21.0";
 const HISTORY_LIMIT = 6;
 const THREAD_KEEP = 12;
