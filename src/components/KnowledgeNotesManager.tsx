@@ -1,24 +1,9 @@
-import React, { useState } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Trash2, 
-  Copy, 
-  Sparkles, 
-  Check, 
-  FileText, 
-  Globe, 
-  HelpCircle, 
-  Truck, 
-  DollarSign, 
-  ShieldCheck, 
-  Phone, 
-  Layers,
-  ChevronDown,
-  ChevronUp,
-  Upload,
-  X,
-  AlertCircle
+import React, { useState, useRef } from 'react';
+import {
+  Plus, Search, Trash2, Copy, Sparkles, Check,
+  FileText, Globe, HelpCircle, Truck, DollarSign,
+  ShieldCheck, Phone, Layers, ChevronDown, ChevronUp,
+  Upload, X, AlertCircle, FileUp, Image, File
 } from 'lucide-react';
 import { KnowledgeNote } from '../types';
 
@@ -28,62 +13,23 @@ interface KnowledgeNotesManagerProps {
   onScanClick: () => void;
   isScanning?: boolean;
   assistantId?: string;
-  geminiApiKey?: string;
 }
 
-const CATEGORY_CONFIG: Record<KnowledgeNote['category'], { label: string; bg: string; text: string; border: string; icon: React.ReactNode }> = {
-  general: { 
-    label: 'Présentation & À Propos', 
-    bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200',
-    icon: <Globe className="w-3.5 h-3.5 text-blue-600" />
-  },
-  services: { 
-    label: 'Services & Produits', 
-    bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200',
-    icon: <Layers className="w-3.5 h-3.5 text-purple-600" />
-  },
-  tarifs: { 
-    label: 'Tarifs & Devis', 
-    bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200',
-    icon: <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-  },
-  livraison: { 
-    label: 'Livraison & Délais', 
-    bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200',
-    icon: <Truck className="w-3.5 h-3.5 text-amber-600" />
-  },
-  faq: { 
-    label: 'Questions Fréquentes (FAQ)', 
-    bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200',
-    icon: <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
-  },
-  politiques: { 
-    label: 'Garanties & Retours', 
-    bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200',
-    icon: <ShieldCheck className="w-3.5 h-3.5 text-rose-600" />
-  },
-  contact: { 
-    label: 'Contact & Support', 
-    bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200',
-    icon: <Phone className="w-3.5 h-3.5 text-teal-600" />
-  },
-  learned: { 
-    label: '🧠 Apprentissage Autonome', 
-    bg: 'bg-gradient-to-r from-purple-50 to-indigo-50', 
-    text: 'text-purple-700 font-bold', border: 'border-purple-300',
-    icon: <Sparkles className="w-3.5 h-3.5 text-purple-600 animate-pulse" />
-  },
-  custom: { 
-    label: 'Note Personnalisée', 
-    bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300',
-    icon: <FileText className="w-3.5 h-3.5 text-slate-600" />
-  }
+const CATEGORY_CONFIG: Record<string, { label: string; bg: string; text: string; border: string; icon: React.ReactNode }> = {
+  general: { label: 'Présentation', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', icon: <Globe className="w-3 h-3 text-blue-600" /> },
+  services: { label: 'Services', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: <Layers className="w-3 h-3 text-purple-600" /> },
+  tarifs: { label: 'Tarifs', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: <DollarSign className="w-3 h-3 text-emerald-600" /> },
+  livraison: { label: 'Livraison', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: <Truck className="w-3 h-3 text-amber-600" /> },
+  faq: { label: 'FAQ', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', icon: <HelpCircle className="w-3 h-3 text-indigo-600" /> },
+  garanties: { label: 'Garanties', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: <ShieldCheck className="w-3 h-3 text-rose-600" /> },
+  politiques: { label: 'Garanties', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: <ShieldCheck className="w-3 h-3 text-rose-600" /> },
+  contact: { label: 'Contact', bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', icon: <Phone className="w-3 h-3 text-teal-600" /> },
+  learned: { label: 'Appris', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: <Sparkles className="w-3 h-3 text-purple-600" /> },
+  custom: { label: 'Autre', bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', icon: <FileText className="w-3 h-3 text-slate-600" /> },
 };
 
-const ALLOWED_CATEGORIES = ['services', 'tarifs', 'livraison', 'garanties', 'contact', 'faq', 'general'];
-
 // ---------------------------------------------------------------------------
-// Modal Importer
+// Modal Import Universel
 // ---------------------------------------------------------------------------
 
 interface ImportModalProps {
@@ -95,17 +41,39 @@ interface ImportModalProps {
 const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantId }) => {
   const [rawText, setRawText] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = (incoming: FileList | null) => {
+    if (!incoming) return;
+    const arr = Array.from(incoming);
+    setFiles(prev => {
+      const names = new Set(prev.map(f => f.name));
+      return [...prev, ...arr.filter(f => !names.has(f.name))];
+    });
+  };
+
+  const removeFile = (name: string) => setFiles(prev => prev.filter(f => f.name !== name));
+
+  const getFileIcon = (file: File) => {
+    if (file.type === 'application/pdf') return <File className="w-4 h-4 text-red-500" />;
+    if (file.type.startsWith('image/')) return <Image className="w-4 h-4 text-blue-500" />;
+    return <FileText className="w-4 h-4 text-slate-500" />;
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} o`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+  };
 
   const handleAnalyze = async () => {
-    if (!rawText.trim() && !siteUrl.trim()) {
-      setError('Collez du texte ou entrez une URL.');
-      return;
-    }
-    if (rawText.trim().length < 10) {
-      setError('Le texte est trop court.');
+    if (!rawText.trim() && files.length === 0) {
+      setError('Ajoutez du texte ou des fichiers.');
       return;
     }
 
@@ -117,58 +85,40 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
       const user = (window as any).__jawebflow_user;
       const token = user ? await user.getIdToken() : null;
 
-      // Tente de parser comme JSON (données bookmarklet)
-      let pages: any[] = [];
-      let text = rawText.trim();
-
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === 'object') {
-          pages = Array.isArray(parsed) ? parsed : [parsed];
-          text = '';
-        }
-      } catch {
-        // Pas du JSON → texte brut
-      }
+      const formData = new FormData();
+      formData.append('rawText', rawText);
+      formData.append('siteUrl', siteUrl || 'https://monsite.com');
+      if (assistantId) formData.append('assistantId', assistantId);
+      formData.append('mode', 'merge');
+      files.forEach(f => formData.append('files', f));
 
       const res = await fetch('/api/extract/analyze', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          pages: pages.length > 0 ? pages : undefined,
-          rawText: text || undefined,
-          siteUrl: siteUrl || 'https://monsite.com',
-          assistantId,
-          mode: 'merge',
-        }),
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || 'Erreur lors de l\'analyse.');
+        setError(data.error || "Erreur lors de l'analyse.");
         return;
       }
 
-      // Convertit les knowledgeNotes en format local
-      const newNotes: KnowledgeNote[] = (data.knowledgeNotes || []).map((n: any) => ({
-        id: `imported_${Math.random().toString(36).slice(2, 9)}`,
+      const newNotes: KnowledgeNote[] = (data.knowledgeNotes || []).map((n: any, i: number) => ({
+        id: `imported_${Date.now()}_${i}`,
         title: n.title || 'Information importée',
         content: n.content || '',
-        category: ALLOWED_CATEGORIES.includes(n.category) ? n.category : 'general',
+        category: n.category || 'general',
         enabled: true,
         source: 'extracted',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }));
 
-      setSuccess(`✅ ${newNotes.length} fiches créées avec succès !`);
+      setSuccess(`✅ ${newNotes.length} fiches créées !`);
       onImport(newNotes);
-
-      setTimeout(() => onClose(), 1500);
+      setTimeout(onClose, 1500);
     } catch (e: any) {
       setError(e?.message || 'Erreur réseau.');
     } finally {
@@ -176,95 +126,106 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
     }
   };
 
+  const hasContent = rawText.trim().length > 0 || files.length > 0;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden">
-        
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center">
-              <Upload className="w-4 h-4 text-purple-600" />
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <Upload className="w-4 h-4 text-emerald-600" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Importer ma base de connaissances</h3>
-              <p className="text-xs text-slate-500">Collez n'importe quoi — Gemini organise tout</p>
+              <h3 className="font-bold text-slate-900 text-sm">Importer des informations</h3>
+              <p className="text-[11px] text-slate-500">Texte, PDF, catalogue, n'importe quoi — Gemini organise tout</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
-          >
-            <X className="w-4 h-4 text-slate-500" />
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+            <X className="w-4 h-4 text-slate-400" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-5 space-y-4">
-          
-          {/* URL optionnelle */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">
-              URL de votre site <span className="text-slate-400 font-normal">(optionnel)</span>
-            </label>
+        <div className="p-4 space-y-3 overflow-y-auto flex-1">
+
+          {/* Drop Zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
+              dragOver
+                ? 'border-emerald-400 bg-emerald-50'
+                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+            }`}
+          >
             <input
-              type="url"
-              value={siteUrl}
-              onChange={e => setSiteUrl(e.target.value)}
-              placeholder="https://monsite.com"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.txt,.csv,.md,.json,.xlsx,.docx,image/*"
+              className="hidden"
+              onChange={e => handleFiles(e.target.files)}
             />
-          </div>
-
-          {/* Zone de texte principale */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">
-              Collez vos informations ici *
-            </label>
-            <textarea
-              value={rawText}
-              onChange={e => setRawText(e.target.value)}
-              rows={10}
-              placeholder={`Collez n'importe quoi :
-
-• Texte de votre page Facebook ou Instagram
-• Description de votre boutique (services, prix, livraison)
-• Vos conditions de vente, FAQ, horaires
-• Un catalogue produits copié depuis votre site
-• Le JSON du bookmarklet d'extraction
-• N'importe quel texte décrivant votre activité
-
-Gemini va tout analyser et créer les fiches automatiquement.`}
-              className="w-full px-3.5 py-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 leading-relaxed resize-none"
-            />
-            <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-              <span>{rawText.length} caractères</span>
-              <span>Minimum 10 caractères</span>
-            </div>
-          </div>
-
-          {/* Ce que Gemini va créer */}
-          <div className="rounded-xl bg-purple-50 border border-purple-100 p-3.5 space-y-2">
-            <p className="text-xs font-semibold text-purple-800 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-              Gemini va automatiquement créer :
+            <FileUp className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+            <p className="text-xs font-semibold text-slate-700">
+              Glissez vos fichiers ici ou <span className="text-emerald-600">cliquez pour choisir</span>
             </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                '📋 Fiche Services & Produits',
-                '💰 Fiche Tarifs & Prix',
-                '🚚 Fiche Livraison & Délais',
-                '📞 Fiche Contact & Réseaux',
-                '❓ Fiche FAQ',
-                '🛡️ Fiche Garanties & Retours',
-              ].map(item => (
-                <div key={item} className="flex items-center gap-1.5 text-[11px] text-purple-700">
-                  <Check className="w-3 h-3 text-purple-500 shrink-0" />
-                  <span>{item}</span>
+            <p className="text-[11px] text-slate-400 mt-0.5">PDF, images, TXT, CSV, JSON, Excel...</p>
+          </div>
+
+          {/* Fichiers sélectionnés */}
+          {files.length > 0 && (
+            <div className="space-y-1.5">
+              {files.map(file => (
+                <div key={file.name} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                  {getFileIcon(file)}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-700 truncate">{file.name}</p>
+                    <p className="text-[10px] text-slate-400">{formatSize(file.size)}</p>
+                  </div>
+                  <button onClick={() => removeFile(file.name)} className="p-1 hover:bg-slate-200 rounded-md transition-colors">
+                    <X className="w-3 h-3 text-slate-400" />
+                  </button>
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Séparateur */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-[11px] text-slate-400 font-medium">OU collez du texte</span>
+            <div className="flex-1 h-px bg-slate-200" />
           </div>
+
+          {/* Texte */}
+          <textarea
+            value={rawText}
+            onChange={e => setRawText(e.target.value)}
+            rows={6}
+            placeholder={`Collez n'importe quoi :
+• Texte copié de votre site, Facebook, Instagram
+• Vos services et prix
+• Catalogue produits
+• FAQ, conditions de vente
+• Horaires, adresse, contacts
+• N'importe quel texte décrivant votre activité`}
+            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 leading-relaxed resize-none"
+          />
+
+          {/* URL optionnelle */}
+          <input
+            type="url"
+            value={siteUrl}
+            onChange={e => setSiteUrl(e.target.value)}
+            placeholder="URL de votre site (optionnel) — ex: https://monsite.com"
+            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none"
+          />
 
           {/* Erreur / Succès */}
           {error && (
@@ -273,7 +234,6 @@ Gemini va tout analyser et créer les fiches automatiquement.`}
               <span>{error}</span>
             </div>
           )}
-
           {success && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700">
               <Check className="w-4 h-4 shrink-0" />
@@ -283,31 +243,26 @@ Gemini va tout analyser et créer les fiches automatiquement.`}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-5 border-t border-slate-100 bg-slate-50/50">
-          <p className="text-[11px] text-slate-400">
-            Les fiches existantes ne seront pas supprimées
-          </p>
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
-            >
+        <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+          <p className="text-[11px] text-slate-400">Les notes existantes ne seront pas supprimées</p>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50">
               Annuler
             </button>
             <button
               onClick={handleAnalyze}
-              disabled={isAnalyzing || rawText.trim().length < 10}
-              className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center gap-2 shadow-sm shadow-purple-600/20 transition-all"
+              disabled={isAnalyzing || !hasContent}
+              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
             >
               {isAnalyzing ? (
                 <>
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Gemini analyse...</span>
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Analyse en cours...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Analyser et importer</span>
+                  <span>Analyser avec Gemini</span>
                 </>
               )}
             </button>
@@ -330,13 +285,14 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   assistantId,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState<KnowledgeNote['category']>('services');
-  const [collapsedNotes, setCollapsedNotes] = useState<Record<string, boolean>>({});
+  // Toutes les notes repliées par défaut
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
   const handleToggleNote = (id: string) => {
     onUpdateNotes(notes.map(n => n.id === id ? { ...n, enabled: !n.enabled } : n));
@@ -379,31 +335,30 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
     setIsAddingNote(false);
   };
 
-  // Import handler — fusionne les nouvelles notes avec les existantes
   const handleImport = (newNotes: KnowledgeNote[]) => {
-    const existingIds = new Set(notes.map(n => n.id));
-    const toAdd = newNotes.filter(n => !existingIds.has(n.id));
-    onUpdateNotes([...toAdd, ...notes]);
+    // Expand les nouvelles notes importées
+    const newExpanded: Record<string, boolean> = {};
+    newNotes.forEach(n => { if (n.id) newExpanded[n.id] = true; });
+    setExpandedNotes(prev => ({ ...prev, ...newExpanded }));
+    onUpdateNotes([...newNotes, ...notes]);
   };
 
-  const toggleCollapse = (id: string) => {
-    setCollapsedNotes(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleExpand = (id: string) => {
+    setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const filteredNotes = notes.filter(n => {
-    const matchesSearch =
-      n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.content.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || n.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const q = searchQuery.toLowerCase();
+    const matchSearch = n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+    const matchCat = selectedCategory === 'all' || n.category === selectedCategory;
+    return matchSearch && matchCat;
   });
 
   const activeCount = notes.filter(n => n.enabled).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
 
-      {/* Modal Importer */}
       {isImporting && (
         <ImportModal
           onClose={() => setIsImporting(false)}
@@ -412,268 +367,252 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
         />
       )}
 
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-lg font-bold text-slate-900">Mes informations</h3>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-              {activeCount} / {notes.length} notes actives
+            <h3 className="text-base font-bold text-slate-900">Mes informations</h3>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+              {activeCount} / {notes.length} actives
             </span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-emerald-600 animate-pulse" />
-              Contexte évolutif Firestore & Apprentissage actif
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+              <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+              Apprentissage actif
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Ces informations sont celles que votre assistant utilise pour répondre : prix, horaires, livraison, garanties, questions fréquentes.
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Prix, horaires, livraison, garanties — tout ce que votre assistant doit savoir.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Scanner */}
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           <button
             type="button"
             onClick={onScanClick}
             disabled={isScanning}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-300 disabled:opacity-50"
+            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold flex items-center gap-1.5 border border-slate-200 disabled:opacity-50 transition-colors"
           >
-            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-            <span>{isScanning ? 'Scan en cours...' : 'Scanner mon site web'}</span>
+            <Sparkles className="w-3 h-3 text-purple-600" />
+            {isScanning ? 'Scan...' : 'Scanner mon site'}
           </button>
 
-          {/* NOUVEAU : Importer */}
           <button
             type="button"
             onClick={() => setIsImporting(true)}
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-emerald-600/20"
+            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Importer</span>
+            <Upload className="w-3 h-3" />
+            Importer
           </button>
 
-          {/* Ajouter une note */}
           <button
             type="button"
             onClick={() => setIsAddingNote(true)}
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-purple-600/20 transition-all cursor-pointer"
+            className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            <span>Ajouter une Note</span>
+            <Plus className="w-3 h-3" />
+            Ajouter
           </button>
         </div>
       </div>
 
       {/* New Note Form */}
       {isAddingNote && (
-        <form
-          onSubmit={handleCreateNewNote}
-          className="bg-white p-5 rounded-2xl border-2 border-purple-500/40 shadow-md space-y-4"
-        >
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs">+</div>
-              <span className="font-bold text-sm text-slate-900">Nouvelle Fiche de Connaissance</span>
-            </div>
-            <button type="button" onClick={() => setIsAddingNote(false)} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded">
-              Annuler
-            </button>
+        <form onSubmit={handleCreateNewNote} className="bg-white p-4 rounded-xl border-2 border-purple-400/30 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-sm text-slate-900">Nouvelle note</span>
+            <button type="button" onClick={() => setIsAddingNote(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Annuler</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2 space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700">Titre *</label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
               <input
                 type="text"
                 value={newTitle}
                 onChange={e => setNewTitle(e.target.value)}
-                placeholder="Ex: Tarifs abonnements, Délais livraison..."
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs focus:bg-white focus:border-purple-600 focus:outline-none"
+                placeholder="Titre de la note..."
+                className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none"
                 required
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700">Catégorie</label>
-              <select
-                value={newCategory}
-                onChange={e => setNewCategory(e.target.value as any)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs focus:bg-white focus:border-purple-600 focus:outline-none"
-              >
-                <option value="services">Services & Produits</option>
-                <option value="tarifs">Tarifs & Devis</option>
-                <option value="livraison">Livraison & Délais</option>
-                <option value="faq">FAQ & Questions</option>
-                <option value="politiques">Garanties & Retours</option>
-                <option value="contact">Contact & Horaires</option>
-                <option value="general">Présentation générale</option>
-                <option value="custom">Autre</option>
-              </select>
-            </div>
+            <select
+              value={newCategory}
+              onChange={e => setNewCategory(e.target.value as any)}
+              className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none"
+            >
+              <option value="services">Services</option>
+              <option value="tarifs">Tarifs</option>
+              <option value="livraison">Livraison</option>
+              <option value="faq">FAQ</option>
+              <option value="garanties">Garanties</option>
+              <option value="contact">Contact</option>
+              <option value="general">Général</option>
+            </select>
           </div>
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Contenu *</label>
-            <textarea
-              value={newContent}
-              onChange={e => setNewContent(e.target.value)}
-              rows={4}
-              placeholder="Écrivez les informations exactes : prix, délais, conditions..."
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs focus:bg-white focus:border-purple-600 focus:outline-none leading-relaxed"
-              required
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setIsAddingNote(false)} className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer">
-              Annuler
-            </button>
-            <button type="submit" className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer">
-              <Check className="w-3.5 h-3.5" />
-              <span>Enregistrer</span>
+          <textarea
+            value={newContent}
+            onChange={e => setNewContent(e.target.value)}
+            rows={3}
+            placeholder="Contenu de la note..."
+            className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-purple-500 focus:outline-none leading-relaxed"
+            required
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setIsAddingNote(false)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium">Annuler</button>
+            <button type="submit" className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold flex items-center gap-1.5">
+              <Check className="w-3 h-3" />
+              Enregistrer
             </button>
           </div>
         </form>
       )}
 
-      {/* Filters & Search */}
-      <div className="flex flex-col md:flex-row gap-3">
+      {/* Search + Filtres */}
+      <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Rechercher dans les notes de connaissances..."
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs shadow-sm focus:border-purple-600 focus:outline-none"
+            placeholder="Rechercher..."
+            className="w-full pl-8 pr-4 py-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 focus:border-purple-500 focus:outline-none shadow-sm"
           />
-          {searchQuery && (
-            <button type="button" onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">✕</button>
-          )}
         </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
           <button
-            type="button"
             onClick={() => setSelectedCategory('all')}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${selectedCategory === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap ${selectedCategory === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
           >
             Toutes ({notes.length})
           </button>
-          {Object.entries(CATEGORY_CONFIG).map(([catKey, catVal]) => {
-            const count = notes.filter(n => n.category === catKey).length;
-            if (count === 0 && selectedCategory !== catKey) return null;
+          {Object.entries(CATEGORY_CONFIG).map(([key, val]) => {
+            const count = notes.filter(n => n.category === key).length;
+            if (!count) return null;
             return (
               <button
-                key={catKey}
-                type="button"
-                onClick={() => setSelectedCategory(catKey)}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition-colors cursor-pointer ${selectedCategory === catKey ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                key={key}
+                onClick={() => setSelectedCategory(key)}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap flex items-center gap-1 ${selectedCategory === key ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
               >
-                {catVal.icon}
-                <span>{catVal.label.split(' ')[0]}</span>
-                <span className="opacity-70 text-[10px]">({count})</span>
+                {val.icon}
+                {val.label} ({count})
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Notes List */}
+      {/* Notes */}
       {filteredNotes.length === 0 ? (
         <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto">
-            <FileText className="w-6 h-6 text-purple-600" />
+          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mx-auto">
+            <FileText className="w-5 h-5 text-purple-600" />
           </div>
-          <h4 className="font-bold text-slate-800 text-sm">Aucune note trouvée</h4>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            {searchQuery ? 'Aucun résultat.' : 'Importez vos informations ou créez une note manuellement.'}
-          </p>
+          <h4 className="font-bold text-slate-800 text-sm">Aucune note</h4>
+          <p className="text-xs text-slate-500">Importez vos informations ou créez une note manuellement.</p>
           <div className="flex items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsImporting(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Importer</span>
+            <button onClick={() => setIsImporting(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">
+              <Upload className="w-3 h-3" />Importer
             </button>
-            <button
-              type="button"
-              onClick={() => setIsAddingNote(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Ajouter une note</span>
+            <button onClick={() => setIsAddingNote(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold">
+              <Plus className="w-3 h-3" />Ajouter
             </button>
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {filteredNotes.map(note => {
             const cat = CATEGORY_CONFIG[note.category] || CATEGORY_CONFIG.custom;
-            const isCollapsed = Boolean(collapsedNotes[note.id]);
+            const isExpanded = Boolean(expandedNotes[note.id]);
+
             return (
               <div
                 key={note.id}
-                className={`bg-white rounded-2xl border transition-all shadow-sm ${note.enabled ? 'border-slate-200 hover:border-slate-300' : 'border-slate-200/60 opacity-60 bg-slate-50/50'}`}
+                className={`bg-white rounded-xl border transition-all ${
+                  note.enabled ? 'border-slate-200' : 'border-slate-200/50 opacity-55'
+                }`}
               >
-                <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleNote(note.id)}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${note.enabled ? 'bg-purple-600' : 'bg-slate-300'}`}
-                    >
-                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${note.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </button>
-                    <div className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 ${cat.bg} ${cat.text} ${cat.border} border shrink-0`}>
-                      {cat.icon}
-                      <span>{cat.label}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <input
-                        type="text"
-                        value={note.title}
-                        onChange={e => handleUpdateNoteField(note.id, 'title', e.target.value)}
-                        className="w-full font-bold text-sm text-slate-900 bg-transparent hover:bg-slate-50 focus:bg-white focus:border focus:border-purple-600 px-2 py-1 rounded-lg outline-none transition-colors"
-                      />
-                    </div>
+                {/* Row compact */}
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  {/* Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleNote(note.id)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${note.enabled ? 'bg-purple-600' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${note.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </button>
+
+                  {/* Badge catégorie */}
+                  <span className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${cat.bg} ${cat.text} ${cat.border}`}>
+                    {cat.icon}
+                    {cat.label}
+                  </span>
+
+                  {/* Titre inline */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 truncate">{note.title}</p>
+                    {!isExpanded && (
+                      <p className="text-[11px] text-slate-400 truncate">{note.content.slice(0, 80)}</p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    {note.source === 'learned_conversation' && (
-                      <span className="text-[10px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-2 py-1 rounded-md flex items-center gap-1">
-                        <Sparkles className="w-3 h-3" /> Appris en discussion
-                      </span>
-                    )}
-                    {note.source === 'scanned' && (
-                      <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-1 rounded-md hidden sm:inline-block">
-                        Scanné
-                      </span>
-                    )}
-                    {note.source === 'extracted' && (
-                      <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md hidden sm:inline-block">
-                        Importé
-                      </span>
-                    )}
-                    <button type="button" onClick={() => handleDuplicateNote(note)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer">
-                      <Copy className="w-3.5 h-3.5" />
+
+                  {/* Source badge */}
+                  {note.source === 'extracted' && (
+                    <span className="hidden sm:inline text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
+                      Importé
+                    </span>
+                  )}
+                  {note.source === 'scanned' && (
+                    <span className="hidden sm:inline text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                      Scanné
+                    </span>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => handleDuplicateNote(note)} className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors">
+                      <Copy className="w-3 h-3" />
                     </button>
-                    <button type="button" onClick={() => handleDeleteNote(note.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer">
-                      <Trash2 className="w-3.5 h-3.5" />
+                    <button onClick={() => handleDeleteNote(note.id)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors">
+                      <Trash2 className="w-3 h-3" />
                     </button>
-                    <button type="button" onClick={() => toggleCollapse(note.id)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
-                      {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                    <button onClick={() => toggleExpand(note.id)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
-                {!isCollapsed && (
-                  <div className="p-4 sm:p-5 space-y-2">
+
+                {/* Contenu expandé */}
+                {isExpanded && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-slate-100 pt-2">
+                    <input
+                      type="text"
+                      value={note.title}
+                      onChange={e => handleUpdateNoteField(note.id, 'title', e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none"
+                    />
                     <textarea
                       value={note.content}
                       onChange={e => handleUpdateNoteField(note.id, 'content', e.target.value)}
-                      rows={Math.min(8, Math.max(3, note.content.split('\n').length + 1))}
-                      placeholder="Détail de l'information..."
-                      className="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm text-slate-800 focus:bg-white focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/20 leading-relaxed"
+                      rows={Math.min(6, Math.max(2, note.content.split('\n').length + 1))}
+                      className="w-full px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-purple-500 focus:outline-none leading-relaxed"
                     />
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
                       <span>{note.content.length} caractères</span>
-                      <span>Modifié automatiquement</span>
+                      <select
+                        value={note.category}
+                        onChange={e => handleUpdateNoteField(note.id, 'category', e.target.value)}
+                        className="text-[10px] bg-slate-100 border-0 rounded px-1 py-0.5 text-slate-600 focus:outline-none"
+                      >
+                        <option value="services">Services</option>
+                        <option value="tarifs">Tarifs</option>
+                        <option value="livraison">Livraison</option>
+                        <option value="faq">FAQ</option>
+                        <option value="garanties">Garanties</option>
+                        <option value="contact">Contact</option>
+                        <option value="general">Général</option>
+                      </select>
                     </div>
                   </div>
                 )}
