@@ -291,7 +291,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           ? (billingCycle === 'monthly' ? 18700 : 179500) 
           : (billingCycle === 'monthly' ? 47100 : 452160);
 
-      const planNameStr = selectedCheckoutPlan === 'free' ? 'Plan Gratuit' : selectedCheckoutPlan === 'basic' ? 'Plan Basic' : selectedCheckoutPlan === 'pro' ? 'Plan Pro / Business' : 'Plan Enterprise';
+      const planNameStr = selectedCheckoutPlan === 'free' ? 'Découverte' : selectedCheckoutPlan === 'basic' ? 'Basic' : selectedCheckoutPlan === 'pro' ? 'Pro' : 'Entreprise';
       const paymentMethodStr = checkoutPaymentMethod === 'slickpay_dzd' 
         ? `SlickPay (${checkoutSlickpayType.toUpperCase()})` 
         : checkoutPaymentMethod === 'stripe_card' 
@@ -2673,442 +2673,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
               ) : (
                 null
               )}
-              {false && (
-                /* IN-DASHBOARD CHECKOUT VIEW (Direct Payment & Activation inside Client Interface) */
-                <div className="space-y-6 animate-in fade-in duration-200">
-                  {/* Clean Dashboard Sub-Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setBillingViewMode('overview')}
-                        className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
-                        title="Retour à l'aperçu de facturation"
-                      >
-                        <ArrowLeft className="w-5 h-5" />
-                      </button>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded border border-purple-200">
-                            Guichet Client Officiel
-                          </span>
-                          <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">Cryptage SSL 256-Bit</span>
-                        </div>
-                        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-0.5">
-                          Paiement & Activation Abonnement JawebFlow
-                        </h1>
-                      </div>
-                    </div>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setBillingViewMode('overview')}
-                      className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer self-start sm:self-auto"
-                    >
-                      ← Annuler / Mes Factures
-                    </button>
-                  </div>
-
-                  {/* Certified Partners Banner - UNIFIED PROFESSIONAL SLATE SYSTEM */}
-                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Passerelles de Paiement Certifiées (Algérie & International)
-                      </span>
-                      <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Activation Immédiate en Direct
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-bold text-xs flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-purple-400" /> SLICKPAY (DZD)
-                      </div>
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-medium text-xs flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-slate-400" /> Edahabia (Algérie Poste)
-                      </div>
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-medium text-xs flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-slate-400" /> Carte Interbancaire (CIB)
-                      </div>
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-medium text-xs flex items-center gap-1.5">
-                        <Smartphone className="w-3.5 h-3.5 text-slate-400" /> BaridiMob
-                      </div>
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-medium text-xs flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-slate-400" /> CCP Algérie
-                      </div>
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-medium text-xs flex items-center gap-1.5">
-                        <Globe className="w-3.5 h-3.5 text-slate-400" /> VISA / Mastercard
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Main Grid: Order Summary & Checkout Form */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    
-                    {/* Left Column: Plan Selector & Summary */}
-                    <div className="lg:col-span-5 space-y-4">
-                      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="w-4 h-4 text-purple-600" /> 1. Sélectionner votre formule
-                          </h3>
-                          <span className="text-[10px] font-extrabold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 uppercase">
-                            {billingCycle === 'yearly' ? '-20% Appliqué' : 'Sans engagement'}
-                          </span>
-                        </div>
-
-                        {/* Plan Toggle Chips */}
-                        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCheckoutPlan('basic')}
-                            className={`py-2 px-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                              selectedCheckoutPlan === 'basic'
-                                ? 'bg-slate-900 text-white font-bold shadow-sm'
-                                : 'text-slate-700 hover:text-slate-900 text-xs font-semibold'
-                            }`}
-                          >
-                            <div className="text-xs font-bold">Basic</div>
-                            <div className="text-[10px] opacity-80">{billingCycle === 'monthly' ? '$29/m' : '$23/m'}</div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCheckoutPlan('pro')}
-                            className={`py-2 px-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                              selectedCheckoutPlan === 'pro'
-                                ? 'bg-purple-600 text-white font-bold shadow-sm'
-                                : 'text-slate-700 hover:text-slate-900 text-xs font-semibold'
-                            }`}
-                          >
-                            <div className="text-xs font-bold">Pro / Business</div>
-                            <div className="text-[10px] opacity-80">{billingCycle === 'monthly' ? '$79/m' : '$63/m'}</div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCheckoutPlan('enterprise')}
-                            className={`py-2 px-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                              selectedCheckoutPlan === 'enterprise'
-                                ? 'bg-slate-900 text-white font-bold shadow-sm'
-                                : 'text-slate-700 hover:text-slate-900 text-xs font-semibold'
-                            }`}
-                          >
-                            <div className="text-xs font-bold">Enterprise</div>
-                            <div className="text-[10px] opacity-80">{billingCycle === 'monthly' ? '$199/m' : '$159/m'}</div>
-                          </button>
-                        </div>
-
-                        {/* Cycle Switch */}
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
-                          <div>
-                            <p className="text-xs font-bold text-slate-800">Facturation Annuelle (-20%)</p>
-                            <p className="text-[11px] text-slate-500">Économisez 2 mois par an</p>
-                          </div>
-                          <div className="inline-flex rounded-lg bg-slate-200 p-0.5">
-                            <button
-                              type="button"
-                              onClick={() => setBillingCycle('monthly')}
-                              className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                                billingCycle === 'monthly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                              }`}
-                            >
-                              Mensuel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setBillingCycle('yearly')}
-                              className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                                billingCycle === 'yearly' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600'
-                              }`}
-                            >
-                              Annuel
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Price Total Card */}
-                        <div className="p-4 rounded-xl bg-slate-900 text-white space-y-2">
-                          <div className="flex items-baseline justify-between">
-                            <span className="text-xs text-slate-400">Total à régler :</span>
-                            <div className="text-right">
-                              <span className="text-2xl font-black">
-                                ${selectedCheckoutPlan === 'basic' ? (billingCycle === 'monthly' ? 29 : 276) : selectedCheckoutPlan === 'pro' ? (billingCycle === 'monthly' ? 79 : 756) : (billingCycle === 'monthly' ? 199 : 1908)}
-                              </span>
-                              <span className="text-xs text-slate-400 font-normal"> {billingCycle === 'monthly' ? '/mois' : '/an'}</span>
-                            </div>
-                          </div>
-                          <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
-                            <span className="text-slate-400">Équivalent DZD :</span>
-                            <span className="font-bold text-purple-300 font-mono">
-                              ~{selectedCheckoutPlan === 'basic' ? (billingCycle === 'monthly' ? '6 850' : '65 760') : selectedCheckoutPlan === 'pro' ? (billingCycle === 'monthly' ? '18 700' : '179 500') : (billingCycle === 'monthly' ? '47 100' : '452 160')} DZD
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Included Features list */}
-                        <div className="space-y-2 text-xs text-slate-600">
-                          <span className="font-bold text-slate-800 block mb-1">Services & Quotas inclus :</span>
-                          {selectedCheckoutPlan === 'basic' && (
-                            <>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Widget Web Universel (1 site)</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Jusqu'à 1 000 conversations / mois</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Base de connaissances personnalisée</div>
-                            </>
-                          )}
-                          {selectedCheckoutPlan === 'pro' && (
-                            <>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Widget Web illimité & multi-sites</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Jusqu'à 5 000 conversations / mois</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Détection de leads & synchro CRM</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Support prioritaire et IA haute vitesse</div>
-                            </>
-                          )}
-                          {selectedCheckoutPlan === 'enterprise' && (
-                            <>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Widget Web + Tous les canaux d'entreprises</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Volume de conversations illimité</div>
-                              <div className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Intégrations API & serveurs dédiés</div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right Column: Billing Information & Payment Options */}
-                    <div className="lg:col-span-7 space-y-4">
-                      
-                      {/* Billing Information Section */}
-                      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
-                          <User className="w-4 h-4 text-purple-600" /> 2. Coordonnées de Facturation
-                        </h3>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <label className="block font-semibold text-slate-700 mb-1">Nom complet / Responsable</label>
-                            <input
-                              type="text"
-                              value={checkoutName}
-                              onChange={(e) => setCheckoutName(e.target.value)}
-                              placeholder="Ex: Yacine Benali"
-                              className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-semibold text-slate-700 mb-1">Adresse Email</label>
-                            <input
-                              type="email"
-                              value={checkoutEmail}
-                              onChange={(e) => setCheckoutEmail(e.target.value)}
-                              placeholder="votre-email@domaine.dz"
-                              className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-semibold text-slate-700 mb-1">Entreprise / Commerce</label>
-                            <input
-                              type="text"
-                              value={checkoutCompany}
-                              onChange={(e) => setCheckoutCompany(e.target.value)}
-                              placeholder="Ex: E-commerce Algérie"
-                              className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-semibold text-slate-700 mb-1">Téléphone Mobile</label>
-                            <input
-                              type="text"
-                              value={checkoutPhone}
-                              onChange={(e) => setCheckoutPhone(e.target.value)}
-                              placeholder="05 XX XX XX XX / 07 XX XX XX XX"
-                              className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Payment Method Selector */}
-                      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
-                          <CreditCard className="w-4 h-4 text-purple-600" /> 3. Mode de Règlement Sécurisé
-                        </h3>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => setCheckoutPaymentMethod('slickpay_dzd')}
-                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                              checkoutPaymentMethod === 'slickpay_dzd'
-                                ? 'border-purple-600 bg-purple-50/50 text-slate-900 ring-2 ring-purple-600/20'
-                                : 'border-slate-200 hover:border-slate-300 bg-slate-50 text-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-bold text-slate-900">SlickPay (DZD)</span>
-                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            </div>
-                            <p className="text-[11px] text-slate-500">Edahabia, CIB & BaridiMob</p>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCheckoutPaymentMethod('stripe_card')}
-                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                              checkoutPaymentMethod === 'stripe_card'
-                                ? 'border-purple-600 bg-purple-50/50 text-slate-900 ring-2 ring-purple-600/20'
-                                : 'border-slate-200 hover:border-slate-300 bg-slate-50 text-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-bold text-slate-900">Carte Visa / MC</span>
-                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                            </div>
-                            <p className="text-[11px] text-slate-500">Paiement International</p>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCheckoutPaymentMethod('baridimob_ccp')}
-                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                              checkoutPaymentMethod === 'baridimob_ccp'
-                                ? 'border-purple-600 bg-purple-50/50 text-slate-900 ring-2 ring-purple-600/20'
-                                : 'border-slate-200 hover:border-slate-300 bg-slate-50 text-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-bold text-slate-900">Virement Direct</span>
-                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                            </div>
-                            <p className="text-[11px] text-slate-500">CCP & Rip BaridiMob</p>
-                          </button>
-                        </div>
-
-                        {/* Payment Method Inner Forms */}
-                        {checkoutPaymentMethod === 'slickpay_dzd' && (
-                          <div className="p-4 rounded-xl bg-slate-900 text-slate-100 space-y-3">
-                            <span className="text-xs font-bold text-slate-300 block">Support de carte bancaire Algérie :</span>
-                            <div className="grid grid-cols-3 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setCheckoutSlickpayType('edahabia')}
-                                className={`py-2 px-2 rounded-lg text-xs font-bold text-center border transition-all cursor-pointer ${
-                                  checkoutSlickpayType === 'edahabia'
-                                    ? 'bg-purple-600 border-purple-500 text-white'
-                                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                                }`}
-                              >
-                                Carte Edahabia
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setCheckoutSlickpayType('cib')}
-                                className={`py-2 px-2 rounded-lg text-xs font-bold text-center border transition-all cursor-pointer ${
-                                  checkoutSlickpayType === 'cib'
-                                    ? 'bg-purple-600 border-purple-500 text-white'
-                                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                                }`}
-                              >
-                                Carte CIB
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setCheckoutSlickpayType('baridimob')}
-                                className={`py-2 px-2 rounded-lg text-xs font-bold text-center border transition-all cursor-pointer ${
-                                  checkoutSlickpayType === 'baridimob'
-                                    ? 'bg-purple-600 border-purple-500 text-white'
-                                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                                }`}
-                              >
-                                BaridiMob OTP
-                              </button>
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              Redirection sécurisée via la passerelle nationale SlickPay avec validation OTP SMS.
-                            </p>
-                          </div>
-                        )}
-
-                        {checkoutPaymentMethod === 'stripe_card' && (
-                          <div className="p-4 rounded-xl bg-slate-900 text-slate-100 space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              <div className="sm:col-span-2">
-                                <label className="block text-slate-400 mb-1 font-semibold">Numéro de carte Visa / Mastercard</label>
-                                <input
-                                  type="text"
-                                  value={checkoutCardNumber}
-                                  onChange={(e) => setCheckoutCardNumber(e.target.value)}
-                                  placeholder="4500 •••• •••• 1234"
-                                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500 font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-slate-400 mb-1 font-semibold">Date d'expiration</label>
-                                <input
-                                  type="text"
-                                  value={checkoutCardExp}
-                                  onChange={(e) => setCheckoutCardExp(e.target.value)}
-                                  placeholder="MM/YY"
-                                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500 font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-slate-400 mb-1 font-semibold">Code CVC</label>
-                                <input
-                                  type="text"
-                                  value={checkoutCardCvc}
-                                  onChange={(e) => setCheckoutCardCvc(e.target.value)}
-                                  placeholder="123"
-                                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500 font-mono"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {checkoutPaymentMethod === 'baridimob_ccp' && (
-                          <div className="p-4 rounded-xl bg-slate-900 text-slate-100 space-y-2 text-xs">
-                            <p className="font-bold text-slate-200">Coordonnées de virement Algérie :</p>
-                            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 font-mono space-y-1 text-slate-300">
-                              <p>RIP BaridiMob : <span className="text-purple-300 font-bold">007 99999 0023412984 45</span></p>
-                              <p>N° CCP : <span className="text-purple-300 font-bold">0023412984 Clé 45</span></p>
-                              <p>Titulaire : <span className="text-slate-200">JawebFlow Algérie SARL</span></p>
-                            </div>
-                            <div className="pt-2">
-                              <label className="block text-slate-400 mb-1 font-semibold">N° Reçu / Référence de virement</label>
-                              <input
-                                type="text"
-                                value={checkoutRipRef}
-                                onChange={(e) => setCheckoutRipRef(e.target.value)}
-                                placeholder="Ex: Ref 98421002"
-                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500 font-mono"
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Submit CTA */}
-                        <button
-                          type="button"
-                          disabled={isProcessingPayment}
-                          onClick={handleConfirmPayment}
-                          className="w-full py-3.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm font-extrabold transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
-                        >
-                          {isProcessingPayment ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              <span>Traitement et validation sécurisée de la transaction...</span>
-                            </>
-                          ) : (
-                            <>
-                              <ShieldCheck className="w-4.5 h-4.5" />
-                              <span>Confirmer et Activer l'Abonnement JawebFlow</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* (ancien paiement intégré supprimé : le tunnel CheckoutWizard le remplace) */}
               {billingViewMode === 'overview' && (
                 /* NORMAL BILLING OVERVIEW VIEW */
                 <>
@@ -3140,7 +2705,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Facturation Mensuelle
+                    Chaque mois
                   </button>
                   <button
                     type="button"
@@ -3163,21 +2728,19 @@ echo "Réponse de l'Assistant : " . $result['message'];
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* Active Plan Overview Card */}
-                <div className="lg:col-span-1 bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between border border-purple-900/40">
-                  <div className="absolute top-0 right-0 -mt-8 -mr-8 w-40 h-40 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                <div className="lg:col-span-1 bg-slate-900 rounded-xl p-6 text-white flex flex-col justify-between">
                   
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-purple-500/20 text-purple-200 border border-purple-400/30 uppercase tracking-wider">
-                        <Crown className="w-3.5 h-3.5 text-amber-300" />
-                        Plan Actuel : {activePlan === 'free' ? 'PLAN GRATUIT' : activePlan === 'basic' ? 'PLAN BASIC' : activePlan === 'pro' ? 'PLAN PRO / BUSINESS' : 'PLAN ENTERPRISE'}
+                        Votre formule : {activePlan === 'free' ? 'Découverte' : activePlan === 'basic' ? 'Basic' : activePlan === 'pro' ? 'Pro' : 'Entreprise'}
                       </span>
                       <span className="text-xs text-purple-300 font-medium">Actif</span>
                     </div>
 
                     <div className="mb-6">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-4xl font-black tracking-tight">
+                        <span className="text-3xl font-semibold tracking-tight">
                           {activePlan === 'free' ? '$0' : ''}
                           {activePlan === 'basic' ? (billingCycle === 'monthly' ? '$29' : '$23') : ''}
                           {activePlan === 'pro' ? (billingCycle === 'monthly' ? '$79' : '$63') : ''}
@@ -3185,7 +2748,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         </span>
                         <span className="text-sm text-purple-200">/ mois</span>
                       </div>
-                      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-purple-500/20 text-purple-200 text-xs font-bold border border-purple-400/30">
+                      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/10 text-slate-200 text-xs font-medium">
                         ~{activePlan === 'free' 
                           ? '0 DZD'
                           : activePlan === 'basic' 
@@ -3194,22 +2757,20 @@ echo "Réponse de l'Assistant : " . $result['message'];
                             ? (billingCycle === 'monthly' ? '18 700 DZD' : '14 960 DZD') 
                             : (billingCycle === 'monthly' ? '47 100 DZD' : '37 680 DZD')} / mois
                       </div>
-                      <p className="text-xs text-purple-300/80 mt-2">
-                        {billingCycle === 'yearly' ? 'Facturé annuellement (Remise de -20% appliquée)' : 'Facturé mensuellement (Sans engagement)'}
+                      <p className="text-xs text-slate-400 mt-2">
+                        {billingCycle === 'yearly' ? 'Facturé une fois par an (-20%)' : 'Facturé chaque mois, sans engagement'}
                       </p>
                     </div>
 
                     {/* Quick Specs */}
                     <div className="space-y-2.5 pt-4 border-t border-white/10 text-xs text-purple-100">
                       <div className="flex items-center justify-between">
-                        <span className="text-purple-300">Prochain prélèvement</span>
+                        <span className="text-slate-400">Prochain paiement</span>
                         <span className="font-semibold">28 Sept. 2026</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-purple-300">Statut du compte</span>
-                        <span className="font-semibold text-emerald-300 flex items-center gap-1">
-                          ● Actif & Vérifié
-                        </span>
+                        <span className="text-slate-400">Statut</span>
+                        <span className="font-medium text-emerald-300">Actif</span>
                       </div>
                     </div>
                   </div>
@@ -3220,124 +2781,85 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       onClick={() => {
                         setBillingNotification("Un e-mail de confirmation vous a été envoyé pour ajuster les options de votre abonnement.");
                       }}
-                      className="w-full py-2.5 px-4 rounded-xl bg-white text-slate-900 hover:bg-purple-50 text-xs font-bold transition-colors text-center cursor-pointer shadow-sm"
+                      className="w-full py-2.5 px-4 rounded-lg bg-white text-slate-900 hover:bg-slate-200 text-xs font-semibold transition-colors text-center cursor-pointer"
                     >
-                      Gérer l'Abonnement
+                      Gérer mon abonnement
                     </button>
                   </div>
                 </div>
 
-                {/* Real-time Usage Gauges Card */}
-                <div className="lg:col-span-2 bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                {/* Mon utilisation : deux chiffres, pas plus */}
+                <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-200 flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-5">
                       <div>
-                        <h2 className="text-lg font-bold text-slate-900">Mon utilisation</h2>
-                        <p className="text-xs text-slate-500">Mises à jour en temps réel selon les spécifications exactes de votre forfait.</p>
+                        <h2 className="text-base font-semibold text-slate-900">Mon utilisation</h2>
+                        <p className="text-xs text-slate-500 mt-0.5">Ce que votre assistant a traité ce mois-ci.</p>
                       </div>
-                      <span className="text-xs font-mono font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-100">
-                        Période : Août 2026
+                      <span className="text-xs text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1">
+                        {new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
-                      {/* Metric 1: Conversations */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                            <MessageSquare className="w-4 h-4 text-purple-600" />
-                            Conversations / Mois
-                          </span>
-                          <span className="font-mono font-bold text-slate-900">
-                            {leadsList.length} / {activePlan === 'free' ? '0 (Désactivé)' : activePlan === 'basic' ? '1 000' : activePlan === 'pro' ? '5 000' : 'Illimité'}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="p-4 rounded-lg border border-slate-200 space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-600">Clients intéressés</span>
+                          <span className="font-semibold text-slate-900 tabular-nums">
+                            {leadsList.length}
+                            <span className="text-slate-400 font-normal">
+                              {' / '}
+                              {activePlan === 'free' ? 'non activé' : activePlan === 'basic' ? '1 000' : activePlan === 'pro' ? '5 000' : 'illimité'}
+                            </span>
                           </span>
                         </div>
-                        <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full" 
-                            style={{ 
-                              width: `${activePlan === 'free' ? 100 : activePlan === 'basic' ? Math.min(100, Math.round((leadsList.length / 1000) * 100)) : activePlan === 'pro' ? Math.min(100, Math.round((leadsList.length / 5000) * 100)) : 1}%` 
-                            }} 
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-slate-900 rounded-full"
+                            style={{
+                              width: `${activePlan === 'free' ? 0 : activePlan === 'basic' ? Math.min(100, Math.round((leadsList.length / 1000) * 100)) : activePlan === 'pro' ? Math.min(100, Math.round((leadsList.length / 5000) * 100)) : 4}%`
+                            }}
                           />
                         </div>
-                        <p className="text-[11px] text-slate-500">
-                          {leadsList.length} client(s) intéressé(s) enregistré(s)
-                        </p>
+                        <p className="text-xs text-slate-400">Depuis le début de votre abonnement</p>
                       </div>
 
-                      {/* Metric 2: Mes informations */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                            <Database className="w-4 h-4 text-indigo-600" />
-                            Mes informations
-                          </span>
-                          <span className="font-mono font-bold text-slate-900">
-                            {knowledgeNotes.filter(n => n.enabled).length} / {activePlan === 'free' ? '3' : activePlan === 'basic' ? '10' : activePlan === 'pro' ? '50' : 'Illimitée'}
-                          </span>
-                        </div>
-                        <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full" style={{ width: `${Math.min(100, (knowledgeNotes.filter(n => n.enabled).length / (activePlan === 'free' ? 3 : activePlan === 'basic' ? 10 : 50)) * 100)}%` }}></div>
-                        </div>
-                        <p className="text-[11px] text-slate-500">
-                          {knowledgeNotes.filter(n => n.enabled).length} note(s) active(s) (FAQ, catalogue, consignes)
-                        </p>
-                      </div>
-
-                      {/* Metric 3: Canaux & Widgets */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                            <Bot className="w-4 h-4 text-purple-600" />
-                            Canaux & Intégrations
-                          </span>
-                          <span className="font-mono font-bold text-slate-900">
-                            {activePlan === 'free' ? 'Test Intégration' : activePlan === 'basic' ? '1 Site Web' : activePlan === 'pro' ? 'Multi-Sites Web' : 'Tous Canaux'}
+                      <div className="p-4 rounded-lg border border-slate-200 space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-600">Informations enregistrées</span>
+                          <span className="font-semibold text-slate-900 tabular-nums">
+                            {knowledgeNotes.filter(n => n.enabled).length}
+                            <span className="text-slate-400 font-normal">
+                              {' / '}
+                              {activePlan === 'free' ? '3' : activePlan === 'basic' ? '10' : activePlan === 'pro' ? '50' : 'illimité'}
+                            </span>
                           </span>
                         </div>
-                        <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-purple-600 rounded-full" style={{ width: activePlan === 'free' ? '10%' : activePlan === 'basic' ? '33%' : activePlan === 'pro' ? '66%' : '100%' }}></div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-slate-900 rounded-full"
+                            style={{ width: `${Math.min(100, (knowledgeNotes.filter(n => n.enabled).length / (activePlan === 'free' ? 3 : activePlan === 'basic' ? 10 : 50)) * 100)}%` }}
+                          />
                         </div>
-                        <p className="text-[11px] text-slate-500">
-                          {activePlan === 'free' ? 'Widget Web intégré (Mode Découverte)' : activePlan === 'basic' ? 'Widget Web universel actif' : activePlan === 'pro' ? 'Widget Web illimité & multi-domaines' : 'Canaux illimités + API sur mesure'}
-                        </p>
-                      </div>
-
-                      {/* Metric 4: Marque & Branding */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                            Marque Blanche & Branding
-                          </span>
-                          <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-[10px]">
-                            {activePlan === 'free' || activePlan === 'basic' ? 'Branding Inclus' : 'Marque Blanche'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-600 pt-1">
-                          {activePlan === 'free' || activePlan === 'basic' 
-                            ? 'Mention "Propulsé par JawebFlow" affichée sur le widget.' 
-                            : 'Widget à l’image exclusive de votre marque (sans logo JawebFlow).'}
-                        </p>
+                        <p className="text-xs text-slate-400">Fiches que votre assistant peut utiliser</p>
                       </div>
                     </div>
                   </div>
                 </div>
-
               </div>
 
               {/* Plans Comparison Section */}
               <div className="space-y-6 pt-4">
                 <div className="text-center max-w-xl mx-auto">
-                  <h2 className="text-xl font-extrabold text-slate-900">Changer d'abonnement</h2>
+                  <h2 className="text-xl font-extrabold text-slate-900">Changer de formule</h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    Tarification rigoureusement identique aux formules officielles JawebFlow. Basculez en un clic.
+                    Vous pouvez changer de formule ou arrêter à tout moment.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
 
-                  {/* Plan 0: Plan Gratuit */}
+                  {/* Plan 0: Découverte */}
                   <div className={`bg-white rounded-3xl p-6 border transition-all flex flex-col justify-between ${
                     activePlan === 'free'
                       ? 'border-purple-600 shadow-md ring-2 ring-purple-600/20'
@@ -3345,7 +2867,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   }`}>
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-lg font-bold text-slate-900">Plan Gratuit</h3>
+                        <h3 className="text-lg font-bold text-slate-900">Découverte</h3>
                         {activePlan === 'free' ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700">
                             Plan Actuel
@@ -3363,7 +2885,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           <span className="text-3xl font-black text-slate-900">$0</span>
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
-                        <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 mt-1 inline-block">
+                        <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
                           0 DZD / mois
                         </span>
                       </div>
@@ -3371,19 +2893,19 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       <ul className="space-y-2.5 text-xs text-slate-600 mb-6">
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Accès complet au tableau de bord et à la configuration</span>
+                          <span>Accès à votre espace client</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Intégration du code widget sur votre site web</span>
+                          <span>Installation de la bulle sur votre site</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Connexion à Instagram & canaux externes</span>
+                          <span>Connexion possible à Instagram</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
-                          <span className="text-slate-400">Zéro crédit IA inclus (Pas de réponses automatiques)</span>
+                          <span className="text-slate-400">Réponses automatiques non activées</span>
                         </li>
                       </ul>
                     </div>
@@ -3412,7 +2934,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   }`}>
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-lg font-bold text-slate-900">Plan Basic</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Basic</h3>
                         {activePlan === 'basic' ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700">
                             Plan Actuel
@@ -3430,7 +2952,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           <span className="text-3xl font-black text-slate-900">{billingCycle === 'monthly' ? '$29' : '$23'}</span>
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
-                        <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 mt-1 inline-block">
+                        <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
                           ~{billingCycle === 'monthly' ? '6 850' : '5 480'} DZD / mois
                         </span>
                       </div>
@@ -3438,7 +2960,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       <ul className="space-y-2.5 text-xs text-slate-600 mb-6">
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Widget Web universel (Shopify, WordPress, Webflow, custom...)</span>
+                          <span>Bulle sur votre site (WordPress, Shopify, Wix…)</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
@@ -3446,11 +2968,11 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Support de la base de connaissances (FAQ, catalogue, consignes)</span>
+                          <span>Vos informations (prix, horaires, livraison)</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Compréhension naturelle multilingue (Français, Darija, Anglais)</span>
+                          <span>Réponses en français et en darija</span>
                         </li>
                       </ul>
                     </div>
@@ -3483,7 +3005,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
 
                     <div>
                       <div className="flex items-center justify-between mb-2 mt-1">
-                        <h3 className="text-lg font-bold text-slate-900">Plan Pro / Business</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Pro</h3>
                         {activePlan === 'pro' && (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700">
                             Plan Actuel
@@ -3497,7 +3019,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           <span className="text-3xl font-black text-slate-900">{billingCycle === 'monthly' ? '$79' : '$63'}</span>
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
-                        <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 mt-1 inline-block">
+                        <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
                           ~{billingCycle === 'monthly' ? '18 700' : '14 960'} DZD / mois
                         </span>
                       </div>
@@ -3505,11 +3027,11 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       <ul className="space-y-2.5 text-xs text-slate-600 mb-6">
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                          <span>Widget Web illimité pour tout site web</span>
+                          <span>Installation sur tous vos sites</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                          <span>Accès anticipé WhatsApp & Réseaux sociaux (Prochainement)</span>
+                          <span>WhatsApp et réseaux sociaux (bientôt)</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
@@ -3517,11 +3039,11 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                          <span>Détection automatique des leads & coordonnées clients</span>
+                          <span>Coordonnées des clients enregistrées automatiquement</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                          <span>Support prioritaire et IA optimisée pour la conversion</span>
+                          <span>Assistance prioritaire</span>
                         </li>
                       </ul>
                     </div>
@@ -3550,7 +3072,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   }`}>
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-lg font-bold text-slate-900">Plan Enterprise</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">Entreprise</h3>
                         {activePlan === 'enterprise' ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700">
                             Plan Actuel
@@ -3568,7 +3090,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           <span className="text-3xl font-black text-slate-900">{billingCycle === 'monthly' ? '$199' : '$159'}</span>
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
-                        <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 mt-1 inline-block">
+                        <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
                           ~{billingCycle === 'monthly' ? '47 100' : '37 680'} DZD / mois
                         </span>
                       </div>
@@ -3622,7 +3144,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 {/* Payment Card Info */}
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-base font-bold text-slate-900">Moyen de Paiement</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Moyen de paiement</h3>
                     <CreditCard className="w-5 h-5 text-purple-600" />
                   </div>
                   
@@ -3663,7 +3185,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 <div className="lg:col-span-2 bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Historique des Factures</h3>
+                      <h3 className="text-sm font-semibold text-slate-900">Mes factures</h3>
                       <p className="text-xs text-slate-500">Consultez vos reçus et factures d'abonnement.</p>
                     </div>
                     <FileText className="w-5 h-5 text-slate-400" />
@@ -3677,7 +3199,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           <th className="py-2 px-3">Référence</th>
                           <th className="py-2 px-3">Montant</th>
                           <th className="py-2 px-3">Statut</th>
-                          <th className="py-2 px-3 text-right">Facture</th>
+                          <th className="py-2 px-3 text-right">Reçu</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700">

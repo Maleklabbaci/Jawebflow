@@ -119,7 +119,7 @@ export const AccountProfileView: React.FC = () => {
     <div className="space-y-8 max-w-4xl">
       {/* Title */}
       <div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Gestion de votre Compte & Entreprise</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Mon profil</h2>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
           Mettez à jour les informations de votre profil, de votre entreprise et gérez la sécurité de vos accès.
         </p>
@@ -132,7 +132,7 @@ export const AccountProfileView: React.FC = () => {
             <User className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-slate-900">Informations Personnelles & Entreprise</h3>
+            <h3 className="font-bold text-sm text-slate-900">Mes coordonnées</h3>
             <p className="text-xs text-slate-500">Ces détails apparaissent sur votre espace et vos factures.</p>
           </div>
         </div>
@@ -149,7 +149,7 @@ export const AccountProfileView: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           {/* Display Name */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Nom & Prénom</label>
+            <label className="block text-xs font-semibold text-slate-700">Nom et prénom</label>
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -180,7 +180,7 @@ export const AccountProfileView: React.FC = () => {
 
           {/* Email (Read Only with badge) */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Adresse Email (Compte)</label>
+            <label className="block text-xs font-semibold text-slate-700">Adresse e-mail</label>
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -197,7 +197,7 @@ export const AccountProfileView: React.FC = () => {
 
           {/* Phone Number / WhatsApp */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Numéro Téléphone / WhatsApp Pro</label>
+            <label className="block text-xs font-semibold text-slate-700">Téléphone / WhatsApp</label>
             <div className="relative">
               <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -213,7 +213,7 @@ export const AccountProfileView: React.FC = () => {
 
         {/* Photo URL / Avatar */}
         <div className="space-y-3 pt-2">
-          <label className="block text-xs font-semibold text-slate-700">Photo de profil ou Logo d'Entreprise</label>
+          <label className="block text-xs font-semibold text-slate-700">Photo ou logo</label>
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-purple-100 border-2 border-purple-200 overflow-hidden shrink-0 flex items-center justify-center">
               {photoURL ? (
@@ -269,7 +269,7 @@ export const AccountProfileView: React.FC = () => {
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-slate-900">Sécurité & Mot de Passe</h3>
+              <h3 className="font-bold text-sm text-slate-900">Mot de passe</h3>
               <p className="text-xs text-slate-500">Mettez à jour votre mot de passe d'accès.</p>
             </div>
           </div>
