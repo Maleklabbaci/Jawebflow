@@ -763,10 +763,41 @@ export async function onRequestPost(context: { request: Request; env: any }) {
 
     console.log(`[crawler] ${pages.length} visitées, ${usable.length} exploitables`);
 
-    if (usable.length === 0) {
-      return json({ error: "Aucun contenu accessible. Ajoutez vos informations manuellement." }, 502);
-    }
+if (usable.length === 0) {
+  const title = rootHtml.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || new URL(rootUrl).hostname;
+  const desc =
+    rootHtml.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    rootHtml.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    "";
 
+  console.warn(`[crawler] Aucun contenu exploitable — fallback métadonnées HTML`);
+
+  return json({
+    businessName: title,
+    businessCategory: "",
+    businessDescription: desc,
+    phone: "",
+    email: "",
+    whatsapp: "",
+    address: "",
+    contactLinks: [],
+    deliveryInfo: "",
+    paymentMethods: "",
+    openingHours: "",
+    socialMedia: "",
+    siteType: "vitrine",
+    confidence: 5,
+    knowledgeNotes: desc ? [{ title, category: "general", content: desc }] : [],
+    saved: false,
+    savedNoteCount: 0,
+    isSPA,
+    pagesVisited: pages.length,
+    pagesUsable: 0,
+    warning: "Ce site bloque les crawlers automatiques. Complétez vos informations manuellement via 'Ajouter une Note'.",
+    scrapingStrategy: strategy,
+    scannedPages: [],
+  });
+}
     let result: any;
     try {
       result = context.env.GEMINI_API_KEY
