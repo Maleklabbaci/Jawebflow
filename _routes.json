@@ -1,5 +1,0 @@
-{
-  "version": 1,
-  "include": ["/*"],
-  "exclude": ["/assets/*", "/robot_frames/*", "/favicon.ico", "/vite.svg"]
-}
