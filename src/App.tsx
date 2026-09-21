@@ -29,7 +29,7 @@ function SplashScreen() {
       <div className="h-1 w-28 overflow-hidden rounded-full bg-slate-200">
         <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-900" />
       </div>
-      <p className="text-xs text-slate-400">Ouverture de votre espace…</p>
+      <p className="text-xs text-slate-400">Chargement…</p>
     </div>
   );
 }
@@ -107,14 +107,25 @@ export default function App() {
     const needsAccount = currentPage === 'create-assistant' || currentPage === 'checkout' || currentPage === 'admin';
 
     if (!user && needsAccount) {
-      // On mémorise la destination pour y revenir juste après la connexion
-      // (ex. : un client qui était sur la page de paiement).
-      try {
-        sessionStorage.setItem('jw_after_login', currentPage === 'checkout' ? '/checkout' : '/dashboard');
-      } catch { /* storage indisponible */ }
-      setCurrentPage('login');
-      window.history.replaceState({ page: 'login', section: 'overview' }, '', '/login');
-      return;
+      // Petit délai avant de renvoyer vers la connexion : sur un réseau lent la
+      // session peut arriver juste après le filet de sécurité, et un client
+      // connecté ne doit jamais voir la page de connexion clignoter.
+      const timer = setTimeout(() => {
+        // On mémorise la destination exacte (page ET onglet) pour y revenir
+        // juste après la connexion : un rechargement ne perd jamais le fil.
+        try {
+          const path = window.location.pathname;
+          const intended = currentPage === 'checkout'
+            ? '/checkout'
+            : (path.startsWith('/dashboard') || path.startsWith('/checkout') || path.startsWith('/admin'))
+              ? path
+              : (dashboardSection && dashboardSection !== 'overview' ? `/dashboard/${dashboardSection}` : '/dashboard');
+          sessionStorage.setItem('jw_after_login', intended);
+        } catch { /* storage indisponible */ }
+        setCurrentPage('login');
+        window.history.replaceState({ page: 'login', section: 'overview' }, '', '/login');
+      }, 350);
+      return () => clearTimeout(timer);
     }
 
     if (user && (currentPage === 'login' || currentPage === 'signup')) {
@@ -130,7 +141,16 @@ export default function App() {
         return;
       }
 
-      const section = dashboardSection || 'overview';
+      if (target.startsWith('/admin')) {
+        setCurrentPage('admin');
+        window.history.replaceState({ page: 'admin', section: 'overview' }, '', '/admin');
+        return;
+      }
+
+      // /dashboard/<onglet> : on rouvre exactement l'onglet demandé.
+      const requested = target.replace(/^\/dashboard\/?/, '').split('/')[0];
+      const section = requested || dashboardSection || 'overview';
+      setDashboardSection(section);
       setCurrentPage('create-assistant');
       window.history.replaceState(
         { page: 'create-assistant', section },
