@@ -2,25 +2,13 @@
  * JAWEBFLOW — Scanner de site web (Cloudflare Pages Function).
  *
  * Correctifs appliqués :
- *   1. Modèles Gemini fiables avec repli automatique + timeout strict (le
- *      modèle unique "gemini-3.1-flash-lite" sans filet de sécurité pouvait
- *      échouer silencieusement sur un simple 404/429/lenteur réseau).
+ *   1. Modèles Gemini fiables avec repli automatique + timeout strict.
  *   2. Détection des sites SPA (React/Next/Vue côté client, ex: Vercel) :
- *      le HTML brut de ces sites ne contient presque aucun texte tant que
- *      le JavaScript n'a pas été exécuté — ce que `fetch()` ne fait jamais.
- *      On tente alors : sitemap.xml, chemins courants, et métadonnées SEO
- *      (title/description/og:*) qui sont souvent présentes même en SPA.
- *   3. ÉCRITURE RÉELLE dans Firestore : avant, cette fonction renvoyait
- *      uniquement un JSON au frontend, qui devait lui-même écrire dans
- *      Firestore avec les identifiants du navigateur — bloqué par les règles
- *      de sécurité (cf. commentaire dans google.ts). Résultat : le scan
- *      semblait réussir mais RIEN n'était jamais sauvegardé dans
- *      « Mes informations ». Cette fonction utilise maintenant
- *      `adminPatchDocument` pour écrire directement, en toute sécurité
- *      (côté serveur, avec le compte de service).
- *   4. Fusion intelligente : les notes ajoutées manuellement (comme
- *      « malek cest le ceo ») ne sont JAMAIS écrasées. Seules les notes
- *      marquées `source: "scanned"` sont remplacées par le nouveau scan.
+ *      repli sur sitemap.xml, chemins courants, et métadonnées SEO.
+ *   3. ÉCRITURE RÉELLE dans Firestore via adminPatchDocument (avant, rien
+ *      n'était jamais sauvegardé côté serveur).
+ *   4. Fusion intelligente : les notes ajoutées manuellement ne sont
+ *      JAMAIS écrasées. Seules les notes source:"scanned" sont remplacées.
  */
 
 import {
@@ -32,7 +20,7 @@ import {
 } from "../../_shared/google.ts";
 
 const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
-const GEMINI_TIMEOUT_MS = 15000; // synthèse = plus de tokens à traiter qu'un chat, donc plus de marge
+const GEMINI_TIMEOUT_MS = 15000;
 
 type Page = { url: string; title: string; text: string; status: "done" | "failed" };
 type KnowledgeNote = {
@@ -85,7 +73,6 @@ function cleanHtml(html: string) {
     .replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
 }
 
-/** Détecte une coquille vide de SPA (React/Vue/Next côté client, ex: Vercel). */
 function looksLikeEmptySPA(html: string): boolean {
   const bodyText = cleanHtml(html);
   const hasRootDiv = /<div\s+id=["'](root|app|__next|__nuxt)["']/i.test(html);
@@ -93,8 +80,6 @@ function looksLikeEmptySPA(html: string): boolean {
   return (hasRootDiv || hasFrameworkScript) && bodyText.length < 250;
 }
 
-/** Extrait les métadonnées SEO (title, description, og:*) : souvent injectées
- * côté serveur pour le référencement, même sur une application React pure. */
 function extractMetaFallback(html: string, url: string): { title: string; description: string } {
   const title =
     html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i)?.[1] ||
@@ -118,13 +103,11 @@ async function fetchPage(url: string): Promise<Page> {
     const html = await response.text();
     const cleaned = cleanHtml(html);
 
-    // Contenu texte suffisant : page classique (rendu côté serveur).
     if (cleaned.length > 60) {
       const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || new URL(url).pathname || "Page web";
       return { url, title, text: cleaned.slice(0, 9000), status: "done" };
     }
 
-    // Contenu trop pauvre : probable SPA — on retombe sur les métadonnées SEO.
     const meta = extractMetaFallback(html, url);
     if (meta.description.length > 15) {
       return { url, title: meta.title, text: meta.description, status: "done" };
@@ -155,8 +138,6 @@ function discoverLinks(html: string, baseUrl: string) {
   return [...links].filter((link) => link !== baseUrl).slice(0, 8);
 }
 
-/** Repli n°1 pour les SPA : sitemap.xml, souvent généré côté serveur/build
- * même quand le rendu des pages est 100% côté client. */
 async function discoverViaSitemap(baseUrl: string): Promise<string[]> {
   try {
     const sitemapUrl = new URL("/sitemap.xml", baseUrl).toString();
@@ -170,7 +151,6 @@ async function discoverViaSitemap(baseUrl: string): Promise<string[]> {
   }
 }
 
-/** Repli n°2 pour les SPA : chemins courants d'un site vitrine/e-commerce. */
 const COMMON_PATHS = [
   "/services",
   "/tarifs",
@@ -185,7 +165,7 @@ const COMMON_PATHS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Synthèse IA (Gemini, avec repli multi-modèles + timeout)
+// Synthèse IA
 // ---------------------------------------------------------------------------
 
 const ALLOWED_CATEGORIES = ["services", "tarifs", "livraison", "garanties", "contact", "faq", "general"];
@@ -237,7 +217,7 @@ ${dossier}`;
             generationConfig: {
               responseMimeType: "application/json",
               temperature: 0.1,
-              thinkingConfig: { thinkingBudget: 0 }, // synthèse rapide, pas de réflexion inutile
+              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
           signal: controller.signal,
@@ -247,7 +227,7 @@ ${dossier}`;
 
       if (response.status === 429) {
         errors.push(`${model}: quota dépassé (429)`);
-        break; // inutile d'essayer les autres modèles dans l'immédiat
+        break;
       }
       if (!response.ok) {
         errors.push(`${model}: HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 150)}`);
@@ -298,16 +278,9 @@ function fallbackFromPages(pages: Page[], siteUrl: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Fusion avec les notes existantes (ne jamais écraser les notes manuelles)
+// Fusion avec les notes existantes
 // ---------------------------------------------------------------------------
 
-/**
- * Fusionne les nouvelles notes scannées avec les notes déjà présentes.
- * RÈGLE D'OR : toute note dont `source !== "scanned"` a été ajoutée ou
- * modifiée manuellement par l'utilisateur (ex: « malek cest le ceo ») —
- * elle est TOUJOURS conservée telle quelle. Seules les anciennes notes
- * `source: "scanned"` sont remplacées par le résultat du nouveau scan.
- */
 function mergeKnowledgeNotes(existing: KnowledgeNote[], scannedRaw: KnowledgeNote[]): KnowledgeNote[] {
   const manualNotes = existing.filter((n) => n && n.source !== "scanned");
 
@@ -317,7 +290,7 @@ function mergeKnowledgeNotes(existing: KnowledgeNote[], scannedRaw: KnowledgeNot
     const category = ALLOWED_CATEGORIES.includes((note.category || "").toLowerCase())
       ? (note.category as string).toLowerCase()
       : "general";
-    if (seenCategories.has(category)) continue; // une seule note scannée par catégorie
+    if (seenCategories.has(category)) continue;
     seenCategories.add(category);
     scannedNotes.push({
       id: `scanned_${category}`,
@@ -332,8 +305,6 @@ function mergeKnowledgeNotes(existing: KnowledgeNote[], scannedRaw: KnowledgeNot
   return [...manualNotes, ...scannedNotes];
 }
 
-/** Ne remplit un champ que s'il est actuellement vide : ne jamais écraser une
- * information saisie manuellement par l'utilisateur dans le dashboard. */
 function fillIfEmpty(existingValue: any, newValue: any): any {
   const existingIsEmpty = existingValue === undefined || existingValue === null || String(existingValue).trim() === "";
   return existingIsEmpty ? newValue || "" : existingValue;
@@ -348,13 +319,9 @@ export async function onRequestPost(context: { request: Request; env: any }) {
     const body = (await context.request.json().catch(() => ({}))) as { url?: string; assistantId?: string };
     if (!body.url) return json({ error: "URL is required" }, 400);
 
-    // Anti-SSRF : refuse localhost / réseau privé / métadonnées cloud.
     const urlCheck = isPublicHttpUrl(body.url.startsWith("http") ? body.url : `https://${body.url}`);
     if (!urlCheck.ok) return json({ error: `URL refusée : ${urlCheck.reason}` }, 400);
 
-    // Authentification obligatoire : le scan écrit désormais réellement dans
-    // Firestore, il faut donc être sûr que l'appelant est bien connecté et
-    // propriétaire de l'assistant ciblé.
     const caller = await verifyFirebaseIdToken(context.env, context.request.headers.get("Authorization"));
     if (!caller) return json({ error: "Authentification requise : connectez-vous pour lancer un scan." }, 401);
 
@@ -387,9 +354,6 @@ export async function onRequestPost(context: { request: Request; env: any }) {
 
     let links = discoverLinks(rootHtml, rootUrl);
 
-    // Site en JS pur (React/Next/Vue, typiquement hébergé sur Vercel/Netlify) :
-    // le HTML brut ne contient pas de <a href> exploitable. On tente le
-    // sitemap puis des chemins courants avant d'abandonner.
     if (isSPA || links.length === 0) {
       const sitemapLinks = await discoverViaSitemap(rootUrl);
       const commonLinks = COMMON_PATHS.map((path) => new URL(path, rootUrl).toString());
@@ -417,7 +381,6 @@ export async function onRequestPost(context: { request: Request; env: any }) {
       );
     }
 
-    // Synthèse IA (avec repli sur extraction brute si Gemini échoue totalement)
     let result: any;
     if (context.env.GEMINI_API_KEY) {
       try {
@@ -430,10 +393,6 @@ export async function onRequestPost(context: { request: Request; env: any }) {
       result = fallbackFromPages(pages, rootUrl);
     }
 
-    // ── ÉCRITURE RÉELLE dans Firestore ──────────────────────────────────
-    // C'est ici que le correctif principal opère : avant, rien n'était
-    // jamais sauvegardé côté serveur. On fusionne maintenant avec les
-    // données existantes (sans écraser les notes/ champs saisis à la main).
     let saved = false;
     let savedNoteCount = 0;
     if (body.assistantId) {
