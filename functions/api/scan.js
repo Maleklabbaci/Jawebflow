@@ -3,6 +3,10 @@
  * Scanne tout le site (pages, produits, etc.) + Gemini Vision -> Firestore
  */
 
+const EMBEDDING_MODEL = 'gemini-embedding-001';
+const VISION_MODEL = 'gemini-3.1-flash-lite';
+const EMBEDDING_DIM = 768;
+
 function toFirestoreFields(obj) {
   const fields = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -10,10 +14,37 @@ function toFirestoreFields(obj) {
     else if (typeof v === 'number') fields[k] = { doubleValue: v };
     else if (typeof v === 'boolean') fields[k] = { booleanValue: v };
     else if (Array.isArray(v)) {
-      fields[k] = { arrayValue: { values: v.map(x => ({ stringValue: String(x) })) } };
+      // Tableau de nombres (ex: embedding) vs tableau de chaînes (ex: tags)
+      const isNumeric = v.length > 0 && v.every(x => typeof x === 'number');
+      fields[k] = {
+        arrayValue: {
+          values: v.map(x => isNumeric ? { doubleValue: x } : { stringValue: String(x) })
+        }
+      };
     }
   }
   return fields;
+}
+
+// Génère un embedding pour indexer sémantiquement la fiche (recherche côté chat.js)
+async function embedText(text, apiKey) {
+  if (!text || !text.trim() || !apiKey) return null;
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: { parts: [{ text: text.slice(0, 2000) }] },
+        outputDimensionality: EMBEDDING_DIM
+      })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.embedding?.values || null;
+  } catch {
+    return null;
+  }
 }
 
 async function saveToFirestore(env, path, data) {
@@ -36,7 +67,7 @@ async function analyzeWithVision(imageUrl, apiKey) {
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     const base64 = btoa(binary);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${VISION_MODEL}:generateContent?key=${apiKey}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -96,17 +127,24 @@ export async function onRequestPost(context) {
 
         const type = pageUrl.includes('product') || price ? 'produit' : 'info';
         const docId = pageUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-80);
+        const content = desc || title;
 
-        await saveToFirestore(env, `assistants/${assistantId}/knowledge_base/${docId}`, {
+        // Embedding généré à partir du titre + contenu, pour la recherche sémantique
+        const embedding = await embedText(`${title}. ${content}. ${tags.join(', ')}`, env.GEMINI_API_KEY);
+
+        const doc = {
           title,
-          content: desc || title,
+          content,
           url: pageUrl,
           price: price || '',
           currency: 'DA',
           type,
           tags,
           scannedAt: new Date().toISOString()
-        });
+        };
+        if (embedding) doc.embedding = embedding;
+
+        await saveToFirestore(env, `assistants/${assistantId}/knowledge_base/${docId}`, doc);
         count++;
       } catch {}
     }

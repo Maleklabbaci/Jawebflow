@@ -41,7 +41,8 @@ async function handleMessages(payload, env) {
       });
 
       // 2. Appel IA Gemini avec Derja / Français
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      // TODO: bot Instagram non multi-tenant (pas de base de connaissance ni d'assistantId ici) — à revoir séparément
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiKey}`;
       const gRes = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

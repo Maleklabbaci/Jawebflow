@@ -1,0 +1,3 @@
+# Cloudflare Pages Redirects / Proxy
+/api/* https://ais-pre-plnpcivvgr7la27cilze6i-170357957641.europe-west2.run.app/api/:splat 200
+/* /index.html 200
