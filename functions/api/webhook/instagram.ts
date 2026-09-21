@@ -1,154 +1,217 @@
-import firebaseConfig from "../../../firebase-applet-config.json";
-
-interface Env { GEMINI_API_KEY?: string; INSTAGRAM_VERIFY_TOKEN?: string; }
-type Integration = { accessToken: string; instagramUserId: string; instagramUsername?: string; assistantId?: string; autoReplyEnabled?: boolean; assistantTone?: string; customGreeting?: string };
-
-type FirestoreValue = { stringValue?: string; booleanValue?: boolean; integerValue?: string; doubleValue?: number; arrayValue?: { values?: FirestoreValue[] }; mapValue?: { fields?: Record<string, FirestoreValue> } };
-function value(field?: FirestoreValue): any {
-  if (!field) return undefined;
-  if (field.stringValue !== undefined) return field.stringValue;
-  if (field.booleanValue !== undefined) return field.booleanValue;
-  if (field.integerValue !== undefined) return Number(field.integerValue);
-  if (field.doubleValue !== undefined) return field.doubleValue;
-  if (field.arrayValue) return (field.arrayValue.values || []).map(value);
-  if (field.mapValue) return Object.fromEntries(Object.entries(field.mapValue.fields || {}).map(([key, val]) => [key, value(val)]));
-  return undefined;
+interface Env {
+  FIREBASE_SERVICE_ACCOUNT?: string;
+  GEMINI_API_KEY?: string;
+  INSTAGRAM_VERIFY_TOKEN?: string;
 }
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
-}
-
-async function firestoreQuery(structuredQuery: any) {
-  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents:runQuery?key=${firebaseConfig.apiKey}`;
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ structuredQuery }) });
-  if (!response.ok) throw new Error(`Firestore HTTP ${response.status}`);
-  return await response.json() as any[];
-}
-
-async function fetchIntegration(instagramUserId?: string): Promise<Integration | null> {
-  try {
-    const structuredQuery: any = { from: [{ collectionId: "instagram_integrations" }], limit: 50 };
-    if (instagramUserId) {
-      structuredQuery.where = { fieldFilter: { field: { fieldPath: "instagramUserId" }, op: "EQUAL", value: { stringValue: String(instagramUserId) } } };
-      structuredQuery.limit = 1;
+// Helper pour encoder en Base64Url (pour JWT Google)
+function base64url(source: ArrayBuffer | string): string {
+  let encoded = "";
+  if (typeof source === "string") {
+    encoded = btoa(unescape(encodeURIComponent(source)));
+  } else {
+    const bytes = new Uint8Array(source);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
     }
-    const rows = await firestoreQuery(structuredQuery);
-    for (const row of rows) {
-      const fields = row.document?.fields as Record<string, FirestoreValue> | undefined;
-      const token = value(fields?.accessToken);
-      if (token) return {
-        accessToken: String(token), instagramUserId: String(value(fields?.instagramUserId) || instagramUserId || ""),
-        instagramUsername: value(fields?.instagramUsername), assistantId: value(fields?.assistantId),
-        autoReplyEnabled: value(fields?.autoReplyEnabled) !== false, assistantTone: value(fields?.assistantTone), customGreeting: value(fields?.customGreeting)
-      };
-    }
-  } catch (error) { console.error("[CF Instagram] intégration Firestore inaccessible:", error); }
-  return null;
+    encoded = btoa(binary);
+  }
+  return encoded.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-async function fetchAssistantKnowledge(assistantId?: string) {
-  const fallback = { businessName: "", website: "", knowledgeNotes: [] as any[], assistantTone: "professionnel", customGreeting: "" };
-  try {
-    if (!assistantId) return fallback;
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/assistants/${encodeURIComponent(assistantId)}?key=${firebaseConfig.apiKey}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Assistant HTTP ${response.status}`);
-    const document = await response.json() as any;
-    const fields = document.fields as Record<string, FirestoreValue>;
-    return {
-      businessName: value(fields?.businessName) || value(fields?.name) || "",
-      website: value(fields?.websiteUrl) || value(fields?.website) || "",
-      knowledgeNotes: value(fields?.knowledgeNotes) || [],
-      assistantTone: value(fields?.assistantTone) || "professionnel",
-      customGreeting: value(fields?.customGreeting) || ""
-    };
-  } catch (error) { console.error("[CF Instagram] base assistant inaccessible:", error); return fallback; }
+// Convertit une clé privée PEM en CryptoKey pour Web Crypto API
+async function importPrivateKey(pem: string): Promise<CryptoKey> {
+  const pemHeader = "-----BEGIN PRIVATE KEY-----";
+  const pemFooter = "-----END PRIVATE KEY-----";
+  const pemContents = pem.substring(
+    pem.indexOf(pemHeader) + pemHeader.length,
+    pem.indexOf(pemFooter)
+  ).replace(/\s/g, "");
+  
+  const binaryDerString = atob(pemContents);
+  const binaryDer = new Uint8Array(binaryDerString.length);
+  for (let i = 0; i < binaryDerString.length; i++) {
+    binaryDer[i] = binaryDerString.charCodeAt(i);
+  }
+
+  return await crypto.subtle.importKey(
+    "pkcs8",
+    binaryDer.buffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
 }
 
-async function generateAiReply(userText: string, info: any, env: Env, integration: Integration) {
-  if (!env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY absent dans l’environnement Cloudflare Production.");
-  const notes = (info.knowledgeNotes || []).filter((note: any) => note?.enabled !== false && note?.content).slice(0, 50);
-  const knowledge = notes.map((note: any) => `### ${note.title || "Information"}\n${note.content}`).join("\n\n").slice(0, 30000);
-  const prompt = `Tu es l’assistant Instagram officiel de ${info.businessName || "cette entreprise"}. Réponds au dernier message en français ou en darija selon la langue du client, avec un ton ${info.assistantTone || integration.assistantTone || "professionnel"}. Réponse courte et naturelle pour un DM.
+// Génère un Access Token Google Admin pour Cloudflare Workers
+async function getGoogleAccessToken(serviceAccountJson: string): Promise<{ accessToken: string; projectId: string }> {
+  const sa = JSON.parse(serviceAccountJson);
+  const now = Math.floor(Date.now() / 1000);
 
-RÈGLE ABSOLUE : utilise uniquement les informations de la base ci-dessous. Si une information n’est pas présente, dis honnêtement que tu dois vérifier et propose le contact disponible. N’invente jamais de prix, livraison, wilaya, délai, produit ou promotion.
+  const header = { alg: "RS256", typ: "JWT" };
+  const claimSet = {
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/datastore",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now
+  };
 
-BASE DE CONNAISSANCES :
-${knowledge || "Aucune fiche de connaissance disponible."}
+  const encodedHeader = base64url(JSON.stringify(header));
+  const encodedClaimSet = base64url(JSON.stringify(claimSet));
+  const unsignedToken = `${encodedHeader}.${encodedClaimSet}`;
 
-Message client : ${userText}
-Réponds uniquement avec le texte à envoyer, sans titre ni explication interne.`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.25, maxOutputTokens: 300 } })
+  const cryptoKey = await importPrivateKey(sa.private_key);
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    new TextEncoder().encode(unsignedToken)
+  );
+
+  const jwt = `${unsignedToken}.${base64url(signature)}`;
+
+  const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt
+    })
   });
-  const data = await response.json().catch(() => ({})) as any;
-  if (!response.ok) throw new Error(`Gemini HTTP ${response.status}: ${data.error?.message || "erreur inconnue"}`);
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!text) throw new Error("Gemini n’a retourné aucune réponse.");
-  return text;
+
+  const tokenData = await tokenResp.json() as any;
+  return { accessToken: tokenData.access_token, projectId: sa.project_id };
 }
 
-async function sendInstagramMessage(recipientId: string, text: string, accessToken: string) {
-  const attempts = [
-    `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(accessToken)}`,
-    `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(accessToken)}`
-  ];
-  let lastError = "";
-  for (const url of attempts) {
-    try {
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }) });
-      const data = await response.json().catch(() => ({})) as any;
-      if (response.ok && !data.error) return { success: true, data };
-      lastError = data.error?.message || `Meta HTTP ${response.status}`;
-    } catch (error: any) { lastError = error?.message || "Erreur réseau Meta"; }
-  }
-  return { success: false, error: lastError };
-}
-
-async function processEvents(body: any, env: Env) {
-  if (body.object !== "instagram" && body.object !== "page") return;
-  for (const entry of body.entry || []) {
-    for (const event of entry.messaging || []) {
-      const message = event.message;
-      const senderId = event.sender?.id;
-      const recipientId = event.recipient?.id || entry.id;
-      if (!message?.text || message.is_echo || !senderId) continue;
-      const integration = await fetchIntegration(recipientId);
-      if (!integration?.accessToken || integration.autoReplyEnabled === false) {
-        console.error(`[CF Instagram] aucun token actif pour recipient=${recipientId}`);
-        continue;
-      }
-      const info = await fetchAssistantKnowledge(integration.assistantId);
-      try {
-        const reply = await generateAiReply(message.text, info, env, integration);
-        const result = await sendInstagramMessage(senderId, reply, integration.accessToken);
-        if (!result.success) console.error(`[CF Instagram] réponse non envoyée à ${senderId}:`, result.error);
-        else console.log(`[CF Instagram] réponse envoyée via Gemini à ${senderId}, assistant=${integration.assistantId || "inconnu"}`);
-      } catch (error) { console.error("[CF Instagram] traitement Gemini échoué:", error); }
+// Récupère l'intégration Instagram dans Firestore via REST API Admin
+async function getIntegrationAdmin(recipientId: string, serviceAccountJson: string) {
+  const { accessToken, projectId } = await getGoogleAccessToken(serviceAccountJson);
+  
+  // Requête StructuredQuery dans Firestore
+  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+  
+  const queryBody = {
+    structuredQuery: {
+      from: [{ collectionId: "instagram_integrations" }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath: "instagramUserId" },
+          op: "EQUAL",
+          value: { stringValue: recipientId }
+        }
+      },
+      limit: 1
     }
+  };
+
+  const resp = await fetch(firestoreUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(queryBody)
+  });
+
+  const results = await resp.json() as any[];
+  if (!results || results.length === 0 || !results[0].document) {
+    return null;
   }
+
+  const fields = results[0].document.fields;
+  return {
+    accessToken: fields.accessToken?.stringValue,
+    accountName: fields.accountName?.stringValue,
+    systemPrompt: fields.systemPrompt?.stringValue || "Tu es un assistant virtuel serviable."
+  };
 }
 
+// Envoie la réponse de l'IA sur Instagram
+async function sendInstagramMessage(recipientId: string, text: string, accessToken: string) {
+  const url = `https://graph.instagram.com/v21.0/me/messages?access_token=${accessToken}`;
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: { text }
+    })
+  });
+}
+
+// --- CLOUDFLARE FUNCTIONS HANDLERS ---
+
+// Validation du Webhook (GET)
 export async function onRequestGet(context: { request: Request; env: Env }) {
   const url = new URL(context.request.url);
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
-  const verifyToken = url.searchParams.get("hub.verify_token");
-  if (challenge && verifyToken === (context.env.INSTAGRAM_VERIFY_TOKEN || "jawebflow_secure_webhook_token_2025")) return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
-  if (challenge) return new Response("Token de vérification invalide", { status: 403 });
-  return new Response("JawebFlow Instagram webhook actif", { status: 200 });
+
+  const verifyToken = context.env.INSTAGRAM_VERIFY_TOKEN || "jawebflow_secret_token";
+
+  if (mode === "subscribe" && token === verifyToken) {
+    return new Response(challenge, { status: 200 });
+  }
+  return new Response("Forbidden", { status: 403 });
 }
 
-export async function onRequestPost(context: { request: Request; env: Env; waitUntil?: (promise: Promise<unknown>) => void }) {
+// Reception des DMs (POST)
+export async function onRequestPost(context: { request: Request; env: Env }) {
   try {
-    const body = await context.request.json();
-    const work = processEvents(body, context.env);
-    if (context.waitUntil) context.waitUntil(work); else await work;
-    return json({ status: "EVENT_RECEIVED" });
+    const body = await context.request.json() as any;
+
+    if (body.object === "instagram") {
+      for (const entry of body.entry || []) {
+        for (const messagingEvent of entry.messaging || []) {
+          const senderId = messagingEvent.sender?.id;
+          const recipientId = messagingEvent.recipient?.id;
+          const messageText = messagingEvent.message?.text;
+
+          // On ignore les échos de messages envoyés par le bot lui-même
+          if (messagingEvent.message?.is_echo || !messageText) continue;
+
+          // 1. Lecture Admin dans Firestore
+          const saJson = context.env.FIREBASE_SERVICE_ACCOUNT;
+          if (!saJson) {
+            console.error("FIREBASE_SERVICE_ACCOUNT manquant.");
+            continue;
+          }
+
+          const integration = await getIntegrationAdmin(recipientId, saJson);
+          if (!integration || !integration.accessToken) {
+            console.log(`Aucune intégration trouvée pour recipientId: ${recipientId}`);
+            continue;
+          }
+
+          // 2. Génération de la réponse via Gemini API
+          const geminiApiKey = context.env.GEMINI_API_KEY;
+          let replyText = "Désolé, je rencontre une petite difficulté technique.";
+
+          if (geminiApiKey) {
+            const geminiResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [
+                  { role: "user", parts: [{ text: `${integration.systemPrompt}\n\nClient: ${messageText}` }] }
+                ]
+              })
+            });
+            const geminiData = await geminiResp.json() as any;
+            replyText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || replyText;
+          }
+
+          // 3. Envoi du message réponse sur Instagram
+          await sendInstagramMessage(senderId, replyText, integration.accessToken);
+        }
+      }
+    }
+
+    return new Response("EVENT_RECEIVED", { status: 200 });
   } catch (error: any) {
-    console.error("[CF Instagram] webhook invalide:", error);
-    return json({ status: "EVENT_RECEIVED", error: error?.message || "invalid payload" });
+    console.error("Erreur Webhook:", error);
+    return new Response("EVENT_RECEIVED", { status: 200 }); // Toujours répondre 200 à Meta
   }
 }
-
-export async function onRequestOptions() { return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" } }); }
