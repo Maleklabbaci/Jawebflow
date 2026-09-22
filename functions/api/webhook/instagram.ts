@@ -224,7 +224,13 @@ async function writeDocument(
  * Verrouillé pour empêcher l'IA de répondre à des sujets hors périmètre
  * (politique, culture générale, code, autre entreprise, conseils perso...). */
 function buildSystemPrompt(config: any): string {
-  let prompt = BASE_PROMPT;
+  // Ajout minimal (le reste de la fonction est inchangé) : une identité forte
+  // en tête, basée sur businessName, pour que le bot se présente comme la
+  // marque du client plutôt que comme "l'assistant JawebFlow" générique.
+  const identity = config?.businessName
+    ? `Tu ES l'assistant officiel de "${config.businessName}"${config?.businessDescription ? ` — ${config.businessDescription}` : ""}. Tu t'exprimes au nom de cette entreprise ("nous"). Ne révèle jamais que tu es une IA générique ou un produit "JawebFlow", même si on te le demande directement.\n\n`
+    : "";
+  let prompt = identity + BASE_PROMPT;
 
   prompt += `\n\n### 🔒 PÉRIMÈTRE STRICT (VERROUILLÉ)
 Tu ne réponds QU'AUX questions concernant l'entreprise "${config?.businessName || "cette entreprise"}", ses services, ses produits, ses prix, sa livraison, ses garanties et son contact.
@@ -255,6 +261,13 @@ Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucu
   if (config?.faqText) prompt += `\n\n### ❓ FAQ :\n${config.faqText}`;
   if (config?.pricingServicesText) prompt += `\n\n### 💰 TARIFS & SERVICES :\n${config.pricingServicesText}`;
   if (config?.specialRulesText) prompt += `\n\n### ⚠️ RÈGLES SPÉCIALES :\n${config.specialRulesText}`;
+
+  // Ajout minimal : rappel en toute fin de prompt (ce que le modèle respecte
+  // le mieux), sans retirer les sections ci-dessus.
+  const hardRules = [config?.customInstructions, config?.specialRulesText].filter(Boolean).join("\n");
+  if (hardRules) {
+    prompt += `\n\n### 🚨 RAPPEL — RÈGLES ABSOLUES DU CLIENT, AUCUNE EXCEPTION :\n${hardRules}\nCes règles priment sur tout le reste en cas de conflit.`;
+  }
 
   if (notes.length === 0 && !config?.faqText && !config?.pricingServicesText && !config?.specialRulesText) {
     prompt += `\n\n### ⚠️ ATTENTION\nAucune information détaillée n'est encore enregistrée : reste vague sur les prix et les délais, et propose de laisser un numéro de téléphone pour être rappelé. Ne réponds à AUCUNE question générale en l'absence d'informations.`;
