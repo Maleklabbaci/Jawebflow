@@ -92,7 +92,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
       formData.append('mode', 'merge');
       files.forEach(f => formData.append('files', f));
 
-      const res = await fetch('/api/extract/analyze', {
+      const res = await fetch('/api/crawler/analyze', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -140,7 +140,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-sm">Importer des informations</h3>
-              <p className="text-[11px] text-slate-500">Texte, PDF, catalogue, n'importe quoi — Gemini organise tout</p>
+              <p className="text-[11px] text-slate-500">Texte, PDF, catalogue ou document : vos informations sont organisées automatiquement</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
@@ -262,7 +262,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Analyser avec Gemini</span>
+                  <span>Ajouter ces informations</span>
                 </>
               )}
             </button>

@@ -79,7 +79,7 @@ export const LockedFeatureGate: React.FC<LockedFeatureGateProps> = ({
       <div className="border-t border-slate-100 pt-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
         <ShieldCheck className="w-4 h-4 text-slate-400" />
         <span>
-          Votre compte gratuit vous permet de configurer votre Base de Connaissances, l'Apparence du Widget et de tester votre Webhook.
+          Votre compte gratuit vous permet de préparer vos informations, votre apparence et votre assistant.
         </span>
       </div>
     </div>

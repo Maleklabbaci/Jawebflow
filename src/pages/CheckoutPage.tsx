@@ -45,7 +45,7 @@ const PLAN_DETAILS: Record<PaymentPlanId, {
       'Accès complet au tableau de configuration',
       'Intégration du code widget sur site web',
       'Connexion à Instagram',
-      'Zéro crédit IA inclus'
+      'Aucune limite cachée'
     ]
   },
   basic: {
@@ -56,9 +56,9 @@ const PLAN_DETAILS: Record<PaymentPlanId, {
     usdYearly: 23,
     dzdYearly: 5480,
     features: [
-      '1 Assistant IA entraîné',
+      '1 assistant personnalisé',
       'Jusqu\'à 1 000 conversations / mois',
-      'Intégration Web (Widget & Pop-up)',
+        'Ajout simple sur votre site',
       'Détection automatique de la langue (Arabe / FR)',
       'Support par email prioritaire'
     ]
@@ -71,11 +71,11 @@ const PLAN_DETAILS: Record<PaymentPlanId, {
     usdYearly: 63,
     dzdYearly: 14960,
     features: [
-      '3 Assistants IA personnalisés',
+      '3 assistants personnalisés',
       'Jusqu\'à 5 000 conversations / mois',
       'Intégration Web + WhatsApp & Messenger (bientôt)',
-      'Scraping Web & Base de connaissances illimitée',
-      'Collecte de leads CRM & Export Excel/CSV',
+      'Lecture de site et informations illimitées',
+        'Récupération des contacts & export Excel/CSV',
       'Support prioritaire 7j/7 par téléphone'
     ]
   },
@@ -87,9 +87,9 @@ const PLAN_DETAILS: Record<PaymentPlanId, {
     usdYearly: 159,
     dzdYearly: 37680,
     features: [
-      'Assistants IA illimités',
+      'Assistants personnalisés illimités',
       'Volume de conversations sur-mesure (25k+)',
-      'Connexions API & Webhooks personnalisés',
+      'Connexions personnalisées',
       'SLA garanti 99.9% & Gestionnaire de compte dédié',
       'Infrastructures hébergées privées'
     ]

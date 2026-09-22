@@ -358,7 +358,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                 <div className="pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1.5">
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Widget Web (1 site)</p>
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> 1 000 conversations / mois</p>
-                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> IA entraînée sur votre doc</p>
+                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Assistant préparé avec vos documents</p>
                 </div>
               </div>
 
@@ -434,7 +434,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
 
                 <div className="pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1.5">
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Conversations illimitées</p>
-                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> API sur-mesure & Serveur dédié</p>
+                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Connexion personnalisée & serveur dédié</p>
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Support prioritaire VIP 24/7</p>
                 </div>
               </div>

@@ -8,6 +8,7 @@ import {
   adminPatchDocument,
   verifyFirebaseIdToken,
   parseFields,
+  isPublicHttpUrl,
 } from "../../_shared/google.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -219,6 +220,72 @@ function buildContentFromPages(pages: PageData[]): string {
     }
   }
   return content;
+}
+
+function cleanText(value: string): string {
+  return value.replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ").trim().slice(0, 12000);
+}
+
+function absoluteUrl(href: string, base: URL): string | null {
+  try {
+    const value = new URL(href, base);
+    if (value.origin !== base.origin || !isPublicHttpUrl(value.toString()).ok) return null;
+    value.hash = "";
+    if (/\.(css|js|png|jpe?g|gif|svg|webp|ico|zip|mp4|woff2?)$/i.test(value.pathname)) return null;
+    return value.toString();
+  } catch { return null; }
+}
+
+function extractPage(url: string, html: string): PageData {
+  const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
+    html.match(/property=["']og:title["'][^>]*content=["']([^"']+)/i)?.[1] || "").trim();
+  const description = (html.match(/name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ||
+    html.match(/property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] || "").trim();
+  const body = cleanText(html);
+  const emails = Array.from(new Set(body.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])).slice(0, 20);
+  const phones = Array.from(new Set(body.match(/(?:\+|00)?\d[\d .()/-]{7,}\d/g) || [])).slice(0, 20);
+  const price = (body.match(/(?:\d[\d .]*)(?:DA|DZD|€|EUR|\$|USD)/i)?.[0] || "").trim();
+  const links = Array.from(html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi))
+    .map(match => { try { return new URL(match[1], url).toString(); } catch { return ""; } })
+    .filter(Boolean).slice(0, 80);
+  const jsonLd = Array.from(html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi))
+    .map(match => match[1].trim()).join("\n").slice(0, 12000);
+  return { url, title: cleanText(title), description: cleanText(description), price, emails, phones, links, rawText: `${body}${jsonLd ? `\nDonnées structurées : ${jsonLd}` : ""}` };
+}
+
+async function readPublicSite(siteUrl: string): Promise<PageData[]> {
+  const check = isPublicHttpUrl(siteUrl);
+  if (!check.ok) throw new Error(`Adresse refusée : ${check.reason}`);
+  const start = new URL(siteUrl);
+  const queue = [start.toString()];
+  const seen = new Set<string>();
+  const pages: PageData[] = [];
+  while (queue.length && pages.length < 30) {
+    const pageUrl = queue.shift()!;
+    if (seen.has(pageUrl)) continue;
+    seen.add(pageUrl);
+    try {
+      const response = await fetch(pageUrl, { headers: { "User-Agent": "JawebFlow/1.0 (+site-reader)" }, signal: AbortSignal.timeout(12000) });
+      const type = response.headers.get("content-type") || "";
+      if (!response.ok || !type.includes("text/html")) continue;
+      const html = await response.text();
+      const page = extractPage(pageUrl, html);
+      if (page.title || page.rawText) pages.push(page);
+      for (const href of page.links || []) {
+        const next = absoluteUrl(href, start);
+        if (next && !seen.has(next) && queue.length < 80) queue.push(next);
+      }
+    } catch (error) {
+      log.warn("Page ignorée", { pageUrl, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return pages;
 }
 
 // ─── Gemini ───────────────────────────────────────────────────────────────────
@@ -443,12 +510,6 @@ export async function onRequestPost(context: {
 
     log.info("Auth OK", { uid: caller.uid });
 
-    // ── Validation GEMINI_API_KEY tôt ────────────────────────────────────────
-    if (!context.env.GEMINI_API_KEY) {
-      log.error("GEMINI_API_KEY manquante");
-      return json({ error: "Configuration serveur manquante." }, 500);
-    }
-
     const contentType = context.request.headers.get("Content-Type") || "";
 
     let rawText = "";
@@ -547,7 +608,7 @@ export async function onRequestPost(context: {
         .catch(() => ({}))) as RequestBody;
       rawText = body.rawText || "";
       pages = body.pages || [];
-      siteUrl = body.siteUrl || siteUrl;
+      siteUrl = body.siteUrl || (body as RequestBody & { url?: string }).url || siteUrl;
       assistantId = body.assistantId || "";
       mode = body.mode || "merge";
     }
@@ -556,6 +617,11 @@ export async function onRequestPost(context: {
     if (assistantId && !ASSISTANT_ID_REGEX.test(assistantId)) {
       log.warn("assistantId invalide", { assistantId });
       return json({ error: "assistantId invalide." }, 400);
+    }
+
+    if (pages.length === 0 && !rawText.trim() && siteUrl !== "https://monsite.com") {
+      pages = await readPublicSite(siteUrl);
+      if (pages.length === 0) return json({ error: "Aucune page publique lisible n’a été trouvée sur cette adresse." }, 422);
     }
 
     // ── Validation contenu ────────────────────────────────────────────────────
@@ -594,20 +660,40 @@ export async function onRequestPost(context: {
 
     log.info("Contenu prêt", { chars: content.length, pages: pages.length });
 
-    // ── Synthèse Gemini ───────────────────────────────────────────────────────
+    // ── Organisation des informations ─────────────────────────────────────────
     let result: GeminiResult;
-    try {
-      result = await synthesizeWithGemini(
-        content,
-        siteUrl,
-        context.env.GEMINI_API_KEY,
-        context.env.GEMINI_MODEL
-      );
-    } catch (e: unknown) {
-      log.error("Gemini synthèse échouée", {
-        error: e instanceof Error ? e.message : String(e),
-      });
-      return json({ error: "Analyse IA échouée. Réessayez." }, 500);
+    if (!context.env.GEMINI_API_KEY) {
+      result = {
+        businessName: pages[0]?.title || "",
+        businessDescription: pages[0]?.description || pages[0]?.rawText?.slice(0, 500) || "",
+        phone: pages.flatMap(page => page.phones || [])[0] || "",
+        email: pages.flatMap(page => page.emails || [])[0] || "",
+        contactLinks: pages.flatMap(page => page.links || []).filter(link => /contact|whatsapp|instagram|facebook|tel:/i.test(link)).slice(0, 20),
+        knowledgeNotes: pages.slice(0, 20).map((page, index) => ({
+          title: page.title || `Page ${index + 1}`,
+          category: /prix|tarif|price/i.test(`${page.title} ${page.rawText}`) ? "tarifs" : "general",
+          content: `${page.description || ""}\n${page.rawText?.slice(0, 3500) || ""}\nSource : ${page.url}`,
+          enabled: true,
+          source: "extracted"
+        }))
+      };
+    } else {
+      try {
+        result = await synthesizeWithGemini(content, siteUrl, context.env.GEMINI_API_KEY, context.env.GEMINI_MODEL);
+      } catch (e: unknown) {
+        log.warn("Organisation automatique indisponible, retour des informations brutes", { error: e instanceof Error ? e.message : String(e) });
+        result = {
+          businessName: pages[0]?.title || "",
+          businessDescription: pages[0]?.description || "",
+          knowledgeNotes: pages.slice(0, 20).map((page, index) => ({
+            title: page.title || `Page ${index + 1}`,
+            category: "general",
+            content: `${page.rawText || ""}\nSource : ${page.url}`,
+            enabled: true,
+            source: "extracted"
+          }))
+        };
+      }
     }
 
     // ── Sauvegarde Firestore ───────────────────────────────────────────────────

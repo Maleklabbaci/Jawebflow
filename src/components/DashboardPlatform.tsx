@@ -688,7 +688,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
     setIsScanning(true);
     setScanProgress(15);
-    setScanStage("Connexion au domaine et exploration des pages clés (Services, Tarifs, FAQ, Contact)...");
+    setScanStage("Lecture de votre site et recherche des pages importantes…");
     setScanResultNotes(null);
     setScanSuccessMessage(null);
     
@@ -701,7 +701,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
     try {
       setScanProgress(35);
-      setScanStage("Extraction du contenu textuel, prix, offres et coordonnées...");
+      setScanStage("Recherche des informations, prix, horaires et coordonnées…");
 
       // Le scan écrit dans la base de connaissances : le serveur exige un jeton
       // Firebase prouvant que l'assistant appartient bien à l'utilisateur connecté.
@@ -713,14 +713,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
         },
         body: JSON.stringify({
-          url: url.startsWith("http") ? url : `https://${url}`,
+          siteUrl: url.startsWith("http") ? url : `https://${url}`,
           assistantId: assistantId || undefined,
           userId: user?.uid || undefined
         })
       });
 
       setScanProgress(70);
-      setScanStage("Modélisation sémantique et génération des fiches par Gemini IA...");
+      setScanStage("Organisation des informations trouvées…");
 
       if (response.ok) {
         const data = await response.json();
@@ -759,7 +759,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         });
 
         setScanProgress(100);
-        setScanStage(`Analyse terminée ! ${data.knowledgeNotes?.length || 0} fiches de connaissances générées.`);
+        setScanStage(`Terminé ! ${data.knowledgeNotes?.length || 0} informations trouvées.`);
         
         if (data.knowledgeNotes && data.knowledgeNotes.length > 0) {
           const scannedNotes: KnowledgeNote[] = data.knowledgeNotes.map((n: any) => ({
@@ -781,7 +781,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             siteTypeConfidence: data.confidence || siteTypeConfidence,
             scrapingStrategy: data.scrapingStrategy || scrapingStrategy
           });
-          setScanSuccessMessage(`${scannedNotes.length} fiches réelles enregistrées dans la base de connaissances.`);
+          setScanSuccessMessage(`${scannedNotes.length} informations enregistrées avec leurs liens sources.`);
         }
         setIsScanning(false);
       } else {
@@ -845,17 +845,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         botReply = data.text || data.message || data.response || '';
       } else {
         const errData = await response.json().catch(() => ({}));
-        // The cockpit is the owner's own test console: keep the technical reason
-        // visible so a missing API key is not mistaken for a broken assistant.
+        // Le tableau de bord doit rester compréhensible pour un commerçant.
         const diagnostics: string[] = Array.isArray(errData.diagnostics) ? errData.diagnostics : [];
         if (diagnostics.length > 0) {
-          console.warn(`Simulateur — aucune réponse IA (${errData.code || response.status}):`, diagnostics);
+          console.warn(`Simulateur indisponible (${errData.code || response.status}):`, diagnostics);
         } else if (errData.code) {
           console.warn(`Simulateur — réponse ${response.status} (${errData.code}):`, errData.error || errData.message);
         }
         botReply = errData.message || 'Bonjour ! L\'assistant est momentanément indisponible. Veuillez vérifier vos réglages ou réessayer dans un instant.';
         if (diagnostics.length > 0) {
-          botReply += `\n\nDiagnostic technique : ${diagnostics.slice(0, 3).join(' | ')}`;
+          botReply += `\n\nRéessayez dans quelques instants ou vérifiez que vos informations sont bien enregistrées.`;
         }
       }
 
@@ -1374,7 +1373,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                     <div>
                       <p className="font-semibold text-xs sm:text-sm">{scanSuccessMessage}</p>
-                      <p className="text-[11px] text-emerald-700">Votre assistant IA répond désormais avec ces nouvelles informations réelles.</p>
+          <p className="text-[11px] text-emerald-700">Votre assistant répond désormais avec ces nouvelles informations.</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -1390,7 +1389,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       onClick={() => handleSectionChange('simulator')}
                       className="px-3.5 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-medium text-xs transition-colors cursor-pointer"
                     >
-                      Tester l'IA
+                        Tester mon assistant
                     </button>
                   </div>
                 </div>
@@ -1583,7 +1582,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                               <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${catStyle.color}`}>
                                 {catStyle.label}
                               </span>
-                              <span className="text-[10px] text-slate-400">Scrapé par IA</span>
+                              <span className="text-[10px] text-slate-400">Trouvé sur votre site</span>
                             </div>
                             <h4 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
                               {note.title}
@@ -1644,11 +1643,11 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 title="Tester mon assistant"
                 subtitle="Testez l'intelligence conversationnelle de votre assistant en direct, en français, darija ou anglais, avant de le déployer sur votre site public."
                 icon={Bot}
-                featureName="Simulateur IA"
+                featureName="Tester mon assistant"
                 benefits={[
                   "Dialogue interactif en direct avec calcul de pertinence des réponses",
                   "Vérification de la détection de besoin et de capture de leads",
-                  "Quota de tokens et de messages IA inclus pour tester vos scénarios",
+                  "Messages inclus pour tester vos scénarios",
                   "Réinitialisation instantanée et test de personnalisation visuelle"
                 ]}
                 onUpgradeClick={() => handleSectionChange('billing')}
@@ -1665,7 +1664,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     Voir comment votre assistant répond
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-                    Posez des questions sur vos tarifs, livraisons, services ou écrivez en darija pour vérifier que l'IA exploite parfaitement vos notes de connaissances.
+                    Posez des questions sur vos tarifs, livraisons, services ou écrivez en darija pour vérifier que votre assistant utilise bien vos informations.
                   </p>
                 </div>
 
@@ -1697,7 +1696,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       <Bot className="w-5 h-5" />
                     </div>
                     <div>
-                      <span className="block font-bold text-sm">{widgetConfig.headerTitle || businessName || 'Assistant IA'}</span>
+                      <span className="block font-bold text-sm">{widgetConfig.headerTitle || businessName || 'Mon assistant'}</span>
                       <span className="block text-[11px] text-white/80">{widgetConfig.headerSubtitle || 'En ligne · Réponse immédiate'}</span>
                     </div>
                   </div>

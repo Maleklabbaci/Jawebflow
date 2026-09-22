@@ -7,6 +7,7 @@ function config(env: SupabaseEnv) {
   const url = (env.SUPABASE_URL || '').replace(/\/$/, '');
   const key = env.SUPABASE_SERVICE_ROLE_KEY || '';
   if (!url || !key) throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY manquant');
+  if (key.startsWith('sb_publishable_')) throw new Error('La clé Supabase configurée est publique. Utilisez la clé service_role uniquement dans Cloudflare.');
   return { url, key };
 }
 
@@ -21,7 +22,7 @@ async function request(env: SupabaseEnv, path: string, init: RequestInit = {}) {
 }
 
 export function supabaseConfigured(env: SupabaseEnv) {
-  return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && !env.SUPABASE_SERVICE_ROLE_KEY.startsWith('sb_publishable_'));
 }
 
 export async function supabaseGetAssistant(env: SupabaseEnv, assistantId: string) {

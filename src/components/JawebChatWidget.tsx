@@ -138,7 +138,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
         ...prev,
         {
           sender: 'bot',
-          text: '⚠️ Erreur de connexion avec l\'assistant IA.',
+          text: '⚠️ Une courte interruption est survenue. Réessayez dans un instant.',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -380,7 +380,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                   : 'bg-neutral-100 text-neutral-400 border-neutral-200'
               }`}
             >
-              ⚡ Propulsé par <span className="font-semibold text-purple-400">JawebFlow IA</span>
+              ⚡ Propulsé par <span className="font-semibold text-purple-400">JawebFlow</span>
             </div>
           )}
         </div>
