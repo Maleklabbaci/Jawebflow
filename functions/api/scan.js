@@ -9,6 +9,7 @@
  * comme proxy SSRF).
  */
 import { adminGetDocument, verifyFirebaseIdToken, isPublicHttpUrl, getGoogleAccessToken, firestoreDocumentsBase } from '../_shared/google.ts';
+import { supabaseConfigured, supabasePatchAssistant, supabaseUpsertKnowledge } from '../_shared/supabase.ts';
 
 const EMBEDDING_MODEL = 'gemini-embedding-001';
 const VISION_MODEL = 'gemini-3.1-flash-lite';
@@ -55,6 +56,19 @@ async function embedText(text, apiKey) {
 }
 
 async function saveToFirestore(env, path, data) {
+  if (supabaseConfigured(env)) {
+    const assistantMatch = path.match(/^assistants\/([^/]+)$/);
+    const knowledgeMatch = path.match(/^assistants\/([^/]+)\/knowledge_base\/([^/]+)$/);
+    if (assistantMatch) {
+      const result = await supabasePatchAssistant(env, assistantMatch[1], data);
+      if (!result.ok) throw new Error(`Écriture Supabase refusée (${result.status}) ${result.error || ''}`);
+      return;
+    }
+    if (knowledgeMatch) {
+      await supabaseUpsertKnowledge(env, knowledgeMatch[1], knowledgeMatch[2], data);
+      return;
+    }
+  }
   const sa = env.FIREBASE_SERVICE_ACCOUNT;
   if (!sa) throw new Error('FIREBASE_SERVICE_ACCOUNT manquant : écriture Firestore impossible');
   const { accessToken } = await getGoogleAccessToken(sa);

@@ -17,7 +17,11 @@ export interface GoogleEnv {
   FIRESTORE_PROJECT_ID?: string;
   FIRESTORE_DATABASE_ID?: string;
   FIRESTORE_API_KEY?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
 }
+
+import { supabaseConfigured, supabaseGetAssistant, supabasePatchAssistant } from './supabase.ts';
 
 export interface ServiceAccount {
   client_email: string;
@@ -196,6 +200,16 @@ export async function adminGetDocument(
   env: GoogleEnv,
   path: string
 ): Promise<{ ok: boolean; status: number; fields: Record<string, any> | null; error?: string }> {
+  if (supabaseConfigured(env)) {
+    const match = path.match(/^assistants\/([^/]+)$/);
+    if (match) {
+      const result = await supabaseGetAssistant(env, match[1]);
+      if (!result.ok) return { ok: false, status: result.status, fields: null, error: result.error || 'document introuvable' };
+      const data = result.data || {};
+      const fields = { ...data.config, userId: data.user_id, businessName: data.business_name, websiteUrl: data.website_url, knowledgeNotes: data.knowledge_notes };
+      return { ok: true, status: 200, fields: toFields(fields) };
+    }
+  }
   const sa = env.FIREBASE_SERVICE_ACCOUNT;
   if (!sa) return { ok: false, status: 500, fields: null, error: "FIREBASE_SERVICE_ACCOUNT manquant" };
 
@@ -234,6 +248,10 @@ export async function adminPatchDocument(
   path: string,
   data: Record<string, any>
 ): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (supabaseConfigured(env)) {
+    const match = path.match(/^assistants\/([^/]+)$/);
+    if (match) return supabasePatchAssistant(env, match[1], data);
+  }
   const sa = env.FIREBASE_SERVICE_ACCOUNT;
   if (!sa) return { ok: false, status: 500, error: "FIREBASE_SERVICE_ACCOUNT manquant" };
 

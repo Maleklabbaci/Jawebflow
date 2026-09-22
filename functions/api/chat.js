@@ -10,6 +10,7 @@
  */
 
 import { adminGetDocument } from '../_shared/google.ts';
+import { supabaseConfigured, supabaseListKnowledge } from '../_shared/supabase.ts';
 
 // Modèle Gemini : surchargeable par variable d'environnement (Pages → Settings →
 // Environment variables) sans redéploiement de code. Les identifiants « 2.5 »
@@ -120,6 +121,15 @@ export async function onRequestPost(context) {
         activeNotes.forEach(n => {
           systemPrompt += `- [${n.category || n.title || 'Note'}] ${n.content || ''}\n`;
         });
+      }
+    }
+    if (supabaseConfigured(env)) {
+      const documents = await supabaseListKnowledge(env, assistantId);
+      if (documents.length > 0) {
+        systemPrompt += `\n\n### 📚 DOCUMENTS INDEXÉS DU SITE (les liens sont des sources à citer) :\n`;
+        for (const doc of documents) {
+          systemPrompt += `- ${doc.title || 'Document'} : ${doc.content || ''}${doc.source_url ? ` | Source: ${doc.source_url}` : ''}\n`;
+        }
       }
     }
     if (config.faqText) systemPrompt += `\n\n### ❓ FAQ :\n${config.faqText}`;
