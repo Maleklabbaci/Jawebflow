@@ -65,6 +65,7 @@ async function fetchProfile(uid: string): Promise<UserProfile | null> {
     phoneNumber: data.phone_number || undefined,
     photoURL: data.photo_url || undefined,
     role: data.role,
+    plan: data.plan || undefined,
   };
 }
 

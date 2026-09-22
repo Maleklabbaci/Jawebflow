@@ -35,6 +35,7 @@ export interface UserProfile {
   phoneNumber?: string;
   photoURL?: string;
   role?: string;
+  plan?: string;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -156,6 +157,7 @@ async function upsertProfileFromAuthUser(user: SupabaseAuthUser, extra?: Partial
     phoneNumber: data.phone_number || undefined,
     photoURL: data.photo_url || undefined,
     role: data.role,
+    plan: data.plan || undefined,
   };
 }
 
@@ -301,7 +303,7 @@ export async function getAllUsers(): Promise<UserProfile[]> {
   if (error) { console.error('Error fetching all users:', error); return []; }
   return data.map(d => ({
     uid: d.id, email: d.email, displayName: d.display_name,
-    companyName: d.company_name || undefined, photoURL: d.photo_url || undefined, role: d.role,
+    companyName: d.company_name || undefined, photoURL: d.photo_url || undefined, role: d.role, plan: d.plan || undefined,
   }));
 }
 

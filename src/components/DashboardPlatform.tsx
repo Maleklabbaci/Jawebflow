@@ -289,7 +289,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [invoicesList, setInvoicesList] = useState<InvoiceRecord[]>([]);
 
-  const handleConfirmPayment = () => {
+  // Mode MANUEL (SlickPay non configuré, virement, ou plan gratuit) :
+  // validation immédiate comme avant l'arrivée du paiement en ligne.
+  const finalizeManualPayment = () => {
     setIsProcessingPayment(true);
     setTimeout(() => {
       let amountUsd = selectedCheckoutPlan === 'free' ? 0 : selectedCheckoutPlan === 'basic' ? 29 : selectedCheckoutPlan === 'pro' ? 79 : 199;
@@ -325,6 +327,20 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       // (qui lit config.plan côté serveur) laissait le client bloqué même
       // après son paiement.
       if (assistantId) {
+        const persistPaidPlan = async () => {
+          try {
+            const sess = await supabase.auth.getSession();
+            const token = sess.data?.session?.access_token;
+            if (token) {
+              await fetch('/api/plan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ plan: selectedCheckoutPlan }),
+              });
+            }
+          } catch { /* le filet ci-dessous prend le relais */ }
+        };
+        persistPaidPlan();
         updateAssistantPlan(assistantId, selectedCheckoutPlan).catch((e) =>
           console.error('[checkout] plan non persisté dans Supabase:', e)
         );
@@ -335,6 +351,87 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setBillingViewMode('overview');
     }, 800);
   };
+
+  // PAIEMENT EN LIGNE SLICKPAY : le montant est fixé côté serveur, le client
+  // est redirigé vers la page sécurisée SATIM (CIB / EDAHABIA). À son retour,
+  // le "webhook" (effet ci-dessous) vérifie le paiement chez SlickPay et
+  // active le plan. Si SlickPay n'est pas configuré => mode manuel.
+  const handleConfirmPayment = async () => {
+    if (selectedCheckoutPlan === 'free' || checkoutPaymentMethod !== 'slickpay_dzd') {
+      finalizeManualPayment();
+      return;
+    }
+    setIsProcessingPayment(true);
+    try {
+      const sess = await supabase.auth.getSession();
+      const token = sess.data?.session?.access_token;
+      const res = await fetch('/api/slickpay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          plan: selectedCheckoutPlan,
+          billingCycle,
+          cardType: checkoutSlickpayType,
+          name: checkoutName,
+          phone: checkoutPhone,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok && data?.url) {
+        // Facture `pending` créée côté serveur ; le webhook la confirmera.
+        window.location.href = data.url;
+        return;
+      }
+      console.warn('[checkout] SlickPay indisponible, mode manuel :', data?.error);
+      setIsProcessingPayment(false);
+      finalizeManualPayment();
+    } catch (e) {
+      console.error('[checkout] erreur SlickPay :', e);
+      setIsProcessingPayment(false);
+      finalizeManualPayment();
+    }
+  };
+
+  // WEBHOOK RETOUR SLICKPAY : dès que le client revient sur le tableau de
+  // bord, on demande au serveur de vérifier chez SlickPay chaque facture
+  // `pending` (méthode SlickPay) et d'activer le plan si le paiement est
+  // confirmé. Idempotent : sans risque de double activation.
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    const verifyPendingSlickPay = async () => {
+      try {
+        const { data: pend } = await supabase
+          .from('invoices')
+          .select('id, planName')
+          .eq('status', 'pending')
+          .ilike('paymentMethod', 'SlickPay%');
+        if (!pend?.length || cancelled) return;
+        for (const inv of pend) {
+          const res = await fetch('/api/webhooks/slickpay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoiceId: inv.id }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (data?.ok && data?.paid && !cancelled) {
+            const planId = String(data.plan || '') as PaymentPlanId;
+            if (['basic', 'pro', 'enterprise'].includes(planId)) {
+              setActivePlan(planId);
+              if (assistantId) {
+                updateAssistantPlan(assistantId, planId).catch(() => {});
+              }
+            }
+            setBillingNotification(`Paiement SlickPay confirmé — plan ${inv.planName} activé ! Facture ${inv.id}.`);
+            setBillingViewMode('overview');
+          }
+        }
+      } catch { /* silencieux : revérifié à la prochaine visite */ }
+    };
+    verifyPendingSlickPay();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, assistantId]);
 
   // Persistence status
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
@@ -574,7 +671,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       const savedId = await saveAssistantToDatabase({
         id: assistantId || undefined,
         userId: user.uid,
-        plan: activePlan, // préservé à chaque sauvegarde (sinon le jsonb config est écrasé SANS plan => IA bloquée)
+        plan: activePlan !== 'free' ? activePlan : (profile?.plan || activePlan), // plan payé > plan admin (fiche client) > gratuit
         businessName: (metadataOverride?.businessName ?? businessName).trim() || 'Mon Entreprise',
         websiteUrl: (metadataOverride?.websiteUrl ?? websiteUrl).trim(),
         siteType: metadataOverride?.siteType ?? siteType,
@@ -621,7 +718,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       const savedId = await saveAssistantToDatabase({
         id: assistantId || undefined,
         userId: user.uid,
-        plan: activePlan, // même règle : ne jamais perdre le plan à la sauvegarde
+        plan: activePlan !== 'free' ? activePlan : (profile?.plan || activePlan), // plan payé > plan admin (fiche client) > gratuit
         businessName: businessName.trim() || 'Mon Entreprise',
         websiteUrl: websiteUrl.trim(),
         siteType,

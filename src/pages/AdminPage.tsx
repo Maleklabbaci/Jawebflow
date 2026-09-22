@@ -123,6 +123,10 @@ begin
   insert into public.platform_settings (id) values ('global') on conflict (id) do nothing;
   alter table public.platform_settings enable row level security;
 
+  -- Plan commercial du CLIENT (colonne users.plan) : fixe par l'admin dans la
+  -- console, repris par defaut par tous ses assistants (futurs compris).
+  alter table public.users add column if not exists plan text;
+
   execute $fn$
     create or replace function public.protect_user_profile()
     returns trigger language plpgsql security definer set search_path = public
@@ -187,7 +191,7 @@ end $console$;`;
 // ---------------------------------------------------------------------------
 interface NormUser {
   uid: string; email: string; displayName: string; companyName?: string;
-  phoneNumber?: string; role: string; createdAt?: any; _raw: any;
+  phoneNumber?: string; role: string; plan?: string; createdAt?: any; _raw: any;
 }
 function normUser(d: any): NormUser {
   return {
@@ -197,6 +201,7 @@ function normUser(d: any): NormUser {
     companyName: d.company_name || d.companyName || undefined,
     phoneNumber: d.phone_number || d.phoneNumber || undefined,
     role: d.role || 'user',
+    plan: d.plan || undefined,
     createdAt: d.created_at || d.createdAt,
     _raw: d,
   };
@@ -321,7 +326,6 @@ export function AdminPage() {
 
   // Recherche / filtres / notifications
   const [searchQuery, setSearchQuery] = useState('');
-  const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [assistantPlanFilter, setAssistantPlanFilter] = useState('all');
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
   const [leadAssistantFilter, setLeadAssistantFilter] = useState('all');
@@ -333,7 +337,6 @@ export function AdminPage() {
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editCompanyName, setEditCompanyName] = useState('');
   const [editPhoneNumber, setEditPhoneNumber] = useState('');
-  const [editRole, setEditRole] = useState('user');
   const [editSaving, setEditSaving] = useState(false);
 
   const [editingAssistant, setEditingAssistant] = useState<NormAssistant | null>(null);
@@ -349,6 +352,13 @@ export function AdminPage() {
   const [newInvMethod, setNewInvMethod] = useState('baridimob_ccp');
   const [newInvStatus, setNewInvStatus] = useState('paid');
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
+
+  // Sécurité : tout changement de plan depuis la console exige le mot de
+  // passe admin (anti-erreur, anti-abus si une session reste ouverte).
+  const [pendingPlan, setPendingPlan] = useState<{ kind: 'user' | 'assistant'; user?: NormUser; assistant?: NormAssistant; plan: string } | null>(null);
+  const [pwPassword, setPwPassword] = useState('');
+  const [pwError, setPwError] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
 
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
     setStatusNotification({ type, message });
@@ -478,6 +488,31 @@ export function AdminPage() {
   const userById = usersList.reduce<Record<string, NormUser>>((acc, u) => { acc[u.uid] = u; return acc; }, {});
   const assistantById = assistantsList.reduce<Record<string, NormAssistant>>((acc, a) => { acc[a.id] = a; return acc; }, {});
 
+  const PLAN_RANK: Record<string, number> = { free: 0, basic: 1, pro: 2, enterprise: 3 };
+  // Plan du client : celui fixe par l'admin (colonne users.plan), sinon le plus
+  // eleve de ses assistants. S'applique a tous ses assistants ET aux futurs.
+  const clientPlanOf = (u: NormUser): string => {
+    if (u.plan) return u.plan;
+    return assistantsList
+      .filter(a => a.userId === u.uid)
+      .reduce((best, a) => ((PLAN_RANK[a.plan] ?? 0) > (PLAN_RANK[best] ?? 0) ? a.plan : best), 'free');
+  };
+
+  const applyUserPlan = async (u: NormUser, plan: string) => {
+    try {
+      const { error } = await supabase.from('users').update({ plan, updated_at: new Date().toISOString() }).eq('id', u.uid);
+      if (error) throw error;
+      const owned = assistantsList.filter(a => a.userId === u.uid);
+      for (const a of owned) {
+        try { await updateAssistantPlan(a.id, plan); } catch { /* on continue */ }
+      }
+      notify(`Plan de « ${u.displayName} » : ${PLAN_LABELS[plan] || plan} — ${owned.length} assistant(s) mis à jour + appliqué aux futurs.`);
+      await fetchAllPlatformData();
+    } catch (err: any) {
+      notify('Changement de plan refusé : ' + (err.message || 'erreur — exécute le SQL à jour (onglet Système)'), 'error');
+    }
+  };
+
   const limitForPlan = (plan: string): number | null =>
     plan in planLimits ? planLimits[plan] : planLimits.free ?? 0;
 
@@ -491,7 +526,6 @@ export function AdminPage() {
   const match = (s?: string | null) => !q || String(s || '').toLowerCase().includes(q);
 
   const filteredUsers = managedUsers.filter(u =>
-    (userRoleFilter === 'all' || u.role === userRoleFilter) &&
     (match(u.displayName) || match(u.email) || match(u.companyName) || match(u.phoneNumber))
   );
   const filteredAssistants = assistantsList.filter(a =>
@@ -533,7 +567,6 @@ export function AdminPage() {
         display_name: editDisplayName.trim(),
         company_name: editCompanyName.trim() || null,
         phone_number: editPhoneNumber.trim() || null,
-        role: editRole,
         updated_at: new Date().toISOString(),
       }).eq('id', editingUser.uid);
       if (error) throw error;
@@ -556,13 +589,33 @@ export function AdminPage() {
     }
   };
 
-  const handleChangePlan = async (a: NormAssistant, plan: string) => {
+  const applyAssistantPlan = async (a: NormAssistant, plan: string) => {
     try {
       await updateAssistantPlan(a.id, plan);
       notify(`Plan de « ${a.businessName} » : ${PLAN_LABELS[plan] || plan}.`);
       await fetchAllPlatformData();
     } catch (err: any) {
       notify('Changement de plan refusé : ' + (err.message || 'erreur'), 'error');
+    }
+  };
+
+  // Vérifie le mot de passe admin AVANT d'appliquer le changement de plan.
+  const confirmPlanWithPassword = async () => {
+    if (!pendingPlan) return;
+    setPwBusy(true);
+    setPwError('');
+    try {
+      const email = authUser?.email || adminEmail;
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pwPassword });
+      if (error) throw new Error('Mot de passe incorrect.');
+      if (pendingPlan.kind === 'user' && pendingPlan.user) await applyUserPlan(pendingPlan.user, pendingPlan.plan);
+      if (pendingPlan.kind === 'assistant' && pendingPlan.assistant) await applyAssistantPlan(pendingPlan.assistant, pendingPlan.plan);
+      setPendingPlan(null);
+      setPwPassword('');
+    } catch (e: any) {
+      setPwError(e.message || 'Vérification impossible.');
+    } finally {
+      setPwBusy(false);
     }
   };
 
@@ -1136,17 +1189,8 @@ export function AdminPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h1 className="text-xl font-bold text-slate-900">Clients</h1>
-                  <p className="text-sm text-slate-500">Ton compte admin et les superadmins sont masqués — ici, uniquement les clients.</p>
+                  <p className="text-sm text-slate-500">Uniquement les clients — le plan choisi s'applique à tous les assistants du client, futurs compris.</p>
                 </div>
-                <select
-                  value={userRoleFilter}
-                  onChange={(e) => setUserRoleFilter(e.target.value)}
-                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-purple-500 cursor-pointer"
-                >
-                  <option value="all">Tous les rôles</option>
-                  <option value="user">Clients</option>
-                  <option value="admin">Admins</option>
-                </select>
               </div>
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1155,7 +1199,7 @@ export function AdminPage() {
                       <th className="px-5 py-3 font-semibold">Client</th>
                       <th className="px-4 py-3 font-semibold">Entreprise</th>
                       <th className="px-4 py-3 font-semibold">Téléphone</th>
-                      <th className="px-4 py-3 font-semibold">Rôle</th>
+                      <th className="px-4 py-3 font-semibold">Plan</th>
                       <th className="px-4 py-3 font-semibold text-center">Assistants</th>
                       <th className="px-4 py-3 font-semibold text-center">Prospects</th>
                       <th className="px-4 py-3 font-semibold">Inscrit le</th>
@@ -1180,9 +1224,16 @@ export function AdminPage() {
                         <td className="px-4 py-3 text-slate-600">{u.companyName ? <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5 text-slate-400" />{u.companyName}</span> : '—'}</td>
                         <td className="px-4 py-3 text-slate-600">{u.phoneNumber || '—'}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${u.role === 'admin' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                            {u.role === 'admin' ? 'Admin' : 'Client'}
-                          </span>
+                          <select
+                            value={clientPlanOf(u)}
+                            onChange={(e) => setPendingPlan({ kind: 'user', user: u, plan: e.target.value })}
+                            className={`text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer focus:outline-none ${PLAN_CHIPS[clientPlanOf(u)] || PLAN_CHIPS.free}`}
+                          >
+                            <option value="free">Gratuit — IA bloquée</option>
+                            <option value="basic">Basic — 1 000</option>
+                            <option value="pro">Pro — 5 000</option>
+                            <option value="enterprise">Enterprise — illimité</option>
+                          </select>
                         </td>
                         <td className="px-4 py-3 text-center text-slate-700 font-semibold">{assistantsByUser[u.uid] || 0}</td>
                         <td className="px-4 py-3 text-center text-slate-700 font-semibold">
@@ -1197,7 +1248,6 @@ export function AdminPage() {
                                 setEditDisplayName(u.displayName);
                                 setEditCompanyName(u.companyName || '');
                                 setEditPhoneNumber(u.phoneNumber || '');
-                                setEditRole(u.role === 'admin' ? 'admin' : 'user');
                               }}
                               className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all cursor-pointer" title="Modifier"
                             >
@@ -1269,7 +1319,7 @@ export function AdminPage() {
                         <td className="px-4 py-3">
                           <select
                             value={a.plan}
-                            onChange={(e) => handleChangePlan(a, e.target.value)}
+                            onChange={(e) => setPendingPlan({ kind: 'assistant', assistant: a, plan: e.target.value })}
                             className={`text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer focus:outline-none ${PLAN_CHIPS[a.plan] || PLAN_CHIPS.free}`}
                           >
                             <option value="free">Gratuit — IA bloquée</option>
@@ -1640,14 +1690,6 @@ export function AdminPage() {
               <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Téléphone</label>
               <input value={editPhoneNumber} onChange={(e) => setEditPhoneNumber(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Rôle</label>
-              <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
-                <option value="user">Client</option>
-                <option value="admin">Admin (gestionnaire)</option>
-              </select>
-              <p className="text-[11px] text-slate-400 mt-1">Le rôle « superadmin » (toi) ne peut pas être attribué ici — c'est une protection.</p>
-            </div>
             <div className="flex gap-2 pt-2">
               <button onClick={handleSaveUser} disabled={editSaving} className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer">
                 {editSaving && <Loader2 className="w-4 h-4 animate-spin" />} Enregistrer
@@ -1852,6 +1894,44 @@ export function AdminPage() {
                 {isCreatingInvoice && <Loader2 className="w-4 h-4 animate-spin" />} Créer la facture
               </button>
               <button onClick={() => setShowNewInvoiceModal(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 cursor-pointer">Annuler</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirmation mot de passe pour changement de plan */}
+      {pendingPlan && (
+        <Modal title="Confirmer le changement de plan" onClose={() => { setPendingPlan(null); setPwError(''); }}>
+          <div className="space-y-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-sm text-purple-900">
+              {pendingPlan.kind === 'user' ? (
+                <>Plan de <strong>{pendingPlan.user?.displayName}</strong> → <strong>{PLAN_LABELS[pendingPlan.plan] || pendingPlan.plan}</strong> — tous ses assistants, futurs compris.</>
+              ) : (
+                <>Plan de l'assistant <strong>{pendingPlan.assistant?.businessName}</strong> → <strong>{PLAN_LABELS[pendingPlan.plan] || pendingPlan.plan}</strong>.</>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Ton mot de passe admin</label>
+              <input
+                type="password"
+                value={pwPassword}
+                onChange={(e) => setPwPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') confirmPlanWithPassword(); }}
+                placeholder="Mot de passe administrateur..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white"
+                autoFocus
+              />
+            </div>
+            {pwError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />{pwError}
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={confirmPlanWithPassword} disabled={pwBusy || !pwPassword} className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer">
+                {pwBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />} Confirmer et appliquer
+              </button>
+              <button onClick={() => { setPendingPlan(null); setPwError(''); }} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 cursor-pointer">Annuler</button>
             </div>
           </div>
         </Modal>
