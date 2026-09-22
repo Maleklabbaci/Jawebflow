@@ -50,7 +50,7 @@ import {
   deleteProspectRecord, 
   UserProfile, 
   AssistantConfig 
-} from '../lib/Supabase';
+} from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { 
   collection, 
@@ -96,7 +96,7 @@ export function AdminPage() {
   // Active Tab / Section
   const [activeTab, setActiveTab] = useState<AdminSectionId>('overview');
 
-  // Master Data from real Supabase collections
+  // Master Data from real supabase collections
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [assistantsList, setAssistantsList] = useState<AssistantConfig[]>([]);
   const [prospectsList, setProspectsList] = useState<any[]>([]);
@@ -173,7 +173,7 @@ export function AdminPage() {
       setInvoicesList(invoices);
     } catch (err: any) {
       console.error('Error fetching admin platform data:', err);
-      notify('Erreur de synchronisation Supabase : ' + (err.message || 'Vérifiez la connexion'), 'error');
+      notify('Erreur de synchronisation supabase : ' + (err.message || 'Vérifiez la connexion'), 'error');
     } finally {
       setLoadingData(false);
     }
@@ -188,7 +188,7 @@ export function AdminPage() {
     // (« Malek2001 », « Admin2026! »). Comme ce fichier est embarqué dans le
     // bundle JavaScript public, n'importe quel visiteur pouvait les lire et
     // ouvrir la console d'administration. L'accès passe désormais uniquement par
-    // Supabase Auth + la liste d'administrateurs (isUserAdmin).
+    // supabase Auth + la liste d'administrateurs (isUserAdmin).
     try {
       const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
       const profileSnap = await getDoc(doc(db, 'users', cred.user.uid));
@@ -201,7 +201,7 @@ export function AdminPage() {
       }
 
       setIsAdminAuthenticated(true);
-      // Pas de drapeau persistant : la session Supabase suffit et expire seule.
+      // Pas de drapeau persistant : la session supabase suffit et expire seule.
       sessionStorage.removeItem('jawebflow_admin_auth');
     } catch (err: any) {
       setAuthError('Identifiants Super Admin invalides.');
@@ -289,7 +289,7 @@ export function AdminPage() {
         validatedByAdmin: true
       });
 
-      // Auto-upgrade client's assistant if found in Supabase
+      // Auto-upgrade client's assistant if found in supabase
       const clientUser = usersList.find(u => u.email?.toLowerCase() === newInvEmail.trim().toLowerCase());
       if (clientUser) {
         const clientAssistants = assistantsList.filter(a => a.userId === clientUser.uid);
@@ -389,7 +389,7 @@ export function AdminPage() {
     notify('Export Audience Ads (Meta/Google) téléchargé.');
   };
 
-  // Aggregated calculations on real Supabase data
+  // Aggregated calculations on real supabase data
   const totalRevenueDzd = invoicesList.filter(i => i.status === 'paid').reduce((acc, i) => acc + (Number(i.amountDzd) || 0), 0);
   const totalRevenueUsd = invoicesList.filter(i => i.status === 'paid').reduce((acc, i) => acc + (Number(i.amountUsd) || 0), 0);
   const paidPlansCount = assistantsList.filter(a => a.plan && a.plan !== 'free').length;
@@ -519,7 +519,7 @@ export function AdminPage() {
     {
       group: 'SYSTÈME',
       items: [
-        { id: 'system', label: 'Maintenance & Supabase', icon: Database, badge: null }
+        { id: 'system', label: 'Maintenance & supabase', icon: Database, badge: null }
       ]
     }
   ];
@@ -670,7 +670,7 @@ export function AdminPage() {
                   {activeTab === 'assistants' && "Tous les Assistants IA"}
                   {activeTab === 'leads' && "Registre Central des Leads"}
                   {activeTab === 'invoices' && "Factures & Encaissements"}
-                  {activeTab === 'system' && "Maintenance Système & Supabase"}
+                  {activeTab === 'system' && "Maintenance Système & supabase"}
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono font-bold uppercase">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -678,7 +678,7 @@ export function AdminPage() {
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                Données réelles synchronisées avec Supabase · {assistantsList.length} assistants actifs
+                Données réelles synchronisées avec supabase · {assistantsList.length} assistants actifs
               </p>
             </div>
           </div>
@@ -913,7 +913,7 @@ export function AdminPage() {
                     <Users className="w-5 h-5 text-purple-600" />
                     Créateurs & Utilisateurs Inscrits ({usersList.length})
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Tous les profils réels enregistrés dans la collection Supabase users</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Tous les profils réels enregistrés dans la collection supabase users</p>
                 </div>
 
                 <div className="relative w-full sm:w-72">
@@ -1222,7 +1222,7 @@ export function AdminPage() {
                     {prospectsList.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-12 text-center text-slate-400">
-                          Aucun prospect dans la base Supabase pour le moment.
+                          Aucun prospect dans la base supabase pour le moment.
                         </td>
                       </tr>
                     ) : (
@@ -1355,7 +1355,7 @@ export function AdminPage() {
                     {invoicesList.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-12 text-center text-slate-400">
-                          Aucune facture enregistrée dans Supabase pour le moment.
+                          Aucune facture enregistrée dans supabase pour le moment.
                         </td>
                       </tr>
                     ) : (
@@ -1406,7 +1406,7 @@ export function AdminPage() {
                   Maintenance & Hygiène de la Base de Données
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  État des collections Supabase, intégrité des enregistrements et sécurité
+                  État des collections supabase, intégrité des enregistrements et sécurité
                 </p>
               </div>
 
@@ -1414,7 +1414,7 @@ export function AdminPage() {
                 <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                   <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    État des Collections Supabase
+                    État des Collections supabase
                   </h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between py-1.5 border-b border-slate-200">
@@ -1447,7 +1447,7 @@ export function AdminPage() {
                   <div className="pt-2">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Synchronisation Supabase Active
+                      Synchronisation supabase Active
                     </span>
                   </div>
                 </div>
