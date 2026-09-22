@@ -1624,6 +1624,10 @@ echo "Réponse de l'Assistant : " . $result['message'];
             <div className="animate-in fade-in duration-200">
               <WidgetCustomizer
                 businessName={businessName}
+                onBusinessNameChange={(value) => {
+                  setBusinessName(value);
+                  handleSaveToDatabase(undefined, { businessName: value });
+                }}
                 widgetId={currentWidgetId}
                 config={widgetConfig}
                 onChange={handleUpdateWidgetConfig}
