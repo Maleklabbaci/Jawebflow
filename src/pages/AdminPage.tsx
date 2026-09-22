@@ -62,7 +62,7 @@ import {
   orderBy, 
   serverTimestamp 
 } from '/lib/supabase';
-import { signInWithEmailAndPassword, signOut } from 'Supabase/auth';
+import { signInWithEmailAndPassword, signOut } from '../lib/supabase';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
 
@@ -96,7 +96,7 @@ export function AdminPage() {
   // Active Tab / Section
   const [activeTab, setActiveTab] = useState<AdminSectionId>('overview');
 
-  // Master Data from real Firestore collections
+  // Master Data from real Supabase collections
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [assistantsList, setAssistantsList] = useState<AssistantConfig[]>([]);
   const [prospectsList, setProspectsList] = useState<any[]>([]);
@@ -173,7 +173,7 @@ export function AdminPage() {
       setInvoicesList(invoices);
     } catch (err: any) {
       console.error('Error fetching admin platform data:', err);
-      notify('Erreur de synchronisation Firestore : ' + (err.message || 'Vérifiez la connexion'), 'error');
+      notify('Erreur de synchronisation Supabase : ' + (err.message || 'Vérifiez la connexion'), 'error');
     } finally {
       setLoadingData(false);
     }
@@ -289,7 +289,7 @@ export function AdminPage() {
         validatedByAdmin: true
       });
 
-      // Auto-upgrade client's assistant if found in Firestore
+      // Auto-upgrade client's assistant if found in Supabase
       const clientUser = usersList.find(u => u.email?.toLowerCase() === newInvEmail.trim().toLowerCase());
       if (clientUser) {
         const clientAssistants = assistantsList.filter(a => a.userId === clientUser.uid);
@@ -389,7 +389,7 @@ export function AdminPage() {
     notify('Export Audience Ads (Meta/Google) téléchargé.');
   };
 
-  // Aggregated calculations on real Firestore data
+  // Aggregated calculations on real Supabase data
   const totalRevenueDzd = invoicesList.filter(i => i.status === 'paid').reduce((acc, i) => acc + (Number(i.amountDzd) || 0), 0);
   const totalRevenueUsd = invoicesList.filter(i => i.status === 'paid').reduce((acc, i) => acc + (Number(i.amountUsd) || 0), 0);
   const paidPlansCount = assistantsList.filter(a => a.plan && a.plan !== 'free').length;
@@ -519,7 +519,7 @@ export function AdminPage() {
     {
       group: 'SYSTÈME',
       items: [
-        { id: 'system', label: 'Maintenance & Firestore', icon: Database, badge: null }
+        { id: 'system', label: 'Maintenance & Supabase', icon: Database, badge: null }
       ]
     }
   ];
@@ -670,7 +670,7 @@ export function AdminPage() {
                   {activeTab === 'assistants' && "Tous les Assistants IA"}
                   {activeTab === 'leads' && "Registre Central des Leads"}
                   {activeTab === 'invoices' && "Factures & Encaissements"}
-                  {activeTab === 'system' && "Maintenance Système & Firestore"}
+                  {activeTab === 'system' && "Maintenance Système & Supabase"}
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono font-bold uppercase">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -678,7 +678,7 @@ export function AdminPage() {
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                Données réelles synchronisées avec Firestore · {assistantsList.length} assistants actifs
+                Données réelles synchronisées avec Supabase · {assistantsList.length} assistants actifs
               </p>
             </div>
           </div>
@@ -913,7 +913,7 @@ export function AdminPage() {
                     <Users className="w-5 h-5 text-purple-600" />
                     Créateurs & Utilisateurs Inscrits ({usersList.length})
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Tous les profils réels enregistrés dans la collection Firestore users</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Tous les profils réels enregistrés dans la collection Supabase users</p>
                 </div>
 
                 <div className="relative w-full sm:w-72">
@@ -1222,7 +1222,7 @@ export function AdminPage() {
                     {prospectsList.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-12 text-center text-slate-400">
-                          Aucun prospect dans la base Firestore pour le moment.
+                          Aucun prospect dans la base Supabase pour le moment.
                         </td>
                       </tr>
                     ) : (
@@ -1355,7 +1355,7 @@ export function AdminPage() {
                     {invoicesList.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-12 text-center text-slate-400">
-                          Aucune facture enregistrée dans Firestore pour le moment.
+                          Aucune facture enregistrée dans Supabase pour le moment.
                         </td>
                       </tr>
                     ) : (
@@ -1406,7 +1406,7 @@ export function AdminPage() {
                   Maintenance & Hygiène de la Base de Données
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  État des collections Firestore, intégrité des enregistrements et sécurité
+                  État des collections Supabase, intégrité des enregistrements et sécurité
                 </p>
               </div>
 
@@ -1414,7 +1414,7 @@ export function AdminPage() {
                 <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                   <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    État des Collections Firestore
+                    État des Collections Supabase
                   </h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between py-1.5 border-b border-slate-200">
@@ -1447,7 +1447,7 @@ export function AdminPage() {
                   <div className="pt-2">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Synchronisation Firestore Active
+                      Synchronisation Supabase Active
                     </span>
                   </div>
                 </div>
