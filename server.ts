@@ -256,6 +256,12 @@ async function startServer() {
   const GEMINI_MODEL = envValue("GEMINI_MODEL") || "gemini-3.1-flash-lite";
   const AGENTROUTER_API_KEY = envValue("AGENTROUTER_API_KEY");
   const AGENTROUTER_BASE_URL = (process.env.AGENTROUTER_BASE_URL || "https://co.agentrouter.org/v1").replace(/\/$/, "");
+  // N'analyse qu'un échange sur N via Gemini pour faire "évoluer" la mémoire de
+  // l'assistant (le reste des échanges se contente d'incrémenter le compteur,
+  // sans appel IA). C'est de très loin la plus grosse source d'appels Gemini
+  // "invisibles" : avant ce throttle, CHAQUE message déclenchait un 2e appel
+  // Gemini en arrière-plan, en plus de la réponse elle-même.
+  const GEMINI_EVOLUTION_SAMPLE_RATE = Math.max(1, Number(envValue("GEMINI_EVOLUTION_SAMPLE_RATE")) || 4);
 
   // Fallback Gemini API client
   const ai = new GoogleGenAI({
@@ -348,6 +354,25 @@ async function startServer() {
         // 2. Asynchronous Context Evolution Worker (Gemini analysis)
         (async () => {
           try {
+            // Throttle: lecture Firestore (gratuite) du compteur d'interactions
+            // AVANT tout appel Gemini. Si on n'est pas sur un multiple de
+            // GEMINI_EVOLUTION_SAMPLE_RATE, on incrémente juste le compteur et
+            // on sort — aucun appel Gemini pour ce message.
+            const memRefThrottle = db.collection("evolving_memories").doc(assistantId);
+            const memSnapThrottle = await memRefThrottle.get();
+            const currentMemThrottle = memSnapThrottle.exists ? memSnapThrottle.data() : {};
+            const nextInteractionCount = (currentMemThrottle?.totalInteractions || 0) + 1;
+            const shouldRunGeminiAnalysis = nextInteractionCount % GEMINI_EVOLUTION_SAMPLE_RATE === 0;
+
+            if (!shouldRunGeminiAnalysis) {
+              await memRefThrottle.set({
+                assistantId,
+                totalInteractions: nextInteractionCount,
+                lastEvolvedAt: currentMemThrottle?.lastEvolvedAt || new Date().toISOString()
+              }, { merge: true });
+              return;
+            }
+
             const evalRes = await ai.models.generateContent({
               // Must be a real Gemini model id: "gemini-3.7-flash" does not exist
               // and made this background learning worker fail every single time.
@@ -2285,6 +2310,11 @@ ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEv
   });
 
   app.post('/api/instagram/test-live-message', async (req, res) => {
+    // Route de debug : appelle Gemini à chaque requête. Bloquée hors dev pour
+    // éviter qu'elle ne consomme du quota en production (scans, bots, etc.).
+    if ((process.env.NODE_ENV || "development") === "production") {
+      return res.status(404).json({ status: "error", error: "Not found" });
+    }
     try {
       const { messageText } = req.body;
       const textToTest = messageText || 'Bonjour, est-ce que vous livrez à Oran et quel est le prix ?';
