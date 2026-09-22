@@ -10,7 +10,10 @@
  */
 
 import { adminGetDocument } from '../_shared/google.ts';
-import { supabaseConfigured, supabaseListKnowledge, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseLogLearningQuestion } from '../_shared/supabase.ts';
+import { supabaseConfigured, supabaseListKnowledge, supabaseGetAssistant, supabaseAssistantRowToConfig } from '../_shared/supabase.ts';
+import { officialInfoBlock, businessPackBlock } from '../_shared/prompt.ts';
+import { runBackgroundLearning } from '../_shared/learning.ts';
+import { searchClientSite, siteShoppingPromptBlock } from '../_shared/site-search.ts';
 
 // Modèle Gemini : surchargeable par variable d'environnement (Pages → Settings →
 // Environment variables) sans redéploiement de code. Les identifiants « 2.5 »
@@ -155,16 +158,17 @@ export async function onRequestPost(context) {
     if (config.faqText) systemPrompt += `\n\n### ❓ FAQ :\n${config.faqText}`;
     if (config.pricingServicesText) systemPrompt += `\n\n### 💰 TARIFS & SERVICES :\n${config.pricingServicesText}`;
 
-    // Informations officielles structurées (saisies par le commerçant dans
-    // l'onglet "Mes informations") : l'IA doit les citer telles quelles et ne
-    // jamais les contredire — c'est le socle "toujours juste" de la plateforme.
-    const bi = config.businessInfo || {};
-    if (bi.phone || bi.address || bi.hours || bi.closedDays) {
-      systemPrompt += `\n\n### 📌 INFORMATIONS OFFICIELLES DE L'ENTREPRISE (cite-les exactement ainsi, ne les contredis JAMAIS) :`;
-      if (bi.phone) systemPrompt += `\n- Téléphone : ${bi.phone}`;
-      if (bi.address) systemPrompt += `\n- Adresse : ${bi.address}`;
-      if (bi.hours) systemPrompt += `\n- Horaires : ${bi.hours}`;
-      if (bi.closedDays) systemPrompt += `\n- Jours fermés : ${bi.closedDays}`;
+    // Informations officielles + pack métier (partagés avec le répondeur
+    // Instagram : mêmes règles sur tous les canaux).
+    systemPrompt += officialInfoBlock(config);
+    systemPrompt += businessPackBlock(config);
+
+    // "Tout passe par mon site" : recherche de produits EN DIRECT sur le site
+    // du client et envoi des liens 🔗 au visiteur.
+    if (config.siteShopping && config.websiteUrl) {
+      const found = await searchClientSite(config, message);
+      systemPrompt += siteShoppingPromptBlock(found, config) ||
+        `\n\n### 🛒 COMMANDES VIA LE SITE : toutes les commandes se font sur le site ${config.websiteUrl}. Guide systématiquement le client vers le site pour commander.`;
     }
 
     // Règles absolues du client (ex: "ne jamais envoyer le lien du site") : placées
@@ -215,7 +219,7 @@ export async function onRequestPost(context) {
     //    après l'envoi de la réponse — zéro latence ajoutée pour le visiteur.
     //    Si l'IA n'avait pas l'info, la question file dans "Apprentissage".
     if (supabaseConfigured(env) && typeof context.waitUntil === 'function') {
-      context.waitUntil(backgroundLearning(env, { assistantId, message, aiText, apiKey, chatModel }));
+      context.waitUntil(runBackgroundLearning(env, { assistantId, question: message, aiText, apiKey, chatModel }));
     }
 
     return reply(aiText, diagnostics);
@@ -229,60 +233,5 @@ export async function onRequestPost(context) {
       error: err?.message || String(err),
       diagnostics,
     }), { status: 200, headers: cors });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// BOUCLE D'APPRENTISSAGE (arrière-plan, après envoi de la réponse)
-// 1. Heuristique gratuite : si la réponse propose de "laisser un numéro pour
-//    être rappelé", c'est le signe que l'info manquait → question enregistrée.
-// 2. Sinon, mini auto-évaluation Gemini (flash-lite) : "avais-je l'info ?"
-//    Une réponse négative envoie la question dans l'onglet Apprentissage,
-//    où le commerçant y répond une fois → note de connaissance automatique.
-// ---------------------------------------------------------------------------
-async function backgroundLearning(env, { assistantId, message, aiText, apiKey, chatModel }) {
-  try {
-    const question = String(message || '').trim();
-    if (!question || question.length < 3) return;
-
-    const fallbackHit = /rappel(el|é)|laisse(z)?\s*(-?\s*(moi|nous))?\s*(ton|votre)\s*numéro|numéro de téléphone/i.test(aiText);
-    let logIt = fallbackHit;
-    let reason = 'no_info';
-
-    if (!logIt && apiKey) {
-      try {
-        const evalRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: {
-                parts: [{
-                  text: `Tu évalues si un assistant commercial AVAIT, dans sa base de connaissance, l'information nécessaire pour répondre à la question du client. Si la réponse esquive, est vague, ou propose d'être rappelé faute d'information, alors hadInfo=false. Réponds UNIQUEMENT avec ce JSON : {"hadInfo": true} ou {"hadInfo": false}.`
-                }]
-              },
-              contents: [{ role: 'user', parts: [{ text: `Question du client : ${question}\nRéponse de l'assistant : ${aiText}` }] }],
-              generationConfig: { temperature: 0, maxOutputTokens: 50 },
-            })
-          }
-        );
-        if (evalRes.ok) {
-          const evalText = (await evalRes.json())?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (/"hadInfo"\s*:\s*false/.test(evalText)) {
-            logIt = true;
-            reason = 'eval_no_info';
-          }
-        }
-      } catch (e) {
-        console.error('[learning] auto-évaluation impossible:', e?.message || e);
-      }
-    }
-
-    if (logIt) {
-      await supabaseLogLearningQuestion(env, assistantId, question, aiText, reason);
-    }
-  } catch (e) {
-    console.error('[learning] erreur:', e?.message || e);
   }
 }

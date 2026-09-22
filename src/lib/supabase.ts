@@ -78,6 +78,7 @@ export interface AssistantConfig {
   autoLeadCapture: boolean;
   whatsappEscalation?: string;
   businessInfo?: { address?: string; phone?: string; hours?: string; closedDays?: string };
+  siteShopping?: boolean;
   webhookUrl?: string;
   widgetId: string;
   widgetConfig?: WidgetCustomization;

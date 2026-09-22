@@ -26,7 +26,15 @@
  *      échoue (le motif est écrit dans les journaux Cloudflare).
  */
 
-import { getGoogleAccessToken } from "../../_shared/google.ts";
+import { getGoogleAccessToken, base64 } from "../../_shared/google.ts";
+import {
+  supabaseConfigured,
+  supabaseGetAssistant,
+  supabaseAssistantRowToConfig,
+} from "../../_shared/supabase.ts";
+import { officialInfoBlock, businessPackBlock } from "../../_shared/prompt.ts";
+import { runBackgroundLearning } from "../../_shared/learning.ts";
+import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
 
 /** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -85,6 +93,8 @@ interface Env {
   INSTAGRAM_VERIFY_TOKEN?: string;
   META_VERIFY_TOKEN?: string;
   INSTAGRAM_APP_SECRET?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
 }
 
 type Target = { project: string; database: string };
@@ -223,7 +233,7 @@ async function writeDocument(
 /** Prompt construit avec la VRAIE base de connaissances de l'entreprise.
  * Verrouillé pour empêcher l'IA de répondre à des sujets hors périmètre
  * (politique, culture générale, code, autre entreprise, conseils perso...). */
-function buildSystemPrompt(config: any): string {
+function buildSystemPrompt(config: any, extraBlocks = ""): string {
   // Ajout minimal (le reste de la fonction est inchangé) : une identité forte
   // en tête, basée sur businessName, pour que le bot se présente comme la
   // marque du client plutôt que comme "l'assistant JawebFlow" générique.
@@ -262,6 +272,12 @@ Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucu
   if (config?.pricingServicesText) prompt += `\n\n### 💰 TARIFS & SERVICES :\n${config.pricingServicesText}`;
   if (config?.specialRulesText) prompt += `\n\n### ⚠️ RÈGLES SPÉCIALES :\n${config.specialRulesText}`;
 
+  // Infos officielles + pack métier : partagés avec le chat web (mêmes
+  // règles sur tous les canaux, quel que soit le business).
+  prompt += officialInfoBlock(config);
+  prompt += businessPackBlock(config);
+  if (extraBlocks) prompt += extraBlocks;
+
   // Ajout minimal : rappel en toute fin de prompt (ce que le modèle respecte
   // le mieux), sans retirer les sections ci-dessus.
   const hardRules = [config?.customInstructions, config?.specialRulesText].filter(Boolean).join("\n");
@@ -277,6 +293,55 @@ Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucu
 Si tu hésites entre répondre normalement ou refuser car hors-sujet : REFUSE et recentre la conversation sur l'entreprise.`;
 
   return prompt + INSTAGRAM_ADDENDUM;
+}
+
+/**
+ * Le client a envoyé une photo sans texte : on récupère l'image via l'API
+ * Meta (`/{mid}/attachments`), puis Gemini Vision la décrit en quelques mots
+ * pour en faire une requête de recherche produit sur le site du client.
+ */
+async function describeAttachmentImage(env: Env, igToken: string, mid: string): Promise<string | null> {
+  try {
+    const metaRes = await fetchWithTimeout(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(mid)}/attachments?access_token=${encodeURIComponent(igToken)}`,
+      {},
+      5000
+    );
+    if (!metaRes.ok) return null;
+    const meta: any = await metaRes.json();
+    const url = meta?.data?.[0]?.payload?.url || meta?.data?.[0]?.payload?.uri || null;
+    if (!url) return null;
+
+    const img = await fetchWithTimeout(url, {}, 6000);
+    if (!img.ok) return null;
+    const buf = await img.arrayBuffer();
+    if (!buf || buf.byteLength === 0) return null;
+    const mime = (img.headers.get("content-type") || "image/jpeg").split(";")[0];
+
+    const g = await fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inline_data: { mime_type: mime, data: base64(buf) } },
+              { text: "Décris ce produit en 5 à 10 mots, comme une recherche dans une boutique en ligne (ex : coque antichoc transparente iPhone 13). Réponds sans phrase, sans ponctuation finale." },
+            ],
+          }],
+          generationConfig: { temperature: 0, maxOutputTokens: 40 },
+        }),
+      },
+      9000
+    );
+    if (!g.ok) return null;
+    const text = (await g.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    return text || null;
+  } catch (e) {
+    console.error("[instagram] description de photo impossible:", (e as any)?.message || e);
+    return null;
+  }
 }
 
 /** Appel Gemini, avec repli automatique sur un autre modèle ET timeout strict. */
@@ -595,26 +660,56 @@ async function handleDirectMessage(env: Env, event: any) {
 
   let config: any = {};
   if (integration.assistantId) {
-    let read = await readDocument(
-      env,
-      integration.accessToken,
-      `assistants/${integration.assistantId}`,
-      integration.target
-    );
-    if (!read.ok) {
-      read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`);
+    // Supabase d'abord (base principale depuis la migration) ; Firestore en
+    // filet de sécurité pour les assistants pas encore migrés.
+    if (supabaseConfigured(env)) {
+      const sb = await supabaseGetAssistant(env, integration.assistantId);
+      if (sb.ok && sb.data) config = supabaseAssistantRowToConfig(sb.data);
     }
-    if (read.ok) config = read.data;
-    else console.warn("[instagram] configuration de l'entreprise introuvable pour", integration.assistantId);
+    if (!config || Object.keys(config).length === 0) {
+      let read = await readDocument(
+        env,
+        integration.accessToken,
+        `assistants/${integration.assistantId}`,
+        integration.target
+      );
+      if (!read.ok) {
+        read = await readDocument(env, integration.accessToken, `assistants/${integration.assistantId}`);
+      }
+      if (read.ok) config = read.data;
+      else console.warn("[instagram] configuration de l'entreprise introuvable pour", integration.assistantId);
+    }
   } else {
     console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
   }
 
   sendTypingOn(integration.igToken, customerId).catch(() => {});
 
-  const incoming = groupedText || "Le client a envoyé une image que tu ne peux pas lire.";
+  // "Tout passe par mon site" : si le client envoie une PHOTO sans texte,
+  // on la fait décrire par Gemini (vision) pour en faire une requête de
+  // recherche, puis on cherche le produit EN DIRECT sur le site du client.
+  let extraBlocks = "";
+  let incoming = groupedText;
+  let imageDescription = "";
+  if (config?.siteShopping && config?.websiteUrl) {
+    if (!groupedText && hasAttachment && message?.mid && env.GEMINI_API_KEY) {
+      imageDescription = (await describeAttachmentImage(env, integration.igToken, message.mid)) || "";
+      if (imageDescription) console.log("[instagram] photo décrite :", imageDescription);
+    }
+    const shoppingQuery = groupedText || imageDescription;
+    if (shoppingQuery) {
+      const found = await searchClientSite(config, shoppingQuery);
+      extraBlocks = siteShoppingPromptBlock(found, config);
+      if (found.length) console.log(`[instagram] ${found.length} produit(s) trouvé(s) sur le site`);
+    }
+    if (!extraBlocks) {
+      extraBlocks = `\n\n### 🛒 COMMANDES VIA LE SITE : toutes les commandes se font sur le site ${config.websiteUrl}. Guide systématiquement le client vers le site pour commander.`;
+    }
+  }
+  if (!incoming) incoming = imageDescription || "Le client a envoyé une image que tu ne peux pas lire.";
+
   console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
-  const { text: aiText, diagnostics } = await generateReply(env, buildSystemPrompt(config), incoming, history);
+  const { text: aiText, diagnostics } = await generateReply(env, buildSystemPrompt(config, extraBlocks), incoming, history);
   console.log(`[instagram] diagnostics IA (${Date.now() - startedAt}ms écoulées):`, diagnostics.join(" | "));
 
   const businessName = config?.businessName || "notre équipe";
@@ -626,6 +721,18 @@ async function handleDirectMessage(env: Env, event: any) {
 
   const sent = await sendInstagramMessage(integration.igToken, customerId, replyText);
   console.log(`[instagram] message envoyé=${sent} (${Date.now() - startedAt}ms écoulées)`);
+
+  // Boucle d'apprentissage : si l'IA n'avait pas l'info, la question file
+  // dans l'onglet "Apprentissage IA" (partagé avec le chat web).
+  if (sent && integration.assistantId && supabaseConfigured(env)) {
+    runBackgroundLearning(env, {
+      assistantId: integration.assistantId,
+      question: incoming,
+      aiText: replyText,
+      apiKey: env.GEMINI_API_KEY,
+      chatModel: env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+    }).catch((e: any) => console.error("[instagram][learning]", e?.message || e));
+  }
 
   const messages = [
     ...freshStored.map((m: any) => ({ role: m.role, text: m.text })),

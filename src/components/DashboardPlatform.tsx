@@ -241,6 +241,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [whatsappEscalation, setWhatsappEscalation] = useState<string>('');
   // Informations officielles structurées (toujours citées telles quelles par l'IA)
   const [businessInfo, setBusinessInfo] = useState<{ address?: string; phone?: string; hours?: string; closedDays?: string }>({});
+  // "Tout passe par mon site" : l'IA cherche les produits sur le site et envoie les liens
+  const [siteShopping, setSiteShopping] = useState<boolean>(false);
   // Boucle d'apprentissage : questions sans réponse signalées par l'IA / les 👎
   const [learningQuestions, setLearningQuestions] = useState<any[]>([]);
   const [learningLoading, setLearningLoading] = useState(false);
@@ -422,6 +424,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             if (current.languages) setLanguages(current.languages);
             if (current.whatsappEscalation) setWhatsappEscalation(current.whatsappEscalation);
             if (current.businessInfo) setBusinessInfo(current.businessInfo);
+            setSiteShopping(Boolean(current.siteShopping));
             if (current.webhookUrl) setWebhookUrl(current.webhookUrl);
             if (current.widgetConfig) {
               setWidgetConfig(prev => ({
@@ -579,6 +582,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         autoLeadCapture,
         whatsappEscalation: whatsappEscalation.trim(),
         businessInfo,
+        siteShopping,
         webhookUrl: webhookUrl.trim(),
         widgetId: effectiveWidgetId,
         widgetConfig: {
@@ -624,6 +628,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         autoLeadCapture,
         whatsappEscalation: whatsappEscalation.trim(),
         businessInfo,
+        siteShopping,
         webhookUrl: newUrl.trim(),
         widgetId: effectiveWidgetId,
         widgetConfig: {
@@ -1705,6 +1710,22 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     className="text-xs rounded-lg border border-slate-200 p-2.5 outline-none focus:border-purple-400"
                   />
                 </div>
+                <label className="mt-4 flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={siteShopping}
+                    onChange={e => setSiteShopping(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-purple-600"
+                  />
+                  <span>
+                    <span className="text-xs font-semibold text-slate-800">🛒 Mes clients commandent sur mon site</span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5">
+                      L'IA cherche les produits EN DIRECT sur ton site et envoie les liens 🔗 pour commander
+                      (ex : « antichoc iPhone 13 » → lien de la fiche produit). Si le client envoie une photo
+                      du produit sur Instagram, l'IA la reconnaît et trouve le lien pareil.
+                    </span>
+                  </span>
+                </label>
                 <button
                   onClick={() => handleSaveToDatabase()}
                   disabled={isSavingDb}
