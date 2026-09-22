@@ -68,10 +68,9 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, on
       <footer className="mt-12 sm:mt-20 pt-6 sm:pt-8 pb-10 sm:pb-12 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-400 gap-3 sm:gap-4">
         <div className="flex items-center gap-2 sm:gap-3">
           <img 
-            src="https://i.ibb.co/zVGSpyTS/jawebflow.png" 
+            src="/logo.jpg" 
             alt="Logo" 
-            className="h-5 sm:h-6 w-auto object-contain brightness-0 invert opacity-80"
-            referrerPolicy="no-referrer"
+            className="h-6 sm:h-7 w-auto object-cover rounded-md opacity-90"
           />
           <span>·</span>
           <span className="text-[11px] sm:text-xs font-medium text-neutral-300">Assistant conversationnel pour sites web & entreprises en Algérie 🇩🇿</span>

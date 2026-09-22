@@ -60,10 +60,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             aria-label="Accueil"
           >
             <img
-              src="https://i.ibb.co/zVGSpyTS/jawebflow.png"
+              src="/logo.jpg"
               alt="Logo"
-              className="h-8 sm:h-9 w-auto object-contain brightness-0 invert opacity-95 group-hover:opacity-100 transition-all hover:scale-105"
-              referrerPolicy="no-referrer"
+              className="h-8 sm:h-9 w-auto object-cover rounded-lg shadow-md shadow-purple-500/20 group-hover:scale-105 transition-all"
             />
           </button>
         </div>

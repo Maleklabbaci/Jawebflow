@@ -1,8 +1,15 @@
 import { createClient, User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { KnowledgeNote } from '../types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+// Les variables VITE_* sont figées au build par Vite. Sur Cloudflare Pages,
+// les secrets runtime (wrangler pages secret put) n'atteignent pas le build :
+// functions/[[path]].js injecte donc window.__JAWEBFLOW_ENV__ dans le HTML en
+// secours. Priorité : build-time (VITE_*) > runtime (injection).
+const runtimeEnv: Record<string, string> =
+  (typeof window !== 'undefined' && (window as any).__JAWEBFLOW_ENV__) || {};
+
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || runtimeEnv.VITE_SUPABASE_URL) as string;
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || runtimeEnv.VITE_SUPABASE_ANON_KEY) as string;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   // Erreur volontairement bruyante : mieux vaut un crash clair au démarrage
