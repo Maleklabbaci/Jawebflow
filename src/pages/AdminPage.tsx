@@ -61,7 +61,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from '/lib/supabase';
+} from '../lib/supabase';
 import { signInWithEmailAndPassword, signOut } from '../lib/supabase';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
