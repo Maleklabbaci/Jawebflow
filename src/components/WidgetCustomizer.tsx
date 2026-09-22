@@ -26,6 +26,7 @@ import { WidgetCustomization } from '../lib/firebase';
 
 interface WidgetCustomizerProps {
   businessName: string;
+  onBusinessNameChange: (value: string) => void;
   widgetId: string;
   config: WidgetCustomization;
   onChange: (updated: Partial<WidgetCustomization>) => void;
@@ -58,6 +59,7 @@ const COLOR_PRESETS = [
 
 export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   businessName,
+  onBusinessNameChange,
   widgetId,
   config,
   onChange,
@@ -594,6 +596,25 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Identité réelle de l'assistant (envoyée à l'IA — distincte du titre visuel ci-dessous) */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nom / identité de la marque (utilisé par l'IA)
+                  </label>
+                  <input
+                    type="text"
+                    value={businessName}
+                    onChange={(e) => onBusinessNameChange(e.target.value)}
+                    placeholder="Ex: WYN, Telya Agency..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    C'est ce nom que l'assistant utilise pour se présenter au client ("je suis l'assistant de ..."). Le titre ci-dessous n'est que l'affichage visuel de la bulle.
+                  </p>
+                </div>
               </div>
 
               {/* Header Title & Subtitle */}
