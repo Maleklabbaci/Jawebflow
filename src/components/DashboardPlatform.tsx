@@ -705,7 +705,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
       // Le scan écrit dans la base de connaissances : le serveur exige un jeton
       // Firebase prouvant que l'assistant appartient bien à l'utilisateur connecté.
-      const idToken = await auth.currentUser?.getIdToken().catch(() => null);
+      // `true` force un jeton frais : sans ça, le SDK peut renvoyer un jeton en
+      // cache déjà expiré (onglet resté ouvert longtemps, veille mobile...),
+      // ce qui provoquait un 401 intermittent sans rien changer côté serveur.
+      const idToken = await auth.currentUser?.getIdToken(true).catch(() => null);
       const response = await fetch("/api/crawler/analyze", {
         method: "POST",
         headers: {
