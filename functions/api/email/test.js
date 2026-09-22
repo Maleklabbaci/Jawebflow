@@ -8,9 +8,9 @@
  * que les emails arrivent (boîte + spams) et à montrer la valeur.
  */
 
-import { verifySupabaseIdToken, supabaseRequest, supabaseConfigured } from '../_shared/supabase.ts';
-import { sendEmail, emailConfigured } from '../_shared/email.ts';
-import { collectClientStats, buildDigestHtml } from '../_shared/digest.ts';
+import { verifySupabaseIdToken, supabaseRequest, supabaseConfigured } from '../../_shared/supabase.ts';
+import { sendEmail, emailConfigured } from '../../_shared/email.ts';
+import { collectClientStats, buildDigestHtml } from '../../_shared/digest.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
