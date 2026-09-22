@@ -35,15 +35,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Filet de sécurité : si Firebase ne répond pas (réseau lent, onglet
     // restauré, script bloqué), on ne laisse jamais l'application bloquée sur
     // l'écran de chargement — on affiche la page publique.
-    const safetyTimer = setTimeout(() => setLoading(false), 6000);
+    let mounted = true;
+    let unsubscribeProfile: (() => void) | null = null;
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 6000);
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       clearTimeout(safetyTimer);
+      unsubscribeProfile?.();
+      unsubscribeProfile = null;
+      if (!mounted) return;
       setUser(fbUser);
       if (fbUser) {
         // Real-time listener for user profile document
         const userRef = doc(db, 'users', fbUser.uid);
-        const unsubProfile = onSnapshot(userRef, (docSnap) => {
+        unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
+          if (!mounted) return;
           if (docSnap.exists()) {
             setProfile(docSnap.data() as UserProfile);
           } else {
@@ -59,7 +67,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         setLoading(false);
-        return () => unsubProfile();
       } else {
         setProfile(null);
         setLoading(false);
@@ -67,7 +74,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => {
+      mounted = false;
       clearTimeout(safetyTimer);
+      unsubscribeProfile?.();
       unsubscribe();
     };
   }, []);

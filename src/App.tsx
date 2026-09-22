@@ -9,7 +9,6 @@ const ServicesPage = lazy(() => import('./pages/ServicesPage').then((m) => ({ de
 const PricingPage = lazy(() => import('./pages/PricingPage').then((m) => ({ default: m.PricingPage })));
 const DemoPage = lazy(() => import('./pages/DemoPage').then((m) => ({ default: m.DemoPage })));
 const ContactPage = lazy(() => import('./pages/ContactPage').then((m) => ({ default: m.ContactPage })));
-const CreateAssistantPage = lazy(() => import('./pages/CreateAssistantPage').then((m) => ({ default: m.CreateAssistantPage })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
 const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
@@ -94,6 +93,9 @@ export default function App() {
       try { window.opener.postMessage({ type: 'INSTAGRAM_AUTH_ERROR', error: authError }, window.location.origin); } catch { /* ignore */ }
       setTimeout(() => window.close(), 300);
       return;
+    }
+    if (authError) {
+      window.history.replaceState({}, '', window.location.pathname);
     }
     applyRoute();
     window.addEventListener('popstate', applyRoute);
