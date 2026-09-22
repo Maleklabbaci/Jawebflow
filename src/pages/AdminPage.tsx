@@ -61,7 +61,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from 'Supabase/firestore';
+} from '/lib/supabase';
 import { signInWithEmailAndPassword, signOut } from 'Supabase/auth';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
