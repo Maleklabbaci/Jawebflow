@@ -10,6 +10,12 @@ import {
   parseFields,
   isPublicHttpUrl,
 } from "../../_shared/google.ts";
+import {
+  supabaseConfigured,
+  supabaseGetAssistant,
+  supabasePatchAssistant,
+  supabaseAssistantRowToConfig,
+} from "../../_shared/supabase.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -631,22 +637,37 @@ export async function onRequestPost(context: {
 
     // ── Chargement du document existant ──────────────────────────────────────
     let existingFields: Record<string, unknown> | null = null;
+    let useSupabase = false;
 
     if (assistantId) {
-      const doc = await adminGetDocument(
-        context.env,
-        `assistants/${assistantId}`
-      );
-      if (doc.ok && doc.fields) {
-        const parsed = parseFields(doc.fields) as Record<string, unknown>;
-        if (parsed.userId && parsed.userId !== caller.uid) {
-          log.warn("Accès refusé", {
-            uid: caller.uid,
-            ownerId: parsed.userId,
-          });
-          return json({ error: "Accès refusé." }, 403);
+      if (supabaseConfigured(context.env)) {
+        const sb = await supabaseGetAssistant(context.env, assistantId);
+        if (sb.ok) {
+          useSupabase = true;
+          const parsed = supabaseAssistantRowToConfig(sb.data);
+          if (parsed.userId && parsed.userId !== caller.uid) {
+            log.warn("Accès refusé", { uid: caller.uid, ownerId: parsed.userId });
+            return json({ error: "Accès refusé." }, 403);
+          }
+          existingFields = parsed;
         }
-        existingFields = parsed;
+      }
+      if (!useSupabase) {
+        const doc = await adminGetDocument(
+          context.env,
+          `assistants/${assistantId}`
+        );
+        if (doc.ok && doc.fields) {
+          const parsed = parseFields(doc.fields) as Record<string, unknown>;
+          if (parsed.userId && parsed.userId !== caller.uid) {
+            log.warn("Accès refusé", {
+              uid: caller.uid,
+              ownerId: parsed.userId,
+            });
+            return json({ error: "Accès refusé." }, 403);
+          }
+          existingFields = parsed;
+        }
       }
     }
 
@@ -718,6 +739,7 @@ export async function onRequestPost(context: {
       const merged = mergeKnowledgeNotes(base, result.knowledgeNotes || []);
 
       const update = {
+        userId: caller.uid,
         businessName: fillIfEmpty(
           existingFields?.businessName,
           result.businessName,
@@ -778,18 +800,16 @@ export async function onRequestPost(context: {
         lastExtractAt: new Date().toISOString(),
       };
 
-      const write = await adminPatchDocument(
-        context.env,
-        `assistants/${assistantId}`,
-        update
-      );
+      const write = supabaseConfigured(context.env)
+        ? await supabasePatchAssistant(context.env, assistantId, update)
+        : await adminPatchDocument(context.env, `assistants/${assistantId}`, update);
 
       if (write.ok) {
         saved = true;
         savedNoteCount = merged.length;
         log.info("Sauvegarde OK", { assistantId, noteCount: merged.length });
       } else {
-        log.error("Sauvegarde Firestore échouée", { error: write.error });
+        log.error("Sauvegarde échouée", { error: write.error });
       }
     }
 
