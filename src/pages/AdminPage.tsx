@@ -50,7 +50,7 @@ import {
   deleteProspectRecord, 
   UserProfile, 
   AssistantConfig 
-} from '../lib/firebase';
+} from '../lib/Supabase';
 import { useAuth } from '../context/AuthContext';
 import { 
   collection, 
@@ -61,8 +61,8 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from 'firebase/firestore';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+} from 'Supabase/firestore';
+import { signInWithEmailAndPassword, signOut } from 'Supabase/auth';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
 
@@ -188,7 +188,7 @@ export function AdminPage() {
     // (« Malek2001 », « Admin2026! »). Comme ce fichier est embarqué dans le
     // bundle JavaScript public, n'importe quel visiteur pouvait les lire et
     // ouvrir la console d'administration. L'accès passe désormais uniquement par
-    // Firebase Auth + la liste d'administrateurs (isUserAdmin).
+    // Supabase Auth + la liste d'administrateurs (isUserAdmin).
     try {
       const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
       const profileSnap = await getDoc(doc(db, 'users', cred.user.uid));
@@ -201,7 +201,7 @@ export function AdminPage() {
       }
 
       setIsAdminAuthenticated(true);
-      // Pas de drapeau persistant : la session Firebase suffit et expire seule.
+      // Pas de drapeau persistant : la session Supabase suffit et expire seule.
       sessionStorage.removeItem('jawebflow_admin_auth');
     } catch (err: any) {
       setAuthError('Identifiants Super Admin invalides.');
