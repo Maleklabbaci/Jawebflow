@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   Bot,
@@ -62,6 +62,8 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
   const [inputVal, setInputVal] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
+  const [pendingImg, setPendingImg] = useState<{ mime: string; data: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [leadCaptured, setLeadCaptured] = useState(false);
   const [leadPhone, setLeadPhone] = useState('');
   const [showLeadForm, setShowLeadForm] = useState(false);
@@ -101,12 +103,15 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
     setIsTyping(true);
 
     try {
+      const imgToSend = pendingImg;
+      setPendingImg(null);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assistantId: businessName,
-          message: text
+          message: text,
+          ...(imgToSend ? { image: imgToSend } : {})
         })
       });
 
@@ -379,12 +384,53 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
               themeMode === 'dark' ? 'bg-[#0f121d] border-white/10' : 'bg-white border-neutral-200'
             }`}
           >
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={limitReached}
+              className="p-2 rounded-xl text-slate-400 hover:text-purple-600 hover:bg-purple-50 disabled:opacity-40 transition-all cursor-pointer shrink-0"
+              title="Joindre une photo"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                try {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const img = new Image();
+                    img.onload = () => {
+                      const max = 640;
+                      let w = img.width, h = img.height;
+                      if (w > max || h > max) {
+                        const r = Math.min(max / w, max / h);
+                        w = Math.round(w * r); h = Math.round(h * r);
+                      }
+                      const canvas = document.createElement('canvas');
+                      canvas.width = w; canvas.height = h;
+                      canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+                      const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+                      setPendingImg({ mime: 'image/jpeg', data: dataUrl.split(',')[1] });
+                    };
+                    img.src = String(ev.target?.result || '');
+                  };
+                  reader.readAsDataURL(f);
+                } catch { /* silencieux */ }
+                e.target.value = '';
+              }}
+            />
             <input
               type="text"
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               disabled={limitReached}
-              placeholder={limitReached ? 'Limite du plan atteinte — mise à niveau requise' : 'Écrivez votre message...'}
+              placeholder={limitReached ? 'Limite du plan atteinte — mise à niveau requise' : pendingImg ? '📷 Photo prête — écrivez votre message...' : 'Écrivez votre message...'}
               className={`flex-1 text-xs sm:text-sm px-3.5 py-2 rounded-xl border focus:outline-none transition-all ${
                 themeMode === 'dark'
                   ? 'bg-[#151928] text-white border-white/10 placeholder-neutral-500 focus:border-purple-500'
@@ -393,7 +439,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
             />
             <button
               type="submit"
-              disabled={!inputVal.trim() || isTyping || limitReached}
+              disabled={(!inputVal.trim() && !pendingImg) || isTyping || limitReached}
               className="p-2 sm:p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-md shrink-0"
               style={{
                 background: useGradient

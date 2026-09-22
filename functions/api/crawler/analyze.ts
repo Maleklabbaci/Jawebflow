@@ -58,6 +58,9 @@ type KnowledgeNote = {
 type GeminiResult = {
   businessName?: string;
   businessCategory?: string;
+  faqText?: string;
+  suggestedTone?: string;
+  welcomeMessage?: string;
   businessDescription?: string;
   phone?: string;
   email?: string;
@@ -389,6 +392,9 @@ RETOURNE UNIQUEMENT un JSON valide sans markdown :
   "openingHours": "horaires",
   "socialMedia": "réseaux avec URLs",
   "siteType": "vitrine|ecommerce|service|restaurant|portfolio",
+  "faqText": "mini-FAQ prête à l'emploi : 5 à 8 questions/réponses courtes basées UNIQUEMENT sur le contenu (format 'Q: ... R: ...' par ligne)",
+  "suggestedTone": "professionnel|amical|enthousiaste|concis (le mieux adapté au secteur)",
+  "welcomeMessage": "message d'accueil chaleureux du chatbot, 1 phrase, dans la langue principale du site",
   "confidence": 90,
   "knowledgeNotes": [
     {
@@ -408,6 +414,7 @@ RÈGLES :
 - Si tu trouves des produits avec prix → fiche tarifs détaillée
 - Si tu trouves des contacts → fiche contact avec tous les liens
 - confidence élevé car données fournies directement par l'utilisateur
+- faqText/suggestedTone/welcomeMessage : déduits du contenu et du secteur — jamais inventés hors du contenu
 
 CONTENU FOURNI :
 ${content.slice(0, MAX_CONTENT_LENGTH)}`;

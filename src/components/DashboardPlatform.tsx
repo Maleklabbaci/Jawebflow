@@ -289,6 +289,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [invoicesList, setInvoicesList] = useState<InvoiceRecord[]>([]);
 
+  // Usage & stats du client (jauge de quota, prospects, renouvellement) — /api/usage
+  const [usageInfo, setUsageInfo] = useState<{
+    used: number; limit: number | null; prospects: number; openQuestions: number; daysLeft: number | null;
+  } | null>(null);
+  const [emailTestBusy, setEmailTestBusy] = useState(false);
+  const [emailTestMsg, setEmailTestMsg] = useState('');
+
   // Mode MANUEL (SlickPay non configuré, virement, ou plan gratuit) :
   // validation immédiate comme avant l'arrivée du paiement en ligne.
   const finalizeManualPayment = () => {
@@ -432,6 +439,46 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, assistantId]);
+
+  // Jauge + stats : chargées au départ puis rafraîchies toutes les 2 minutes.
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    const fetchUsage = async () => {
+      try {
+        const sess = await supabase.auth.getSession();
+        const token = sess.data?.session?.access_token;
+        if (!token) return;
+        const res = await fetch('/api/usage', { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json().catch(() => null);
+        if (data?.ok && !cancelled) setUsageInfo(data);
+      } catch { /* silencieux */ }
+    };
+    fetchUsage();
+    const t = setInterval(fetchUsage, 120000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [user?.uid, assistantId, activePlan]);
+
+  const handleSendTestEmail = async () => {
+    setEmailTestBusy(true);
+    setEmailTestMsg('');
+    try {
+      const sess = await supabase.auth.getSession();
+      const token = sess.data?.session?.access_token;
+      const res = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = await res.json().catch(() => ({}));
+      setEmailTestMsg(data?.ok
+        ? '✅ Exemple envoyé ! Vérifie ta boîte mail (et les spams).'
+        : '⚠️ ' + (data?.error || 'Service email pas encore activé.'));
+    } catch {
+      setEmailTestMsg('⚠️ Erreur réseau — réessaie.');
+    } finally {
+      setEmailTestBusy(false);
+    }
+  };
 
   // Persistence status
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
@@ -924,6 +971,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         }
         if (data.businessDescription) {
           setBusinessDescription(data.businessDescription);
+        }
+        // AUTO-CONFIGURATION : FAQ, ton et message d'accueil remplis
+        // automatiquement depuis le site — « colle ton lien, c'est prêt ».
+        // L'utilisateur peut toujours corriger, mais plus rien n'est vide.
+        if (data.faqText && !faqText.trim()) {
+          setFaqText(data.faqText);
+        }
+        if (data.suggestedTone) {
+          setAssistantTone(data.suggestedTone);
+        }
+        if (data.welcomeMessage) {
+          setWidgetConfig(prev => (!prev.welcomeMessage ? { ...prev, welcomeMessage: data.welcomeMessage } : prev));
         }
 
         setDetectedBusinessMeta({
@@ -1518,6 +1577,83 @@ echo "Réponse de l'Assistant : " . $result['message'];
                   ))}
                 </ul>
               </div>
+
+              {/* Jauge d'usage + stats du mois (source : /api/usage) */}
+              {usageInfo && !isPlanGated && (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conversations ce mois-ci</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-900">
+                      {usageInfo.used}{usageInfo.limit !== null ? ` / ${usageInfo.limit}` : ' · illimité'}
+                    </p>
+                    {(() => {
+                      if (usageInfo.limit === null) return null;
+                      const pct = usageInfo.limit > 0 ? Math.min(100, Math.round((usageInfo.used / usageInfo.limit) * 100)) : 100;
+                      return (
+                        <>
+                          <div className="mt-3 h-2 w-full rounded-full bg-slate-100">
+                            <div className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          {pct >= 80 && pct < 100 && (
+                            <p className="mt-2 text-xs font-medium text-amber-600">Vous approchez de la limite — pensez au plan supérieur.</p>
+                          )}
+                          {pct >= 100 && (
+                            <p className="mt-2 text-xs font-medium text-red-600">Limite atteinte : l'assistant est en pause. Passez au plan supérieur pour débloquer.</p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clients intéressés captés</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-900">{usageInfo.prospects}</p>
+                    <p className="mt-1 text-xs text-slate-500">Téléphones et demandes enregistrés automatiquement.</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Questions en apprentissage</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-900">{usageInfo.openQuestions}</p>
+                    <p className="mt-1 text-xs text-slate-500">Le bot note ce qu'il ne sait pas encore répondre.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Résumé quotidien par email (réel, via Brevo) */}
+              {!isPlanGated && (
+                <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">📧 Résumé quotidien par email</p>
+                    <p className="text-sm text-slate-500">Chaque soir : conversations du jour, contacts captés, questions à traiter — sans ouvrir le tableau de bord.</p>
+                    {emailTestMsg && <p className="mt-1 text-xs font-medium text-slate-700">{emailTestMsg}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendTestEmail}
+                    disabled={emailTestBusy}
+                    className="shrink-0 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {emailTestBusy ? 'Envoi...' : 'Recevoir un exemple'}
+                  </button>
+                </div>
+              )}
+
+              {/* Rappel de renouvellement (7 derniers jours du cycle de 30 jours) */}
+              {usageInfo?.daysLeft != null && (usageInfo as any).daysLeft <= 7 && !isPlanGated && (
+                <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">
+                      ⏳ Votre plan expire dans {(usageInfo as any).daysLeft} jour{((usageInfo as any).daysLeft > 1) ? 's' : ''}
+                    </p>
+                    <p className="text-sm text-amber-800">Renouvelez en 2 clics pour que votre assistant continue de répondre sans interruption.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSectionChange('billing')}
+                    className="shrink-0 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700"
+                  >
+                    Renouveler maintenant
+                  </button>
+                </div>
+              )}
 
               {/* Rappel du plan, uniquement s'il y a quelque chose à débloquer */}
               {isPlanGated && (

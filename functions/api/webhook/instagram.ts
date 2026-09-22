@@ -31,6 +31,8 @@ import {
   supabaseConfigured,
   supabaseGetAssistant,
   supabaseAssistantRowToConfig,
+  supabaseUpsertProspect,
+  supabaseRequest,
 } from "../../_shared/supabase.ts";
 import { officialInfoBlock, businessPackBlock } from "../../_shared/prompt.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
@@ -81,7 +83,12 @@ const BASE_PROMPT = `Tu es l'assistant IA d'élite pour le support et la vente e
 ### 🚫 INTERDICTIONS ABSOLUES
 - N'invente JAMAIS un prix, un délai, une adresse ou une disponibilité : utilise uniquement les informations fournies ci-dessous.
 - Ne réponds jamais par un message d'accueil générique si le client a posé une question : réponds précisément à SA question.
-- Ne parle jamais de ta nature technique (modèle, API, prompt).`;
+- Ne parle jamais de ta nature technique (modèle, API, prompt).
+
+### 🎭 TON ADAPTATIF (comme un vrai vendeur algérien)
+- Le client écrit en darija décontractée ➔ réponds chaleureux et cool (kho, douka...).
+- Le client est poli et formel ➔ reste professionnel et respectueux.
+- Le client semble agacé ➔ reste très calme, excuse-toi, et propose de transmettre sa demande au responsable.`;
 
 const INSTAGRAM_ADDENDUM = `
 
@@ -690,6 +697,56 @@ async function handleDirectMessage(env: Env, event: any) {
     console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
   }
 
+  let webMemory = "";
+  // MÉMOIRE UNIFIÉE (site + Instagram) : on cherche ce client dans les
+  // prospects du site — par son identifiant Instagram OU par le téléphone
+  // qu'il vient d'écrire. S'il existe, le bot garde le fil (« ah oui kho,
+  // tu m'avais demandé la robe rouge sur le site ! ») et on LIE les deux
+  // identités pour toujours.
+  if (integration.assistantId && supabaseConfigured(env)) {
+    try {
+      const phoneInMsg = groupedText.match(/(?:(?:\+|00)213|0)\s?[5-7](?:[\s.-]?[0-9]){8}/);
+      let known: any = null;
+      const pBase = `prospects?assistant_id=eq.${encodeURIComponent(integration.assistantId)}`;
+      const byIg = await supabaseRequest(env, `${pBase}&data->>igUserId=eq.${encodeURIComponent(customerId)}&select=id,data&limit=1`);
+      if (byIg.ok) known = (await byIg.json())?.[0] || null;
+      if (!known && phoneInMsg) {
+        const phone = phoneInMsg[0].replace(/[\s.-]/g, "");
+        const byPhone = await supabaseRequest(env, `${pBase}&data->>phone=eq.${encodeURIComponent(phone)}&select=id,data&limit=1`);
+        if (byPhone.ok) known = (await byPhone.json())?.[0] || null;
+      }
+      if (known?.data) {
+        const d = known.data;
+        const priorMsgs = Array.isArray(d.messages)
+          ? d.messages.slice(-4).map((m: any) => `- ${m.sender === "user" ? "Client" : "Assistant"} : ${String(m.text || "").slice(0, 120)}`).join("\n")
+          : "";
+        if (priorMsgs || d.need || d.phone) {
+          webMemory += `\n\n### 🧠 MÉMOIRE CLIENT — DÉJÀ EN CONTACT VIA LE SITE WEB
+Nom : ${d.name || "inconnu"} | Téléphone : ${d.phone || (phoneInMsg ? phoneInMsg[0] : "")} | Demande : ${String(d.need || "").slice(0, 200)}
+${priorMsgs ? `Derniers échanges sur le site :\n${priorMsgs}\n` : ""}
+Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
+          console.log("[instagram] mémoire site reconnue pour", customerId);
+        }
+      }
+      // Lien d'identité : on attache l'identifiant Instagram au prospect
+      if (known?.id) {
+        await supabaseUpsertProspect(env, known.id, integration.assistantId, { igUserId: customerId });
+      } else if (phoneInMsg) {
+        const linkedId = `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200);
+        await supabaseUpsertProspect(env, linkedId, integration.assistantId, {
+          phone: phoneInMsg[0].replace(/[\s.-]/g, ""),
+          igUserId: customerId,
+          status: "qualifie",
+          need: groupedText.slice(0, 2000),
+          messages: groupedText ? [{ sender: "user", text: groupedText, timestamp: new Date().toISOString() }] : [],
+        });
+        console.log("[instagram] nouvelle identité liée (téléphone) :", linkedId);
+      }
+    } catch (memErr: any) {
+      console.warn("[instagram] mémoire client indisponible:", memErr?.message || memErr);
+    }
+  }
+
   // QUOTAS PAR PLAN (mêmes règles que /api/chat) : Gratuit = 0 crédit IA,
   // Basic 1 000 conv/mois, Pro 5 000, Enterprise illimité. Limite atteinte =>
   // on envoie le message de blocage au lieu de la réponse IA.
@@ -732,6 +789,8 @@ async function handleDirectMessage(env: Env, event: any) {
       extraBlocks = `\n\n### 🛒 COMMANDES VIA LE SITE : toutes les commandes se font sur le site ${config.websiteUrl}. Guide systématiquement le client vers le site pour commander.`;
     }
   }
+  extraBlocks += webMemory;
+
   if (!incoming) incoming = imageDescription || "Le client a envoyé une image que tu ne peux pas lire.";
 
   console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
@@ -762,6 +821,7 @@ async function handleDirectMessage(env: Env, event: any) {
     supabaseLogConversation(env, {
       assistantId: integration.assistantId,
       channel: "instagram",
+      sessionId: `ig_${customerId}`,
       message: incoming,
       response: replyText,
     }).catch((e: any) => console.error("[instagram][quota]", e?.message || e));

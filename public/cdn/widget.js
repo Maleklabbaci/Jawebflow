@@ -52,6 +52,7 @@
   // Quota du plan du propriétaire atteint : l'IA ne répond plus, la saisie est
   // désactivée (le blocage réel est appliqué côté serveur dans /api/chat).
   var limitReached = false;
+  var pendingImage = null; // photo jointe en attente d'envoi
   var messages = [{ sender: 'bot', text: welcomeMessage }];
 
   // --- Icones SVG (fonctions separees, aucune imbrication de backticks) ---
@@ -122,6 +123,9 @@
     '.jw-send-btn{width:40px;height:40px;border-radius:11px;border:none;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;}' +
     '.jw-send-btn svg{width:18px;height:18px;}' +
     '.jw-send-btn:disabled{opacity:.5;cursor:default;}' +
+    '.jw-photo-btn{background:none;border:none;padding:8px;cursor:pointer;border-radius:10px;color:' + (isDark ? '#94a3b8' : '#64748b') + ';display:flex;align-items:center;}' +
+    '.jw-photo-btn:hover{background:' + (isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)') + ';}' +
+    '.jw-photo-chip{display:flex;align-items:center;gap:4px;background:' + (isDark ? 'rgba(147,51,234,.18)' : '#f3e8ff') + ';color:' + (isDark ? '#d8b4fe' : '#7e22ce') + ';font-size:11px;padding:3px 8px;border-radius:999px;margin-bottom:4px;cursor:pointer;}' +
     '.jw-whatsapp-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;background:#25d366;color:#fff;text-decoration:none;border-radius:12px;font-size:12.5px;font-weight:600;margin-top:4px;width:100%;}' +
     '.jw-whatsapp-btn svg{width:16px;height:16px;}' +
     '.jw-branding{text-align:center;font-size:10px;opacity:.5;padding:8px;text-decoration:none;color:inherit;display:block;}' +
@@ -178,11 +182,33 @@
   }
 
   // --- Appel reel a l'IA JawebFlow ---
-  function askAssistant(userMessage, onDone) {
-      fetch((apiOrigin || '') + '/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  // Redimensionne la photo (max 640px, JPEG) pour un envoi léger.
+  function resizeImage(file, onReady) {
+    try {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var img = new Image();
+        img.onload = function () {
+          var max = 640;
+          var w = img.width, h = img.height;
+          if (w > max || h > max) {
+            var r = Math.min(max / w, max / h);
+            w = Math.round(w * r); h = Math.round(h * r);
+          }
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+          onReady({ mime: 'image/jpeg', data: dataUrl.split(',')[1] });
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    } catch (err) { /* silencieux */ }
+  }
+
+  function askAssistant(userMessage, imageData, onDone) {
+      var payload = {
           assistantId: assistantId,
           sessionId: visitorId,
           message: userMessage,
@@ -193,7 +219,12 @@
           history: messages.slice(-6).map(function (m) {
             return { sender: m.sender === 'user' ? 'user' : 'bot', text: m.text };
           })
-        })
+      };
+      if (imageData && imageData.data) payload.image = imageData;
+      fetch((apiOrigin || '') + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -334,6 +365,40 @@
       }
       inputWrap.appendChild(input);
       form.appendChild(inputWrap);
+      var photoBtn = document.createElement('button');
+      photoBtn.type = 'button'; photoBtn.className = 'jw-photo-btn';
+      photoBtn.title = 'Joindre une photo';
+      photoBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
+      photoBtn.onclick = function () { if (!limitReached) fileInput.click(); };
+      form.appendChild(photoBtn);
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
+      fileInput.onchange = function () {
+        var f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        resizeImage(f, function (img) {
+          pendingImage = img;
+          input.placeholder = 'Photo prete - ecris ton message...';
+          renderPhotoChip();
+        });
+        fileInput.value = '';
+      };
+      form.appendChild(fileInput);
+      var photoChip = null;
+      function renderPhotoChip() {
+        if (photoChip) { photoChip.remove(); photoChip = null; }
+        if (!pendingImage) return;
+        photoChip = document.createElement('div');
+        photoChip.className = 'jw-photo-chip';
+        photoChip.textContent = '\uD83D\uDCF7 Photo jointe \u2715';
+        photoChip.title = 'Cliquer pour retirer la photo';
+        photoChip.onclick = function () {
+          pendingImage = null;
+          input.placeholder = 'Posez une question...';
+          renderPhotoChip();
+        };
+        win.insertBefore(photoChip, form);
+      }
       var sendBtn = document.createElement('button');
       sendBtn.type = 'submit'; sendBtn.className = 'jw-send-btn';
       if (limitReached) sendBtn.disabled = true;
@@ -343,7 +408,12 @@
       form.onsubmit = function (ev) {
         ev.preventDefault();
         var text = input.value.trim();
-        if (!text || isTyping || limitReached) return;
+        if ((!text && !pendingImage) || isTyping || limitReached) return;
+        var imgToSend = pendingImage;
+        pendingImage = null;
+        if (photoChip) { photoChip.remove(); photoChip = null; }
+        if (!text) text = 'Voici une photo';
+        input.placeholder = 'Posez une question...';
 
         messages.push({ sender: 'user', text: text });
 
@@ -366,7 +436,7 @@
         sendBtn.disabled = true;
         render();
 
-        askAssistant(text, function (reply) {
+        askAssistant(text, imgToSend, function (reply) {
           messages.push({ sender: 'bot', text: reply });
           isTyping = false;
           trackProspect(status, { messages: [{ sender: 'bot', text: reply, timestamp: new Date().toISOString() }] });
