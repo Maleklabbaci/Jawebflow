@@ -11,6 +11,7 @@
 
 import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseGetAssistant, supabaseAssistantRowToConfig } from '../_shared/supabase.ts';
+import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached } from '../_shared/limits.ts';
 import { officialInfoBlock, businessPackBlock } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite, siteShoppingPromptBlock } from '../_shared/site-search.ts';
@@ -126,9 +127,46 @@ export async function onRequestPost(context) {
       const configRead = await adminGetDocument(env, `assistants/${assistantId}`);
       if (configRead.ok) {
         config = parseFirestoreDoc({ fields: configRead.fields }) || config;
+        configLoaded = true; // assistant légitime, juste pas encore migré
       } else {
         diagnostics.push(`config assistant non chargée: ${configRead.error}`);
         console.error(`[chat] config ${assistantId} non chargée:`, configRead.error);
+      }
+    }
+
+    // 1.5 QUOTAS PAR PLAN — application réelle des forfaits de la page Tarifs :
+    //     Gratuit = 0 crédit IA, Basic = 1 000 conv/mois, Pro = 5 000, Enterprise ∞.
+    //     Une fois la limite atteinte, l'IA ne répond plus (blocage côté serveur,
+    //     le widget désactive alors la saisie). Les assistants de démo publique
+    //     (identifiants demo_*) restent illimités pour la vitrine du site.
+    const isDemoAssistant = /^(demo[_-]|jawebflow_)/.test(assistantId);
+    if (!isDemoAssistant) {
+      if (!configLoaded) {
+        diagnostics.push(`assistant ${assistantId} introuvable : réponse IA refusée`);
+        return reply("Cet assistant n'est pas configuré ou a été désactivé. Contactez le support JawebFlow.", diagnostics);
+      }
+      if (supabaseConfigured(env)) {
+        const limits = await supabaseGetPlanLimits(env);
+        const plan = String(config.plan || 'free').toLowerCase();
+        const limit = plan in limits ? limits[plan] : limits.free;
+        if (limit === 0) {
+          diagnostics.push(`plan ${plan} : 0 crédit IA, envoi bloqué`);
+          return new Response(JSON.stringify({
+            text: LIMIT_BLOCK_FREE, message: LIMIT_BLOCK_FREE, response: LIMIT_BLOCK_FREE,
+            limitReached: true, plan, used: 0, limit, diagnostics,
+          }), { status: 200, headers: cors });
+        }
+        if (typeof limit === 'number' && limit > 0) {
+          const used = await supabaseCountMonthlyConversations(env, assistantId);
+          if (used >= limit) {
+            const msg = limitBlockReached(plan, limit);
+            diagnostics.push(`plan ${plan} : quota ${used}/${limit} atteint, envoi bloqué`);
+            return new Response(JSON.stringify({
+              text: msg, message: msg, response: msg,
+              limitReached: true, plan, used, limit, diagnostics,
+            }), { status: 200, headers: cors });
+          }
+        }
       }
     }
 
@@ -220,6 +258,10 @@ export async function onRequestPost(context) {
     //    Si l'IA n'avait pas l'info, la question file dans "Apprentissage".
     if (supabaseConfigured(env) && typeof context.waitUntil === 'function') {
       context.waitUntil(runBackgroundLearning(env, { assistantId, question: message, aiText, apiKey, chatModel }));
+      // Compteur de quota : 1 ligne = 1 conversation consommée ce mois-ci.
+      if (!isDemoAssistant) {
+        context.waitUntil(supabaseLogConversation(env, { assistantId, channel: 'web_widget', message, response: aiText }));
+      }
     }
 
     return reply(aiText, diagnostics);

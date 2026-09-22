@@ -1,235 +1,89 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Shield, Users, Bot, Receipt, Database, LayoutDashboard, Search, Crown,
-  CheckCircle2, AlertCircle, Trash2, ExternalLink, Sparkles, LogOut, Plus,
-  Download, RefreshCw, MessageSquare, Phone, Mail, Building2, Calendar,
-  CreditCard, Activity, Eye, X, Lock, Copy, Check, Loader2, Target,
-  Pencil, Settings2, BarChart3, TrendingUp, Wallet, Globe, Zap, UserCog,
-  FileJson, ChevronRight,
+  Shield,
+  Users,
+  Bot,
+  Receipt,
+  Database,
+  LayoutDashboard,
+  Search,
+  Crown,
+  AlertCircle,
+  Trash2,
+  Sparkles,
+  LogOut,
+  Plus,
+  Download,
+  RefreshCw,
+  MessageSquare,
+  Phone,
+  Mail,
+  Building2,
+  Calendar,
+  CreditCard,
+  Activity,
+  Eye,
+  X,
+  Lock,
+  ArrowRight,
+  UserCheck,
+  Zap,
+  Copy,
+  Menu,
+  Loader2,
+  Target,
+  Gauge,
+  CheckCircle2,
 } from 'lucide-react';
-import { isUserAdmin, supabase } from '../lib/supabase';
+import {
+  isUserAdmin,
+  updateAssistantPlan,
+  deleteAssistantDocument,
+  deleteUserRecord,
+  deleteProspectRecord,
+  supabase,
+} from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
-export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
+export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'plans' | 'leads' | 'invoices' | 'system';
 
 // ---------------------------------------------------------------------------
-// Normalisation des lignes Supabase (tolère snake_case + jsonb + ancien plat)
+// Quotas des plans (alignés sur la page Tarifs). Éditables dans l'onglet Plans
+// (table platform_settings, clé 'global'). null = illimité.
 // ---------------------------------------------------------------------------
+const DEFAULT_PLAN_LIMITS: Record<string, number | null> = {
+  free: 0,
+  basic: 1000,
+  pro: 5000,
+  enterprise: null,
+};
 
-function normUser(row: any) {
-  return {
-    uid: row.id || row.uid,
-    email: row.email || '',
-    displayName: row.display_name || row.displayName || (row.email || '').split('@')[0],
-    companyName: row.company_name || row.companyName || '',
-    phoneNumber: row.phone_number || row.phoneNumber || '',
-    photoURL: row.photo_url || row.photoURL || '',
-    role: row.role || 'user',
-    createdAt: row.created_at || row.createdAt || '',
-  };
-}
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Gratuit',
+  basic: 'Basic',
+  pro: 'Pro / Business',
+  enterprise: 'Enterprise',
+};
 
-function normAssistant(row: any) {
-  const cfg = row.config && typeof row.config === 'object' ? row.config : {};
-  return {
-    ...cfg,
-    id: row.id,
-    userId: row.user_id || row.userId || cfg.userId || '',
-    businessName: row.business_name || cfg.businessName || 'Sans nom',
-    websiteUrl: row.website_url || cfg.websiteUrl || '',
-    knowledgeNotes: row.knowledge_notes || cfg.knowledgeNotes || [],
-    createdAt: row.created_at || row.createdAt || '',
-    updatedAt: row.updated_at || row.updatedAt || '',
-    rawConfig: cfg,
-  } as any;
-}
+const PLAN_CHIPS: Record<string, string> = {
+  free: 'bg-slate-100 text-slate-600 border-slate-200',
+  basic: 'bg-blue-50 text-blue-700 border-blue-200',
+  pro: 'bg-purple-50 text-purple-700 border-purple-200',
+  enterprise: 'bg-amber-50 text-amber-700 border-amber-200',
+};
 
-function normLead(row: any) {
-  const d = row.data && typeof row.data === 'object' ? row.data : row;
-  return {
-    id: row.id,
-    assistantId: row.assistant_id || d.assistantId || '',
-    name: d.name || d.full_name || 'Visiteur',
-    phone: d.phone || d.phone_number || '',
-    email: (d.email && !String(d.email).startsWith('Non')) ? d.email : '',
-    need: d.need || d.message || d.request || '',
-    status: d.status || 'nouveau',
-    date: row.updated_at || row.created_at || d.date || '',
-    currentPage: d.currentPage || '',
-    userAgent: d.userAgent || '',
-    messages: Array.isArray(d.messages) ? d.messages : [],
-    raw: d,
-  };
-}
+const PLAN_PRICES: Record<string, { dzd: number; usd: number }> = {
+  basic: { dzd: 6850, usd: 29 },
+  pro: { dzd: 18700, usd: 79 },
+  enterprise: { dzd: 47100, usd: 199 },
+};
 
-// ---------------------------------------------------------------------------
-// Petits utilitaires
-// ---------------------------------------------------------------------------
-
-const fmtDate = (d: any) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
-const fmtDateTime = (d: any) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
-const money = (n: any) => (Number(n) || 0).toLocaleString('fr-FR') + ' DA';
-
-function timeAgo(d: any) {
-  if (!d) return '—';
-  const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
-  if (isNaN(s) || s < 0) return '—';
-  if (s < 60) return "à l'instant";
-  if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
-  return `il y a ${Math.floor(s / 86400)} j`;
-}
-
-function daySeries(dates: any[], days = 14) {
-  const out: { label: string; value: number }[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - i);
-    const next = new Date(day); next.setDate(next.getDate() + 1);
-    const count = dates.filter(d => { const t = new Date(d).getTime(); return t >= day.getTime() && t < next.getTime(); }).length;
-    out.push({ label: day.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }), value: count });
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Mini-composants UI
-// ---------------------------------------------------------------------------
-
-const inp = 'w-full bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/40';
-const btnPrimary = 'inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors';
-const btnGhost = 'inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-3 py-2 rounded-lg border border-slate-700 transition-colors';
-const btnDanger = 'inline-flex items-center gap-2 bg-rose-600/90 hover:bg-rose-500 text-white text-sm font-semibold px-3 py-2 rounded-lg transition-colors';
-const iconBtn = 'p-1.5 rounded-md hover:bg-slate-700/70 text-slate-400 hover:text-white transition-colors';
-
-function Badge({ tone, children }: { tone: 'violet' | 'green' | 'amber' | 'rose' | 'sky' | 'slate'; children: React.ReactNode }) {
-  const tones: any = {
-    violet: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
-    green: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-    amber: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-    rose: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-    sky: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-    slate: 'bg-slate-500/15 text-slate-300 border-slate-500/30',
-  };
-  return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${tones[tone]}`}>{children}</span>;
-}
-
-function roleBadge(role: string) {
-  if (role === 'superadmin') return <Badge tone="violet"><Crown size={11} /> Super Admin</Badge>;
-  if (role === 'admin') return <Badge tone="sky"><Shield size={11} /> Admin</Badge>;
-  return <Badge tone="slate">Client</Badge>;
-}
-
-function planBadge(plan?: string) {
-  const p = (plan || 'free').toLowerCase();
-  if (p === 'enterprise') return <Badge tone="violet">Enterprise</Badge>;
-  if (p === 'pro') return <Badge tone="sky">Pro</Badge>;
-  if (p === 'basic') return <Badge tone="amber">Basic</Badge>;
-  return <Badge tone="slate">Gratuit</Badge>;
-}
-
-function leadBadge(status: string) {
-  const s = (status || '').toLowerCase();
-  if (s.includes('converti') || s.includes('closed')) return <Badge tone="green">Converti</Badge>;
-  if (s.includes('qualif')) return <Badge tone="violet">Qualifié</Badge>;
-  if (s.includes('contact')) return <Badge tone="sky">Contacté</Badge>;
-  if (s.includes('perdu')) return <Badge tone="rose">Perdu</Badge>;
-  return <Badge tone="amber">Nouveau</Badge>;
-}
-
-function invoiceBadge(status: string) {
-  const s = (status || '').toLowerCase();
-  if (s === 'paid') return <Badge tone="green">Payée</Badge>;
-  if (s === 'pending') return <Badge tone="amber">En attente</Badge>;
-  return <Badge tone="rose">Échouée</Badge>;
-}
-
-function StatCard({ icon: Icon, label, value, sub, accent }: { icon: any; label: string; value: string; sub?: string; accent: string }) {
-  return (
-    <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex items-start gap-3">
-      <div className={`p-2.5 rounded-xl ${accent}`}><Icon size={18} /></div>
-      <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
-        <div className="text-xl font-bold text-white truncate">{value}</div>
-        {sub && <div className="text-[11px] text-slate-500 truncate">{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function MiniBars({ series, color }: { series: { label: string; value: number }[]; color: string }) {
-  const max = Math.max(...series.map(s => s.value), 1);
-  return (
-    <div>
-      <div className="flex items-end gap-1 h-24">
-        {series.map((s, i) => (
-          <div key={i} className="flex-1 flex flex-col justify-end h-full" title={`${s.label} : ${s.value}`}>
-            <div className="w-full rounded-t-md" style={{ height: `${Math.max((s.value / max) * 100, s.value > 0 ? 6 : 2)}%`, background: color, opacity: s.value > 0 ? 1 : 0.2 }} />
-          </div>
-        ))}
-      </div>
-      <div className="flex gap-1 mt-1">
-        {series.map((s, i) => (
-          <div key={i} className="flex-1 text-center text-[8px] text-slate-600 truncate">{i % 2 === 0 ? s.label : ''}</div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function HBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="w-24 text-slate-400 truncate">{label}</span>
-      <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-        <div className="h-full rounded-full" style={{ width: `${max ? (value / max) * 100 : 0}%`, background: color }} />
-      </div>
-      <span className="w-8 text-right text-slate-300 font-semibold">{value}</span>
-    </div>
-  );
-}
-
-function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className={`bg-slate-900 border border-slate-700 rounded-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[85vh] overflow-y-auto shadow-2xl`} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
-          <h3 className="text-white font-bold">{title}</h3>
-          <button className={iconBtn} onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button type="button" onClick={() => onChange(!checked)} className="flex items-center gap-2 text-sm text-slate-300">
-      <span className={`w-9 h-5 rounded-full relative transition-colors ${checked ? 'bg-violet-600' : 'bg-slate-700'}`}>
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${checked ? 'left-[18px]' : 'left-0.5'}`} />
-      </span>
-      {label}
-    </button>
-  );
-}
-
-const th = 'px-3 py-2.5 text-left text-[11px] uppercase tracking-wider text-slate-500 font-semibold whitespace-nowrap';
-const td = 'px-3 py-3 text-sm text-slate-300 align-middle';
-
-// ---------------------------------------------------------------------------
-// SQL de la console (même contenu que supabase/migration_admin_console.sql)
-// ---------------------------------------------------------------------------
-
-const CONSOLE_SQL = `do $console$
+// SQL des permissions console (identique à supabase/migration_admin_console.sql).
+const CONSOLE_SQL = `-- ============================================================================
+-- JAWEBFLOW — CONSOLE ADMIN : PLEINS DROITS (bloc UNIQUE, idempotent)
+-- À coller EN ENTIER dans Supabase → SQL Editor → Run. Ré-exécutable sans risque.
+-- ============================================================================
+do $console$
 declare
   pol record;
 begin
@@ -243,6 +97,7 @@ begin
     returns boolean language sql stable security definer set search_path = public
     as $$ select exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'superadmin') $$;
   $fn$;
+
   create table if not exists public.invoices (
     id text primary key,
     "customerEmail" text not null,
@@ -259,6 +114,15 @@ begin
   create index if not exists invoices_created_idx on public.invoices ("createdAt" desc);
   create index if not exists invoices_email_idx on public.invoices (lower("customerEmail"));
   alter table public.invoices enable row level security;
+
+  create table if not exists public.platform_settings (
+    id text primary key default 'global',
+    settings jsonb not null default '{}'::jsonb,
+    updated_at timestamptz not null default now()
+  );
+  insert into public.platform_settings (id) values ('global') on conflict (id) do nothing;
+  alter table public.platform_settings enable row level security;
+
   execute $fn$
     create or replace function public.protect_user_profile()
     returns trigger language plpgsql security definer set search_path = public
@@ -267,14 +131,14 @@ begin
       if current_user in ('service_role','postgres','supabase_admin') then return new; end if;
       if tg_op = 'INSERT' then
         if new.role is distinct from 'user' then
-          raise exception 'Rôle initial interdit : un nouveau compte doit être "user".';
+          raise exception 'Role initial interdit : un nouveau compte doit etre "user".';
         end if;
         return new;
       end if;
       if new.id is distinct from old.id then raise exception 'Changement d''identifiant interdit.'; end if;
       if new.email is distinct from old.email then raise exception 'Changement d''email interdit depuis le client.'; end if;
       if new.role is distinct from old.role and not public.is_superadmin() then
-        raise exception 'Changement de rôle réservé au superadmin.';
+        raise exception 'Changement de role reserve au superadmin.';
       end if;
       return new;
     end;
@@ -284,6 +148,7 @@ begin
   create trigger trg_protect_user_profile
     before insert or update on public.users
     for each row execute function public.protect_user_profile();
+
   for pol in
     select * from (values
       ('users','select','admins read all users',        'for select to authenticated using (public.is_admin())'),
@@ -295,6 +160,9 @@ begin
       ('prospects','select','admins read all prospects','for select to authenticated using (public.is_admin())'),
       ('prospects','update','admins update all prospects','for update to authenticated using (public.is_admin()) with check (public.is_admin())'),
       ('prospects','delete','admins delete all prospects','for delete to authenticated using (public.is_admin())'),
+      ('conversation_contexts','select','admins read conversation usage','for select to authenticated using (public.is_admin())'),
+      ('platform_settings','select','admins read platform settings','for select to authenticated using (public.is_admin())'),
+      ('platform_settings','all','admins manage platform settings','for all to authenticated using (public.is_admin()) with check (public.is_admin())'),
       ('invoices','all',   'service role only invoices','for all to service_role using (true) with check (true)'),
       ('invoices','select','clients read own invoices', 'for select to authenticated using (lower("customerEmail") = lower(auth.email()))'),
       ('invoices','select','admins read all invoices',  'for select to authenticated using (public.is_admin())'),
@@ -310,16 +178,123 @@ begin
       execute format('create policy %I on public.%I %s', pol.policyname, pol.tablename, pol.definition);
     end if;
   end loop;
+
   raise notice 'CONSOLE ADMIN : toutes les permissions sont en place.';
 end $console$;`;
 
 // ---------------------------------------------------------------------------
-// Page Admin
+// Normalisation des lignes Supabase (snake_case + jsonb `data`/`config`).
 // ---------------------------------------------------------------------------
+interface NormUser {
+  uid: string; email: string; displayName: string; companyName?: string;
+  phoneNumber?: string; role: string; createdAt?: any; _raw: any;
+}
+function normUser(d: any): NormUser {
+  return {
+    uid: d.id || d.uid || '',
+    email: d.email || '(sans email)',
+    displayName: d.display_name || d.displayName || d.name || d.email?.split('@')[0] || 'Utilisateur',
+    companyName: d.company_name || d.companyName || undefined,
+    phoneNumber: d.phone_number || d.phoneNumber || undefined,
+    role: d.role || 'user',
+    createdAt: d.created_at || d.createdAt,
+    _raw: d,
+  };
+}
+
+interface NormAssistant {
+  id: string; userId?: string; businessName: string; websiteUrl?: string;
+  plan: string; tone?: string; languages: { fr: boolean; darija: boolean; en: boolean; ar: boolean };
+  whatsappEscalation?: string; siteShopping: boolean; autoLeadCapture: boolean;
+  businessDescription?: string; faqText?: string; knowledgeNotes?: any[];
+  createdAt?: any; updatedAt?: any; _row: any; _cfg: any;
+}
+function normAssistant(d: any): NormAssistant {
+  const cfg = d.config || d.data || {};
+  return {
+    id: d.id,
+    userId: d.user_id || cfg.userId || undefined,
+    businessName: cfg.businessName || d.business_name || '(Sans nom)',
+    websiteUrl: cfg.websiteUrl || d.website_url || undefined,
+    plan: String(cfg.plan || d.plan || 'free').toLowerCase(),
+    tone: cfg.assistantTone || cfg.tone || undefined,
+    languages: cfg.languages || { fr: true, darija: true, en: true, ar: false },
+    whatsappEscalation: cfg.whatsappEscalation || cfg.whatsappNumber || undefined,
+    siteShopping: cfg.siteShopping === true,
+    autoLeadCapture: cfg.autoLeadCapture !== false,
+    businessDescription: cfg.businessDescription || undefined,
+    faqText: cfg.faqText || undefined,
+    knowledgeNotes: cfg.knowledgeNotes || d.knowledge_notes || [],
+    createdAt: d.created_at || d.createdAt,
+    updatedAt: d.updated_at || d.updatedAt,
+    _row: d,
+    _cfg: cfg,
+  };
+}
+
+interface NormLead {
+  id: string; assistantId?: string; name?: string; phone?: string; email?: string;
+  need?: string; status: string; currentPage?: string; messages: any[];
+  createdAt?: any; updatedAt?: any; _row: any;
+}
+function normLead(d: any): NormLead {
+  const data = d.data || d;
+  return {
+    id: d.id,
+    assistantId: d.assistant_id || data.assistantId || undefined,
+    name: data.name || undefined,
+    phone: data.phone || undefined,
+    email: data.email || undefined,
+    need: data.need || undefined,
+    status: data.status || 'nouveau',
+    currentPage: data.currentPage || undefined,
+    messages: Array.isArray(data.messages) ? data.messages : [],
+    createdAt: d.created_at || d.createdAt,
+    updatedAt: d.updated_at || d.updatedAt,
+    _row: d,
+  };
+}
+
+interface AdminInvoice {
+  id: string; amountUsd?: number; amountDzd?: number; planName?: string;
+  customerEmail: string; customerName?: string; paymentMethod?: string;
+  status: string; date?: string; createdAt?: any;
+}
+
+// ---------------------------------------------------------------------------
+// Petits utilitaires d'affichage
+// ---------------------------------------------------------------------------
+function fmtDate(v: any): string {
+  try {
+    const d = v ? new Date(v) : null;
+    if (!d || isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { return '—'; }
+}
+function fmtTime(v: any): string {
+  try {
+    const d = v ? new Date(v) : null;
+    if (!d || isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+function monthStartIso(): string {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+}
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function AdminPage() {
   const { user: authUser, profile, logout } = useAuth();
 
+  // Déverrouillage console (identique à l'original)
   const isSuperAdminLogged = isUserAdmin(profile);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(isSuperAdminLogged);
   const [adminPassword, setAdminPassword] = useState('');
@@ -327,87 +302,133 @@ export function AdminPage() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AdminSectionId>('overview');
 
-  const [usersList, setUsersList] = useState<any[]>([]);
-  const [assistantsList, setAssistantsList] = useState<any[]>([]);
-  const [leadsList, setLeadsList] = useState<any[]>([]);
-  const [invoicesList, setInvoicesList] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState<boolean>(true);
+  // Données plateforme
+  const [usersList, setUsersList] = useState<NormUser[]>([]);
+  const [assistantsList, setAssistantsList] = useState<NormAssistant[]>([]);
+  const [prospectsList, setProspectsList] = useState<NormLead[]>([]);
+  const [invoicesList, setInvoicesList] = useState<AdminInvoice[]>([]);
+  const [usageByAssistant, setUsageByAssistant] = useState<Record<string, number>>({});
+  const [planLimits, setPlanLimits] = useState<Record<string, number | null>>({ ...DEFAULT_PLAN_LIMITS });
+  const [limitsDraft, setLimitsDraft] = useState<Record<string, string>>({
+    free: '0', basic: '1000', pro: '5000', enterprise: '',
+  });
+  const [loadingData, setLoadingData] = useState(true);
+  const [savingLimits, setSavingLimits] = useState(false);
+  const [sqlReady, setSqlReady] = useState<boolean | null>(null); // platform_settings lisible ?
 
+  // Recherche / filtres / notifications
   const [searchQuery, setSearchQuery] = useState('');
-  const [planFilter, setPlanFilter] = useState<string>('all');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [leadStatusFilter, setLeadStatusFilter] = useState<string>('all');
-  const [leadAssistantFilter, setLeadAssistantFilter] = useState<string>('all');
-
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [assistantPlanFilter, setAssistantPlanFilter] = useState('all');
+  const [leadStatusFilter, setLeadStatusFilter] = useState('all');
+  const [leadAssistantFilter, setLeadAssistantFilter] = useState('all');
   const [statusNotification, setStatusNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const [inspectingLead, setInspectingLead] = useState<any | null>(null);
-  const [inspectingAssistantJson, setInspectingAssistantJson] = useState<any | null>(null);
-  const [editingUser, setEditingUser] = useState<any | null>(null);
-  const [editingAssistant, setEditingAssistant] = useState<any | null>(null);
+  // Modales
+  const [editingUser, setEditingUser] = useState<NormUser | null>(null);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editCompanyName, setEditCompanyName] = useState('');
+  const [editPhoneNumber, setEditPhoneNumber] = useState('');
+  const [editRole, setEditRole] = useState('user');
+  const [editSaving, setEditSaving] = useState(false);
+
+  const [editingAssistant, setEditingAssistant] = useState<NormAssistant | null>(null);
+  const [inspectAssistant, setInspectAssistant] = useState<NormAssistant | null>(null);
+  const [inspectLead, setInspectLead] = useState<NormLead | null>(null);
+  const [assistantSaving, setAssistantSaving] = useState(false);
+
   const [showNewInvoiceModal, setShowNewInvoiceModal] = useState(false);
-
   const [newInvEmail, setNewInvEmail] = useState('');
+  const [newInvName, setNewInvName] = useState('');
   const [newInvPlan, setNewInvPlan] = useState<'basic' | 'pro' | 'enterprise'>('pro');
   const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(18700);
-  const [newInvMethod, setNewInvMethod] = useState<'baridimob_ccp' | 'slickpay_dzd' | 'stripe_card'>('baridimob_ccp');
+  const [newInvMethod, setNewInvMethod] = useState('baridimob_ccp');
+  const [newInvStatus, setNewInvStatus] = useState('paid');
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
-
-  useEffect(() => {
-    if (isUserAdmin(profile)) setIsAdminAuthenticated(true);
-    else if (sessionStorage.getItem('jawebflow_admin_auth') === 'true') setIsAdminAuthenticated(true);
-  }, [authUser, profile]);
-
-  useEffect(() => {
-    if (isAdminAuthenticated) fetchAllPlatformData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdminAuthenticated]);
 
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
     setStatusNotification({ type, message });
     setTimeout(() => setStatusNotification(null), 4500);
   };
-
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(label);
     setTimeout(() => setCopiedField(null), 2000);
-    notify('Copié dans le presse-papiers : ' + label);
   };
 
-  // ------------------------------------------------------------------ data
+  useEffect(() => {
+    if (isUserAdmin(profile)) setIsAdminAuthenticated(true);
+    else {
+      const stored = sessionStorage.getItem('jawebflow_admin_auth');
+      if (stored === 'true') setIsAdminAuthenticated(true);
+    }
+  }, [authUser, profile]);
+
+  useEffect(() => {
+    if (isAdminAuthenticated) fetchAllPlatformData();
+  }, [isAdminAuthenticated]);
 
   const fetchAllPlatformData = async () => {
     setLoadingData(true);
     try {
-      const [usersRes, asstRes, prosRes, invRes] = await Promise.all([
+      const [usersRes, asstRes, prosRes, invRes, convRes, settingsRes] = await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('assistants').select('*'),
         supabase.from('prospects').select('*'),
-        supabase.from('invoices').select('*'),
+        supabase.from('invoices').select('*').order('createdAt', { ascending: false }),
+        supabase.from('conversation_contexts').select('assistant_id, created_at').gte('created_at', monthStartIso()),
+        supabase.from('platform_settings').select('*').eq('id', 'global').maybeSingle(),
       ]);
+
       if (usersRes.error) throw usersRes.error;
       if (asstRes.error) throw asstRes.error;
       if (prosRes.error) throw prosRes.error;
-      if (invRes.error) throw invRes.error;
+
+      let invoicesData: any[] = [];
+      if (invRes.error) {
+        const fb = await supabase.from('invoices').select('*');
+        if (fb.error) throw fb.error;
+        invoicesData = fb.data || [];
+      } else invoicesData = invRes.data || [];
+
+      // Compteur de conversations du mois (table absente / SQL pas encore
+      // exécuté => on dégrade sans casser la console).
+      const usage: Record<string, number> = {};
+      if (!convRes.error && Array.isArray(convRes.data)) {
+        for (const r of convRes.data as any[]) {
+          if (r?.assistant_id) usage[r.assistant_id] = (usage[r.assistant_id] || 0) + 1;
+        }
+        setSqlReady(true);
+      } else if (convRes.error) {
+        setSqlReady(false);
+      }
+      setUsageByAssistant(usage);
+
+      const settingsRaw = (settingsRes as any)?.data;
+      const merged = { ...DEFAULT_PLAN_LIMITS, ...(settingsRaw?.settings?.planLimits || {}) };
+      setPlanLimits(merged);
+      setLimitsDraft({
+        free: String(merged.free ?? ''),
+        basic: String(merged.basic ?? ''),
+        pro: String(merged.pro ?? ''),
+        enterprise: merged.enterprise === null || merged.enterprise === undefined ? '' : String(merged.enterprise),
+      });
 
       setUsersList((usersRes.data || []).map(normUser));
       setAssistantsList((asstRes.data || []).map(normAssistant));
-      setLeadsList((prosRes.data || []).map(normLead));
-      setInvoicesList(invRes.data || []);
+      setProspectsList((prosRes.data || []).map(normLead));
+      setInvoicesList(invoicesData.map(d => ({ ...d } as AdminInvoice)));
     } catch (err: any) {
       console.error('Error fetching admin platform data:', err);
-      notify('Erreur de synchronisation Supabase : ' + (err?.message || 'connexion'), 'error');
+      notify('Erreur de synchronisation Supabase : ' + (err.message || 'Vérifiez la connexion'), 'error');
     } finally {
       setLoadingData(false);
     }
   };
-
-  // ------------------------------------------------------------------ auth
 
   const handleAdminPasswordUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -420,1002 +441,1431 @@ export function AdminPage() {
       });
       if (signInError) throw signInError;
       if (!authData.user) throw new Error('Utilisateur non retourné par Supabase.');
-
       const { data: profileData, error: profileError } = await supabase
-        .from('users').select('*').eq('id', authData.user.id).maybeSingle();
-      if (profileError) throw profileError;
-
-      if (!isUserAdmin(profileData)) {
+        .from('users')
+        .select('role')
+        .eq('id', authData.user.id)
+        .single();
+      if (profileError || !profileData || !isUserAdmin(profileData)) {
         await supabase.auth.signOut();
-        setAuthError("Ce compte n'a pas les droits Super Admin.");
-        return;
+        throw new Error("Ce compte n'a pas les droits administrateur.");
       }
+      sessionStorage.setItem('jawebflow_admin_auth', 'true');
       setIsAdminAuthenticated(true);
-      sessionStorage.removeItem('jawebflow_admin_auth');
-      notify('Bienvenue dans la console admin 👑');
     } catch (err: any) {
-      console.error(err);
-      setAuthError('Identifiants Super Admin invalides.');
+      setAuthError(err.message || 'Connexion impossible.');
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleAdminLogout = async () => {
-    sessionStorage.removeItem('jawebflow_admin_auth');
-    await supabase.auth.signOut();
-    setIsAdminAuthenticated(false);
-    setAdminPassword('');
-  };
+  // Le compte admin (moi-même + superadmins) n'apparaît JAMAIS dans la liste
+  // des utilisateurs gérés : la table reste celle des clients.
+  const managedUsers = usersList.filter(
+    u =>
+      u.role !== 'superadmin' &&
+      (authUser?.email ? u.email.toLowerCase() !== String(authUser.email).toLowerCase() : true)
+  );
 
-  // ------------------------------------------------------------------ users
+  const assistantsByUser = assistantsList.reduce<Record<string, number>>((acc, a) => {
+    if (a.userId) acc[a.userId] = (acc[a.userId] || 0) + 1;
+    return acc;
+  }, {});
+  const leadsByAssistant = prospectsList.reduce<Record<string, number>>((acc, l) => {
+    if (l.assistantId) acc[l.assistantId] = (acc[l.assistantId] || 0) + 1;
+    return acc;
+  }, {});
+  const userById = usersList.reduce<Record<string, NormUser>>((acc, u) => { acc[u.uid] = u; return acc; }, {});
+  const assistantById = assistantsList.reduce<Record<string, NormAssistant>>((acc, a) => { acc[a.id] = a; return acc; }, {});
 
+  const limitForPlan = (plan: string): number | null =>
+    plan in planLimits ? planLimits[plan] : planLimits.free ?? 0;
+
+  const totalConversationsThisMonth = Object.values(usageByAssistant).reduce((s: number, n: any) => s + Number(n || 0), 0);
+  const revenuePaidUsd = invoicesList.filter(i => i.status === 'paid')
+    .reduce((s, i) => s + (Number(i.amountUsd) || 0), 0);
+  const pendingInvoices = invoicesList.filter(i => i.status !== 'paid');
+
+  // Filtres + recherche globale
+  const q = searchQuery.trim().toLowerCase();
+  const match = (s?: string | null) => !q || String(s || '').toLowerCase().includes(q);
+
+  const filteredUsers = managedUsers.filter(u =>
+    (userRoleFilter === 'all' || u.role === userRoleFilter) &&
+    (match(u.displayName) || match(u.email) || match(u.companyName) || match(u.phoneNumber))
+  );
+  const filteredAssistants = assistantsList.filter(a =>
+    (assistantPlanFilter === 'all' || a.plan === assistantPlanFilter) &&
+    (match(a.businessName) || match(a.websiteUrl) || match(userById[a.userId || '']?.email))
+  );
+  const filteredLeads = prospectsList.filter(l =>
+    (leadStatusFilter === 'all' || l.status === leadStatusFilter) &&
+    (leadAssistantFilter === 'all' || l.assistantId === leadAssistantFilter) &&
+    (match(l.name) || match(l.phone) || match(l.email) || match(l.need))
+  );
+
+  const planDist = assistantsList.reduce<Record<string, number>>((acc, a) => {
+    acc[a.plan] = (acc[a.plan] || 0) + 1;
+    return acc;
+  }, {});
+
+  function last14Days(items: any[]) {
+    const days: { label: string; n: number }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+      const next = new Date(d); next.setDate(d.getDate() + 1);
+      const n = items.filter(x => {
+        try { const t = new Date(x); return t >= d && t < next; } catch { return false; }
+      }).length;
+      days.push({ label: d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }), n });
+    }
+    return days;
+  }
+  const signups14 = last14Days(managedUsers.map(u => u.createdAt).filter(Boolean));
+  const leads14 = last14Days(prospectsList.map(l => l.createdAt).filter(Boolean));
+
+  // ------------------------------------------------------------------ actions
   const handleSaveUser = async () => {
     if (!editingUser) return;
-    setSaving(true);
+    setEditSaving(true);
     try {
       const { error } = await supabase.from('users').update({
-        display_name: editingUser.displayName || '',
-        company_name: editingUser.companyName || null,
-        phone_number: editingUser.phoneNumber || null,
-        role: editingUser.role,
+        display_name: editDisplayName.trim(),
+        company_name: editCompanyName.trim() || null,
+        phone_number: editPhoneNumber.trim() || null,
+        role: editRole,
         updated_at: new Date().toISOString(),
       }).eq('id', editingUser.uid);
       if (error) throw error;
-      setUsersList(prev => prev.map(u => u.uid === editingUser.uid ? { ...editingUser } : u));
-      notify(`Profil de ${editingUser.email} mis à jour.`);
+      notify(`Compte « ${editDisplayName} » mis à jour.`);
       setEditingUser(null);
+      await fetchAllPlatformData();
     } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
+      notify('Modification refusée : ' + (err.message || 'erreur'), 'error');
+    } finally { setEditSaving(false); }
   };
 
-  const handleDeleteUser = async (userId: string, email: string) => {
-    if (!window.confirm(`Supprimer définitivement le profil de "${email}" ?`)) return;
+  const handleDeleteUser = async (u: NormUser) => {
+    if (!window.confirm(`Supprimer le compte « ${u.displayName} » (${u.email}) ?\n\nSeule la fiche client est supprimée ici ; ses assistants resteront orphelins.`)) return;
     try {
-      const { error } = await supabase.from('users').delete().eq('id', userId);
-      if (error) throw error;
-      setUsersList(prev => prev.filter(u => u.uid !== userId));
-      notify(`Profil de ${email} supprimé.`);
+      await deleteUserRecord(u.uid);
+      notify('Compte client supprimé.');
+      await fetchAllPlatformData();
     } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
+      notify('Suppression impossible : ' + (err.message || 'erreur'), 'error');
     }
   };
 
-  // ------------------------------------------------------------- assistants
+  const handleChangePlan = async (a: NormAssistant, plan: string) => {
+    try {
+      await updateAssistantPlan(a.id, plan);
+      notify(`Plan de « ${a.businessName} » : ${PLAN_LABELS[plan] || plan}.`);
+      await fetchAllPlatformData();
+    } catch (err: any) {
+      notify('Changement de plan refusé : ' + (err.message || 'erreur'), 'error');
+    }
+  };
+
+  const handleDeleteAssistant = async (a: NormAssistant) => {
+    if (!window.confirm(`Supprimer définitivement l'assistant « ${a.businessName} » ?`)) return;
+    try {
+      await deleteAssistantDocument(a.id);
+      notify('Assistant supprimé.');
+      await fetchAllPlatformData();
+    } catch (err: any) {
+      notify('Suppression impossible : ' + (err.message || 'erreur'), 'error');
+    }
+  };
 
   const handleSaveAssistant = async () => {
     if (!editingAssistant) return;
-    setSaving(true);
+    setAssistantSaving(true);
     try {
-      const a = editingAssistant;
-      const { data: cur, error: readErr } = await supabase.from('assistants').select('config').eq('id', a.id).single();
+      // Lecture -> fusion -> écriture du jsonb config (jamais d'écrasement global)
+      const { data: row, error: readErr } = await supabase
+        .from('assistants').select('config').eq('id', editingAssistant.id).single();
       if (readErr) throw readErr;
-      const cfg = {
-        ...(cur?.config || {}),
-        plan: a.plan,
-        assistantTone: a.assistantTone,
-        businessDescription: a.businessDescription,
-        faqText: a.faqText,
-        languages: a.languages,
-        whatsappEscalation: a.whatsappEscalation,
-        siteShopping: !!a.siteShopping,
-        autoLeadCapture: !!a.autoLeadCapture,
+      const mergedCfg = {
+        ...((row as any)?.config || {}),
+        businessName: editingAssistant.businessName,
+        websiteUrl: editingAssistant.websiteUrl || null,
+        plan: editingAssistant.plan,
+        assistantTone: editingAssistant.tone || 'professionnel',
+        languages: editingAssistant.languages,
+        whatsappEscalation: editingAssistant.whatsappEscalation || '',
+        siteShopping: editingAssistant.siteShopping,
+        autoLeadCapture: editingAssistant.autoLeadCapture,
+        businessDescription: editingAssistant.businessDescription || '',
+        faqText: editingAssistant.faqText || '',
       };
       const { error } = await supabase.from('assistants').update({
-        business_name: a.businessName,
-        website_url: a.websiteUrl || null,
-        config: cfg,
+        config: mergedCfg,
         updated_at: new Date().toISOString(),
-      }).eq('id', a.id);
+      }).eq('id', editingAssistant.id);
       if (error) throw error;
-      setAssistantsList(prev => prev.map(x => x.id === a.id ? { ...x, ...a, rawConfig: cfg } : x));
-      notify(`Assistant "${a.businessName}" mis à jour.`);
+      notify(`Assistant « ${editingAssistant.businessName} » mis à jour.`);
       setEditingAssistant(null);
+      await fetchAllPlatformData();
     } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
+      notify('Enregistrement refusé : ' + (err.message || 'erreur'), 'error');
+    } finally { setAssistantSaving(false); }
   };
 
-  const handleDeleteAssistant = async (assistantId: string, businessName: string) => {
-    if (!window.confirm(`Supprimer définitivement l'assistant "${businessName}" ?`)) return;
-    try {
-      const { error } = await supabase.from('assistants').delete().eq('id', assistantId);
-      if (error) throw error;
-      setAssistantsList(prev => prev.filter(a => a.id !== assistantId));
-      notify(`Assistant "${businessName}" supprimé.`);
-    } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
-    }
-  };
-
-  const widgetSnippet = (a: any) =>
-    `<script src="${window.location.origin}/widget.js" data-widget-id="${a.widgetId || a.id}" async></script>`;
-
-  // ------------------------------------------------------------------ leads
-
-  const handleLeadStatus = async (lead: any, status: string) => {
+  const handleLeadStatus = async (lead: NormLead, status: string) => {
     try {
       const { error } = await supabase.from('prospects').update({
-        data: { ...lead.raw, status },
+        data: { ...(lead._row?.data || {}), status },
         updated_at: new Date().toISOString(),
       }).eq('id', lead.id);
       if (error) throw error;
-      setLeadsList(prev => prev.map(p => p.id === lead.id ? { ...p, status, raw: { ...p.raw, status } } : p));
-      if (inspectingLead?.id === lead.id) setInspectingLead({ ...lead, status });
-      notify(`Statut du prospect "${lead.name}" → ${status}`);
+      setProspectsList(prev => prev.map(l => (l.id === lead.id ? { ...l, status } : l)));
     } catch (err: any) {
-      notify('Erreur : ' + err.message + ' (exécutez la migration console SQL, onglet Système)', 'error');
+      notify('Statut non enregistré : ' + (err.message || 'erreur'), 'error');
     }
   };
 
-  const handleDeleteLead = async (leadId: string) => {
-    if (!window.confirm('Supprimer ce prospect du registre ?')) return;
+  const handleDeleteLead = async (l: NormLead) => {
+    if (!window.confirm('Supprimer ce prospect ?')) return;
     try {
-      const { error } = await supabase.from('prospects').delete().eq('id', leadId);
-      if (error) throw error;
-      setLeadsList(prev => prev.filter(p => p.id !== leadId));
-      if (inspectingLead?.id === leadId) setInspectingLead(null);
+      await deleteProspectRecord(l.id);
       notify('Prospect supprimé.');
+      await fetchAllPlatformData();
     } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
+      notify('Suppression impossible : ' + (err.message || 'erreur'), 'error');
     }
   };
 
-  const exportLeadsCSV = () => {
-    if (leadsList.length === 0) return notify('Aucun prospect à exporter.', 'error');
-    const headers = ['ID', 'Nom', 'Téléphone', 'Email', 'Besoin', 'Statut', 'Assistant_ID', 'Date', 'Page_Visitee', 'Navigateur'];
-    const rows = leadsList.map(p => [
-      `"${p.id || ''}"`, `"${(p.name || '').replace(/"/g, '""')}"`, `"${(p.phone || '').replace(/"/g, '""')}"`,
-      `"${(p.email || '').replace(/"/g, '""')}"`, `"${(p.need || '').replace(/"/g, '""')}"`, `"${p.status || ''}"`,
-      `"${p.assistantId || ''}"`, `"${p.date || ''}"`, `"${(p.currentPage || '').replace(/"/g, '""')}"`, `"${(p.userAgent || '').replace(/"/g, '""')}"`,
-    ]);
-    const csv = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const link = document.createElement('a');
-    link.href = encodeURI(csv);
-    link.download = `jawebflow_master_leads_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    notify('Export CSV des prospects téléchargé.');
-  };
-
-  const exportAdsAudienceCSV = () => {
-    if (leadsList.length === 0) return notify('Aucun prospect à exporter.', 'error');
-    const headers = ['email', 'phone', 'first_name', 'last_name', 'country', 'locale', 'value'];
-    const rows = leadsList.map(lead => {
-      const nameParts = (lead.name || '').trim().split(/\s+/);
-      let cleanPhone = (lead.phone || '').replace(/[^0-9+]/g, '');
-      if (cleanPhone.startsWith('0') && !cleanPhone.startsWith('00')) cleanPhone = '213' + cleanPhone.substring(1);
-      if (cleanPhone.startsWith('+')) cleanPhone = cleanPhone.substring(1);
-      const hasEmail = !!lead.email;
-      const hasPhone = cleanPhone.length >= 8;
-      let value = '5.00';
-      if (hasEmail && hasPhone) value = '20.00';
-      if ((lead.status || '').toLowerCase().includes('qualif')) value = '35.00';
-      return [hasEmail ? lead.email : '', hasPhone ? cleanPhone : '', nameParts[0] || 'Visiteur', nameParts.slice(1).join(' ') || '', 'DZ', 'fr', value];
-    });
-    const csv = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const link = document.createElement('a');
-    link.href = encodeURI(csv);
-    link.download = `jawebflow_ads_audiences_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    notify('Export Audience Ads (Meta/Google) téléchargé.');
-  };
-
-  // --------------------------------------------------------------- invoices
-
-  const handleInvoiceStatus = async (id: string, status: string) => {
-    try {
-      const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
-      if (error) throw error;
-      setInvoicesList(prev => prev.map(i => i.id === id ? { ...i, status } : i));
-      notify(`Facture ${id} → ${status}`);
-    } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
+  const exportLeadsCsv = (mode: 'full' | 'ads') => {
+    if (!filteredLeads.length) { notify('Aucun prospect à exporter.', 'error'); return; }
+    if (mode === 'full') {
+      downloadCsv('prospects_complet.csv', [
+        ['ID', 'Date', 'Statut', 'Nom', 'Telephone', 'Email', 'Besoin', 'Assistant', 'Page', 'Dernier message'],
+        ...filteredLeads.map(l => [
+          l.id, fmtDate(l.createdAt), l.status, l.name || '', l.phone || '', l.email || '',
+          l.need || '', assistantById[l.assistantId || '']?.businessName || l.assistantId || '',
+          l.currentPage || '', l.messages.length ? l.messages[l.messages.length - 1]?.text || '' : '',
+        ]),
+      ]);
+    } else {
+      downloadCsv('audience_publicite.csv', [
+        ['Nom', 'Telephone', 'Email', 'Statut'],
+        ...filteredLeads.map(l => [l.name || '', l.phone || '', l.email || '', l.status]),
+      ]);
     }
+    notify('Export CSV téléchargé.');
   };
 
-  const handleDeleteInvoice = async (id: string) => {
-    if (!window.confirm(`Supprimer la facture ${id} ?`)) return;
-    try {
-      const { error } = await supabase.from('invoices').delete().eq('id', id);
-      if (error) throw error;
-      setInvoicesList(prev => prev.filter(i => i.id !== id));
-      notify(`Facture ${id} supprimée.`);
-    } catch (err: any) {
-      notify('Erreur : ' + err.message, 'error');
-    }
-  };
-
-  const handleCreateManualInvoice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newInvEmail.trim()) return notify("Spécifiez l'e-mail du client.", 'error');
+  const handleCreateInvoice = async () => {
     setIsCreatingInvoice(true);
     try {
-      const invId = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-      const usdEquiv = newInvPlan === 'basic' ? 29 : newInvPlan === 'pro' ? 79 : 199;
-      const newInvoice = {
-        id: invId,
-        customerEmail: newInvEmail.trim().toLowerCase(),
-        customerName: newInvEmail.split('@')[0],
-        planName: newInvPlan === 'basic' ? 'Plan Basic' : newInvPlan === 'pro' ? 'Plan Pro / Business' : 'Plan Enterprise',
-        amountDzd: Number(newInvAmountDzd),
-        amountUsd: usdEquiv,
-        paymentMethod: newInvMethod === 'baridimob_ccp' ? 'Virement CCP / BaridiMob (Validé Admin)' : newInvMethod === 'slickpay_dzd' ? 'SlickPay DZD (Edahabia/CIB)' : 'Carte Bancaire',
-        status: 'paid',
-        date: new Date().toLocaleDateString('fr-FR'),
-      };
-      const { error } = await supabase.from('invoices').insert([{ ...newInvoice, createdAt: new Date().toISOString(), validatedByAdmin: true }]);
+      const id = `INV-${Date.now()}`;
+      const { error } = await supabase.from('invoices').insert({
+        id,
+        customerEmail: newInvEmail.trim(),
+        customerName: newInvName.trim() || null,
+        planName: PLAN_LABELS[newInvPlan],
+        amountDzd: newInvAmountDzd,
+        amountUsd: PLAN_PRICES[newInvPlan].usd,
+        paymentMethod: newInvMethod,
+        status: newInvStatus,
+        date: new Date().toISOString().slice(0, 10),
+        createdAt: new Date().toISOString(),
+        validatedByAdmin: true,
+      });
       if (error) throw error;
-
-      // Monte automatiquement le plan des assistants du client
-      const client = usersList.find(u => (u.email || '').toLowerCase() === newInvEmail.trim().toLowerCase());
+      // Montée de plan automatique de TOUS les assistants du client
+      const client = managedUsers.find(u => u.email.toLowerCase() === newInvEmail.trim().toLowerCase());
       if (client) {
-        for (const asst of assistantsList.filter(a => a.userId === client.uid)) {
-          const { data: cur } = await supabase.from('assistants').select('config').eq('id', asst.id).single();
-          await supabase.from('assistants').update({ config: { ...(cur?.config || {}), plan: newInvPlan }, updated_at: new Date().toISOString() }).eq('id', asst.id);
-          setAssistantsList(prev => prev.map(a => a.id === asst.id ? { ...a, plan: newInvPlan } : a));
+        const clientAssistants = assistantsList.filter(a => a.userId === client.uid);
+        for (const a of clientAssistants) {
+          try { await updateAssistantPlan(a.id, newInvPlan); } catch { /* on continue */ }
         }
+        notify(`Facture créée. ${clientAssistants.length} assistant(s) passé(s) en ${PLAN_LABELS[newInvPlan]}.`);
+      } else {
+        notify('Facture créée (aucun compte client trouvé avec cet email : plan non appliqué).');
       }
-      setInvoicesList(prev => [newInvoice, ...prev]);
       setShowNewInvoiceModal(false);
-      setNewInvEmail('');
-      notify(`Quittance ${invId} générée et abonnement activé pour ${newInvEmail} !`);
+      await fetchAllPlatformData();
     } catch (err: any) {
-      notify('Erreur de création de facture : ' + err.message, 'error');
-    } finally {
-      setIsCreatingInvoice(false);
+      notify('Facture non créée : ' + (err.message || 'erreur'), 'error');
+    } finally { setIsCreatingInvoice(false); }
+  };
+
+  const handleInvoiceStatus = async (inv: AdminInvoice, status: string) => {
+    try {
+      const { error } = await supabase.from('invoices').update({ status }).eq('id', inv.id);
+      if (error) throw error;
+      setInvoicesList(prev => prev.map(i => (i.id === inv.id ? { ...i, status } : i)));
+    } catch (err: any) {
+      notify('Statut non enregistré : ' + (err.message || 'erreur'), 'error');
     }
   };
 
-  // ------------------------------------------------------------------ stats
+  const handleDeleteInvoice = async (inv: AdminInvoice) => {
+    if (!window.confirm(`Supprimer la facture ${inv.id} (${inv.customerEmail}) ?`)) return;
+    try {
+      const { error } = await supabase.from('invoices').delete().eq('id', inv.id);
+      if (error) throw error;
+      notify('Facture supprimée.');
+      await fetchAllPlatformData();
+    } catch (err: any) {
+      notify('Suppression impossible : ' + (err.message || 'erreur'), 'error');
+    }
+  };
 
-  const stats = useMemo(() => {
-    const paid = invoicesList.filter(i => (i.status || '').toLowerCase() === 'paid');
-    const revenueDzd = paid.reduce((acc, i) => acc + (Number(i.amountDzd) || 0), 0);
-    const revenueUsd = paid.reduce((acc, i) => acc + (Number(i.amountUsd) || 0), 0);
-    const paying = assistantsList.filter(a => a.plan && a.plan !== 'free').length;
-    const qualified = leadsList.filter(l => (l.status || '').toLowerCase().includes('qualif') || (l.status || '').toLowerCase().includes('converti')).length;
-    const plans: Record<string, number> = {};
-    assistantsList.forEach(a => { const p = (a.plan || 'free').toLowerCase(); plans[p] = (plans[p] || 0) + 1; });
-    return { revenueDzd, revenueUsd, paying, qualified, plans, paidCount: paid.length, pendingCount: invoicesList.filter(i => (i.status || '').toLowerCase() === 'pending').length };
-  }, [usersList, assistantsList, leadsList, invoicesList]);
+  const handleSaveLimits = async () => {
+    setSavingLimits(true);
+    try {
+      const parse = (s: string): number | null => (s.trim() === '' ? null : Math.max(0, parseInt(s, 10) || 0));
+      const newLimits = {
+        free: parse(limitsDraft.free) ?? 0,
+        basic: parse(limitsDraft.basic) ?? 1000,
+        pro: parse(limitsDraft.pro) ?? 5000,
+        enterprise: parse(limitsDraft.enterprise),
+      };
+      const current = await supabase.from('platform_settings').select('settings').eq('id', 'global').maybeSingle();
+      const { error } = await supabase.from('platform_settings').upsert({
+        id: 'global',
+        settings: { ...((current.data as any)?.settings || {}), planLimits: newLimits },
+        updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      setPlanLimits(newLimits);
+      notify('Quotas enregistrés : ils sappliquent immédiatement sur le web ET Instagram.');
+      await fetchAllPlatformData();
+    } catch (err: any) {
+      notify('Enregistrement impossible (exécute le SQL de l onglet Système) : ' + (err.message || 'erreur'), 'error');
+    } finally { setSavingLimits(false); }
+  };
 
-  const userById = useMemo(() => {
-    const m: Record<string, any> = {};
-    usersList.forEach(u => { m[u.uid] = u; });
-    return m;
-  }, [usersList]);
-
-  const assistantById = useMemo(() => {
-    const m: Record<string, any> = {};
-    assistantsList.forEach(a => { m[a.id] = a; });
-    return m;
-  }, [assistantsList]);
-
-  // ------------------------------------------------------------------ locks
-
+  // ------------------------------------------------------------------ render
   if (!isAdminAuthenticated) {
-    if (authUser && !isSuperAdminLogged) {
+    const nonAdminBlocked = authUser && profile && !isUserAdmin(profile);
+    if (nonAdminBlocked) {
       return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mb-4"><Lock className="text-rose-400" size={22} /></div>
-            <h1 className="text-xl font-bold text-white mb-2">Accès réservé</h1>
-            <p className="text-sm text-slate-400 mb-6">
-              Le compte <span className="text-slate-200 font-semibold">{profile?.email || authUser?.email}</span> n'a pas les droits Super Admin.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <a href="/dashboard" className={btnGhost}><LayoutDashboard size={16} /> Mon dashboard</a>
-              <button onClick={logout} className={btnDanger}><LogOut size={16} /> Changer de compte</button>
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 antialiased">
+          <div className="bg-white border border-slate-200 p-8 sm:p-10 rounded-3xl max-w-md w-full shadow-xl text-center space-y-6">
+            <div className="w-16 h-16 bg-red-50 text-red-600 border border-red-100 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+              <Lock className="w-8 h-8" />
             </div>
+            <div className="space-y-2">
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+                Accès Restreint
+              </span>
+              <h1 className="text-2xl font-bold text-slate-900">Espace Non Autorisé</h1>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                Vous êtes connecté avec le compte <strong className="text-slate-800">{authUser.email}</strong>. Cette console globale est strictement réservée à l'administrateur de JawebFlow.
+              </p>
+            </div>
+            <a
+              href="/dashboard"
+              className="inline-flex w-full py-3.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-sm shadow-purple-600/30 items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <span>Accéder à mon Cockpit Client</span>
+              <ArrowRight className="w-4 h-4" />
+            </a>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
-          <div className="text-center mb-6">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-violet-600/20 border border-violet-500/40 flex items-center justify-center mb-3"><Shield className="text-violet-400" size={24} /></div>
-            <h1 className="text-2xl font-bold text-white">Console Admin</h1>
-            <p className="text-sm text-slate-500">JawebFlow — contrôle total de la plateforme</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 antialiased">
+        <div className="bg-white border border-slate-200 p-8 sm:p-10 rounded-3xl max-w-md w-full shadow-xl">
+          <div className="w-14 h-14 bg-gradient-to-tr from-purple-600 to-indigo-600 rounded-2xl flex items-center justify-center mb-6 mx-auto text-white shadow-sm shadow-purple-600/30">
+            <Shield className="w-7 h-7" />
           </div>
-          <form onSubmit={handleAdminPasswordUnlock} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <Field label="E-mail super admin">
-              <input className={inp} type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)} placeholder="admin@jawebflow.com" required />
-            </Field>
-            <Field label="Mot de passe">
-              <input className={inp} type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} placeholder="••••••••••" required />
-            </Field>
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+              <span>Console Super Admin</span>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">Connexion Administrateur</h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Accès réservé au propriétaire et gestionnaires de la plateforme JawebFlow.
+            </p>
+          </div>
+          <form onSubmit={handleAdminPasswordUnlock} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Email Administrateur</label>
+              <input
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-1 focus:ring-purple-600 text-sm transition-all"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Mot de passe</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  placeholder="Entrez votre mot de passe maître..."
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-1 focus:ring-purple-600 text-sm transition-all"
+                />
+                <Lock className="w-4 h-4 text-slate-400 absolute right-4 top-3.5 pointer-events-none" />
+              </div>
+            </div>
             {authError && (
-              <div className="flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
-                <AlertCircle size={14} /> {authError}
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2 text-red-700 text-xs">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{authError}</span>
               </div>
             )}
-            <button type="submit" disabled={authLoading} className={`${btnPrimary} w-full justify-center disabled:opacity-50`}>
-              {authLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />} Déverrouiller la console
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-sm shadow-purple-600/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {authLoading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /><span>Vérification...</span></>
+              ) : (
+                <><span>Déverrouiller la Console</span><ArrowRight className="w-4 h-4" /></>
+              )}
             </button>
-            <a href="/" className="block text-center text-xs text-slate-500 hover:text-slate-300">← Retour au site</a>
+            <div className="pt-2 text-center">
+              <a href="/" className="text-xs text-slate-500 hover:text-slate-800 transition-colors">← Retour au site JawebFlow</a>
+            </div>
           </form>
         </div>
       </div>
     );
   }
 
-  // ------------------------------------------------------------------ data views
-
-  const q = searchQuery.trim().toLowerCase();
-
-  const filteredUsers = usersList
-    .filter(u => roleFilter === 'all' || u.role === roleFilter)
-    .filter(u => !q || [u.displayName, u.email, u.companyName].join(' ').toLowerCase().includes(q))
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-
-  const filteredAssistants = assistantsList
-    .filter(a => planFilter === 'all' || (a.plan || 'free').toLowerCase() === planFilter)
-    .filter(a => !q || [a.businessName, a.websiteUrl, userById[a.userId]?.email].join(' ').toLowerCase().includes(q))
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-
-  const filteredLeads = leadsList
-    .filter(l => leadStatusFilter === 'all' || (l.status || 'nouveau').toLowerCase() === leadStatusFilter)
-    .filter(l => leadAssistantFilter === 'all' || l.assistantId === leadAssistantFilter)
-    .filter(l => !q || [l.name, l.phone, l.email, l.need].join(' ').toLowerCase().includes(q))
-    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-
-  const filteredInvoices = invoicesList
-    .filter(i => !q || [i.id, i.customerEmail, i.customerName, i.planName].join(' ').toLowerCase().includes(q))
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-
-  const signupsSeries = daySeries(usersList.map(u => u.createdAt));
-  const leadsSeries = daySeries(leadsList.map(l => l.date));
-
-  const NAV: { id: AdminSectionId; label: string; icon: any; count?: number }[] = [
-    { id: 'overview', label: "Vue d'ensemble", icon: LayoutDashboard },
-    { id: 'users', label: 'Utilisateurs', icon: Users, count: usersList.length },
-    { id: 'assistants', label: 'Assistants IA', icon: Bot, count: assistantsList.length },
-    { id: 'leads', label: 'Prospects', icon: Target, count: leadsList.length },
-    { id: 'invoices', label: 'Factures', icon: Receipt, count: invoicesList.length },
-    { id: 'system', label: 'Système', icon: Settings2 },
+  const navigationItems = [
+    {
+      group: 'PILOTAGE & KPI',
+      items: [{ id: 'overview', label: "Vue d'ensemble", icon: LayoutDashboard, badge: null as string | null }],
+    },
+    {
+      group: 'GESTION GLOBALE',
+      items: [
+        { id: 'users', label: 'Clients', icon: Users, badge: `${managedUsers.length}` },
+        { id: 'assistants', label: 'Tous les Assistants', icon: Bot, badge: `${assistantsList.length}` },
+        { id: 'plans', label: 'Plans & Quotas', icon: Gauge, badge: `${totalConversationsThisMonth}` },
+        { id: 'leads', label: 'Registre Central Leads', icon: MessageSquare, badge: `${prospectsList.length}` },
+        { id: 'invoices', label: 'Factures & Paiements', icon: Receipt, badge: `${invoicesList.length}` },
+      ],
+    },
+    {
+      group: 'SYSTÈME',
+      items: [{ id: 'system', label: 'Maintenance & SQL', icon: Database, badge: null as string | null }],
+    },
   ];
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex">
-      {/* ------------------------------------------------ sidebar */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 border-r border-slate-800 bg-slate-900/60 min-h-screen sticky top-0 h-screen">
-        <div className="flex items-center gap-2 px-5 py-5 border-b border-slate-800">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center"><Sparkles size={18} className="text-white" /></div>
-          <div>
-            <div className="text-white font-bold leading-tight">JawebFlow</div>
-            <div className="text-[10px] uppercase tracking-widest text-violet-400 font-bold">Console Admin</div>
-          </div>
+  const widgetSnippet = (a: NormAssistant) =>
+    `<script src="${window.location.origin}/cdn/widget.js" data-widget-id="${a.id}" async></script>`;
+
+  const StatCard = ({ icon: Icon, label, value, sub, color }: any) => (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</span>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color}`}>
+          <Icon className="w-4.5 h-4.5" />
         </div>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {NAV.map(item => (
-            <button
-              key={item.id}
-              onClick={() => { setActiveTab(item.id); setSearchQuery(''); }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-violet-600/20 text-violet-300 border border-violet-500/30' : 'text-slate-400 hover:bg-slate-800/70 hover:text-white border border-transparent'}`}
-            >
-              <item.icon size={17} />
-              <span className="flex-1 text-left">{item.label}</span>
-              {typeof item.count === 'number' && <span className="text-[10px] bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5 text-slate-400">{item.count}</span>}
-            </button>
-          ))}
-        </nav>
-        <div className="p-3 border-t border-slate-800 space-y-1">
-          <button onClick={fetchAllPlatformData} className={`${btnGhost} w-full justify-center`}><RefreshCw size={15} className={loadingData ? 'animate-spin' : ''} /> Actualiser</button>
-          <button onClick={handleAdminLogout} className="w-full flex items-center justify-center gap-2 text-sm text-slate-500 hover:text-rose-400 py-2"><LogOut size={15} /> Quitter</button>
+      </div>
+      <div className="text-2xl font-bold text-slate-900">{value}</div>
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+    </div>
+  );
+
+  const MiniBars = ({ data, color }: { data: { label: string; n: number }[]; color: string }) => {
+    const max = Math.max(1, ...data.map(d => d.n));
+    return (
+      <div className="flex items-end gap-1 h-20">
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
+            <div
+              className={`w-full rounded-t ${color} opacity-80 group-hover:opacity-100 transition-all`}
+              style={{ height: `${Math.max(4, (d.n / max) * 64)}px` }}
+              title={`${d.label} : ${d.n}`}
+            />
+            {i % 3 === 0 && <span className="text-[9px] text-slate-400">{d.label}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const Modal = ({ title, children, onClose, wide }: any) => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className={`bg-white border border-slate-200 rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 sticky top-0 bg-white rounded-t-2xl">
+          <h3 className="font-bold text-slate-900">{title}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+
+  const UsageBar = ({ plan, assistantId }: { plan: string; assistantId: string }) => {
+    const limit = limitForPlan(plan);
+    const used = usageByAssistant[assistantId] || 0;
+    if (limit === null) return <span className="text-xs text-slate-400">{used} · illimité</span>;
+    const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100;
+    const barColor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+    return (
+      <div className="flex items-center gap-2 min-w-[120px]">
+        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={`text-xs font-semibold ${pct >= 100 ? 'text-red-600' : 'text-slate-500'}`}>{used}/{limit}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
+      {/* SIDEBAR (design clair d'origine) */}
+      <aside className={`fixed top-0 bottom-0 left-0 w-64 bg-white border-r border-slate-200 shadow-sm z-30 flex flex-col justify-between transition-transform duration-200 ease-in-out ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="overflow-y-auto flex-1">
+          <div className="p-5 border-b border-slate-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-tr from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-sm shadow-purple-600/30">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="font-bold text-slate-900 text-sm">JawebFlow</div>
+                <div className="text-[11px] text-purple-600 font-semibold flex items-center gap-1">
+                  <Crown className="w-3 h-3" /> Super Admin
+                </div>
+              </div>
+            </div>
+          </div>
+          <nav className="p-3 space-y-4">
+            {navigationItems.map(group => (
+              <div key={group.group}>
+                <div className="px-3 pb-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{group.group}</div>
+                <div className="space-y-0.5">
+                  {group.items.map(item => {
+                    const Icon = item.icon;
+                    const active = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => { setActiveTab(item.id as AdminSectionId); setMobileMenuOpen(false); }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+                          active ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'text-slate-600 hover:bg-slate-50 border border-transparent'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Icon className={`w-4 h-4 ${active ? 'text-purple-600' : 'text-slate-400'}`} />
+                          {item.label}
+                        </span>
+                        {item.badge && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>{item.badge}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+        </div>
+        <div className="p-3 border-t border-slate-200">
+          <button
+            onClick={() => { sessionStorage.removeItem('jawebflow_admin_auth'); logout(); window.location.href = '/'; }}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" /> Quitter la console
+          </button>
         </div>
       </aside>
 
-      {/* ------------------------------------------------ main */}
-      <div className="flex-1 min-w-0">
-        {/* topbar */}
-        <header className="sticky top-0 z-20 bg-slate-950/90 backdrop-blur border-b border-slate-800 px-4 md:px-6 py-3 flex items-center gap-3">
-          <div className="md:hidden w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center shrink-0"><Sparkles size={15} className="text-white" /></div>
-          <div className="relative flex-1 max-w-md">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Rechercher (nom, email, business, besoin…)" className={`${inp} pl-9`} />
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500"><Activity size={13} className="text-emerald-400" /> {loadingData ? 'Synchronisation…' : 'Données à jour'}</span>
-            <button onClick={fetchAllPlatformData} className={iconBtn} title="Actualiser"><RefreshCw size={16} className={loadingData ? 'animate-spin' : ''} /></button>
-            <button onClick={handleAdminLogout} className={iconBtn} title="Quitter"><LogOut size={16} /></button>
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 z-20 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+      )}
+
+      {/* CONTENU */}
+      <div className="flex-1 md:ml-64 min-w-0">
+        {/* TOPBAR */}
+        <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200">
+          <div className="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+            <button className="md:hidden p-2 rounded-lg hover:bg-slate-100 cursor-pointer" onClick={() => setMobileMenuOpen(true)}>
+              <Menu className="w-5 h-5 text-slate-600" />
+            </button>
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher (nom, email, assistant, téléphone...)"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white focus:ring-1 focus:ring-purple-500 transition-all"
+              />
+            </div>
+            <div className="flex-1" />
+            <button
+              onClick={fetchAllPlatformData}
+              className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
+              title="Rafraîchir"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingData ? 'animate-spin' : ''}`} />
+            </button>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white text-xs font-bold">
+                {(profile?.displayName || authUser?.email || 'A').slice(0, 1).toUpperCase()}
+              </div>
+              <div className="text-xs">
+                <div className="font-semibold text-slate-800">{profile?.displayName || 'Admin'}</div>
+                <div className="text-slate-400">{authUser?.email}</div>
+              </div>
+            </div>
           </div>
         </header>
 
-        {/* mobile nav */}
-        <div className="md:hidden flex gap-2 overflow-x-auto px-4 py-2 border-b border-slate-800 bg-slate-900/60">
-          {NAV.map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border ${activeTab === item.id ? 'bg-violet-600/20 text-violet-300 border-violet-500/40' : 'text-slate-400 border-slate-700'}`}>
-              <item.icon size={13} /> {item.label}
-            </button>
-          ))}
-        </div>
-
-        {/* notification */}
-        {statusNotification && (
-          <div className={`fixed top-4 right-4 z-[60] max-w-sm flex items-start gap-2 rounded-xl border px-4 py-3 text-sm shadow-2xl ${statusNotification.type === 'success' ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200' : 'bg-rose-950/95 border-rose-500/40 text-rose-200'}`}>
-            {statusNotification.type === 'success' ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <AlertCircle size={16} className="mt-0.5 shrink-0" />}
-            {statusNotification.message}
-          </div>
-        )}
-
-        <main className="p-4 md:p-6 space-y-6">
-          {loadingData && (
-            <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={15} className="animate-spin" /> Chargement des données de la plateforme…</div>
+        <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+          {sqlReady === false && activeTab !== 'system' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-sm text-amber-800">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <span>
+                Les compteurs de conversations nécessitent une mise à jour des permissions. Onglet <strong>Système</strong> → copie le SQL → colle-le dans Supabase (SQL Editor) → Run.
+              </span>
+            </div>
           )}
 
-          {/* ================================================= OVERVIEW */}
+          {/* ============================================ VUE D'ENSEMBLE */}
           {activeTab === 'overview' && (
-            <>
-              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-                <StatCard icon={Users} label="Utilisateurs" value={String(usersList.length)} sub={`${usersList.filter(u => new Date(u.createdAt).getTime() > Date.now() - 7 * 86400000).length} cette semaine`} accent="bg-sky-500/15 text-sky-400" />
-                <StatCard icon={Bot} label="Assistants IA" value={String(assistantsList.length)} sub={`${stats.paying} payants`} accent="bg-violet-500/15 text-violet-400" />
-                <StatCard icon={Target} label="Prospects" value={String(leadsList.length)} sub={`${stats.qualified} qualifiés/convertis`} accent="bg-amber-500/15 text-amber-400" />
-                <StatCard icon={Wallet} label="Revenu DZD" value={money(stats.revenueDzd)} sub={`${stats.paidCount} factures payées`} accent="bg-emerald-500/15 text-emerald-400" />
-                <StatCard icon={CreditCard} label="Revenu USD" value={'$' + (stats.revenueUsd).toLocaleString('fr-FR')} sub={`${stats.pendingCount} en attente`} accent="bg-fuchsia-500/15 text-fuchsia-400" />
-                <StatCard icon={TrendingUp} label="Conversion" value={leadsList.length ? Math.round((stats.qualified / leadsList.length) * 100) + '%' : '0%'} sub="prospects → qualifiés" accent="bg-rose-500/15 text-rose-400" />
+            <div className="space-y-6">
+              <div>
+                <h1 className="text-xl font-bold text-slate-900">Vue d'ensemble</h1>
+                <p className="text-sm text-slate-500">Toute l'activité de la plateforme, en temps réel.</p>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+                <StatCard icon={Users} label="Clients" value={managedUsers.length} sub="comptes actifs" color="bg-blue-50 text-blue-600" />
+                <StatCard icon={Bot} label="Assistants" value={assistantsList.length} sub="tous plans" color="bg-purple-50 text-purple-600" />
+                <StatCard icon={MessageSquare} label="Prospects" value={prospectsList.length} sub="leads captés" color="bg-emerald-50 text-emerald-600" />
+                <StatCard icon={Activity} label="Conversations" value={totalConversationsThisMonth} sub="ce mois-ci" color="bg-orange-50 text-orange-600" />
+                <StatCard icon={CreditCard} label="Revenu" value={`$${revenuePaidUsd}`} sub="factures payées" color="bg-green-50 text-green-600" />
+                <StatCard icon={Receipt} label="En attente" value={pendingInvoices.length} sub="impayés" color="bg-red-50 text-red-600" />
               </div>
 
-              <div className="grid lg:grid-cols-3 gap-4">
-                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-white mb-3"><Users size={15} className="text-sky-400" /> Inscriptions (14 jours)</div>
-                  <MiniBars series={signupsSeries} color="#38bdf8" />
+              <div className="grid lg:grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Inscriptions clients — 14 jours</div>
+                  <MiniBars data={signups14} color="bg-purple-500" />
                 </div>
-                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-white mb-3"><Target size={15} className="text-amber-400" /> Prospects captés (14 jours)</div>
-                  <MiniBars series={leadsSeries} color="#fbbf24" />
-                </div>
-                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-white mb-3"><BarChart3 size={15} className="text-violet-400" /> Répartition des plans</div>
-                  <div className="space-y-2.5 mt-4">
-                    <HBar label="Gratuit" value={stats.plans['free'] || 0} max={assistantsList.length} color="#64748b" />
-                    <HBar label="Basic" value={stats.plans['basic'] || 0} max={assistantsList.length} color="#fbbf24" />
-                    <HBar label="Pro" value={stats.plans['pro'] || 0} max={assistantsList.length} color="#38bdf8" />
-                    <HBar label="Enterprise" value={stats.plans['enterprise'] || 0} max={assistantsList.length} color="#a78bfa" />
-                  </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Prospects captés — 14 jours</div>
+                  <MiniBars data={leads14} color="bg-emerald-500" />
                 </div>
               </div>
 
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Répartition des plans</div>
+                <div className="space-y-3">
+                  {['free', 'basic', 'pro', 'enterprise'].map(plan => {
+                    const n = planDist[plan] || 0;
+                    const pct = assistantsList.length ? Math.round((n / assistantsList.length) * 100) : 0;
+                    return (
+                      <div key={plan} className="flex items-center gap-3">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border w-28 text-center ${PLAN_CHIPS[plan]}`}>{PLAN_LABELS[plan]}</span>
+                        <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-500 w-16 text-right">{n} ({pct}%)</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="grid lg:grid-cols-3 gap-4">
-                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-sm font-semibold text-white">Derniers utilisateurs</div>
-                    <button onClick={() => setActiveTab('users')} className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1">Tout voir <ChevronRight size={12} /></button>
-                  </div>
-                  <div className="space-y-2">
-                    {usersList.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 5).map(u => (
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Derniers clients</div>
+                  <div className="space-y-2.5">
+                    {managedUsers.slice(0, 3).map(u => (
                       <div key={u.uid} className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 uppercase">{(u.displayName || u.email || '?')[0]}</div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm text-slate-200 truncate">{u.displayName}</div>
-                          <div className="text-[11px] text-slate-500 truncate">{u.email}</div>
+                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-bold">{u.displayName.slice(0, 1).toUpperCase()}</div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-800 truncate">{u.displayName}</div>
+                          <div className="text-xs text-slate-400 truncate">{u.email}</div>
                         </div>
-                        <div className="text-[10px] text-slate-600">{timeAgo(u.createdAt)}</div>
                       </div>
                     ))}
-                    {usersList.length === 0 && <div className="text-xs text-slate-600">Aucun utilisateur.</div>}
+                    {!managedUsers.length && <div className="text-xs text-slate-400">Aucun client.</div>}
                   </div>
                 </div>
-
-                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-sm font-semibold text-white">Derniers prospects</div>
-                    <button onClick={() => setActiveTab('leads')} className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1">Tout voir <ChevronRight size={12} /></button>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Derniers assistants</div>
+                  <div className="space-y-2.5">
+                    {assistantsList.slice(0, 3).map(a => (
+                      <div key={a.id} className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><Bot className="w-4 h-4" /></div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-800 truncate">{a.businessName}</div>
+                          <div className="text-xs text-slate-400">{PLAN_LABELS[a.plan] || a.plan}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {!assistantsList.length && <div className="text-xs text-slate-400">Aucun assistant.</div>}
                   </div>
-                  <div className="space-y-2">
-                    {filteredLeads.slice(0, 5).map(l => (
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Derniers prospects</div>
+                  <div className="space-y-2.5">
+                    {prospectsList.slice(0, 3).map(l => (
                       <div key={l.id} className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center"><Target size={13} className="text-amber-400" /></div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm text-slate-200 truncate">{l.name}</div>
-                          <div className="text-[11px] text-slate-500 truncate">{l.phone || l.email || assistantById[l.assistantId]?.businessName || ''}</div>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><UserCheck className="w-4 h-4" /></div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-800 truncate">{l.name || l.phone || l.email || 'Prospect'}</div>
+                          <div className="text-xs text-slate-400 truncate">{l.need || l.status}</div>
                         </div>
-                        {leadBadge(l.status)}
                       </div>
                     ))}
-                    {leadsList.length === 0 && <div className="text-xs text-slate-600">Aucun prospect capté pour l'instant.</div>}
-                  </div>
-                </div>
-
-                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-sm font-semibold text-white">Dernières factures</div>
-                    <button onClick={() => setActiveTab('invoices')} className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1">Tout voir <ChevronRight size={12} /></button>
-                  </div>
-                  <div className="space-y-2">
-                    {invoicesList.slice(0, 5).map(i => (
-                      <div key={i.id} className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center"><Receipt size={13} className="text-emerald-400" /></div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm text-slate-200 truncate">{i.customerEmail}</div>
-                          <div className="text-[11px] text-slate-500">{money(i.amountDzd)} • {i.planName}</div>
-                        </div>
-                        {invoiceBadge(i.status)}
-                      </div>
-                    ))}
-                    {invoicesList.length === 0 && <div className="text-xs text-slate-600">Aucune facture.</div>}
+                    {!prospectsList.length && <div className="text-xs text-slate-400">Aucun prospect.</div>}
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
 
-          {/* ================================================= USERS */}
+          {/* ============================================ CLIENTS */}
           {activeTab === 'users' && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2"><Users size={18} className="text-sky-400" /> Utilisateurs ({filteredUsers.length})</h2>
-                <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={`${inp} w-auto`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">Clients</h1>
+                  <p className="text-sm text-slate-500">Ton compte admin et les superadmins sont masqués — ici, uniquement les clients.</p>
+                </div>
+                <select
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-purple-500 cursor-pointer"
+                >
                   <option value="all">Tous les rôles</option>
                   <option value="user">Clients</option>
                   <option value="admin">Admins</option>
-                  <option value="superadmin">Super admins</option>
                 </select>
               </div>
-
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-x-auto">
-                <table className="w-full min-w-[760px]">
-                  <thead className="border-b border-slate-800 bg-slate-900">
-                    <tr>
-                      <th className={th}>Utilisateur</th>
-                      <th className={th}>Entreprise</th>
-                      <th className={th}>Rôle</th>
-                      <th className={th}>Assistants</th>
-                      <th className={th}>Prospects</th>
-                      <th className={th}>Inscription</th>
-                      <th className={th}>Actions</th>
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 font-semibold">Client</th>
+                      <th className="px-4 py-3 font-semibold">Entreprise</th>
+                      <th className="px-4 py-3 font-semibold">Téléphone</th>
+                      <th className="px-4 py-3 font-semibold">Rôle</th>
+                      <th className="px-4 py-3 font-semibold text-center">Assistants</th>
+                      <th className="px-4 py-3 font-semibold text-center">Prospects</th>
+                      <th className="px-4 py-3 font-semibold">Inscrit le</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/70">
-                    {filteredUsers.map(u => {
-                      const asstCount = assistantsList.filter(a => a.userId === u.uid).length;
-                      const leadCount = leadsList.filter(l => assistantsList.some(a => a.id === l.assistantId && a.userId === u.uid)).length;
-                      return (
-                        <tr key={u.uid} className="hover:bg-slate-800/30">
-                          <td className={td}>
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 uppercase shrink-0">{(u.displayName || u.email || '?')[0]}</div>
-                              <div className="min-w-0">
-                                <div className="text-slate-100 font-medium truncate">{u.displayName}</div>
-                                <div className="text-[11px] text-slate-500 truncate">{u.email}</div>
-                              </div>
+                  <tbody>
+                    {loadingData && (
+                      <tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
+                    )}
+                    {!loadingData && filteredUsers.map(u => (
+                      <tr key={u.uid} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-all">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-bold">{u.displayName.slice(0, 1).toUpperCase()}</div>
+                            <div>
+                              <div className="font-medium text-slate-800">{u.displayName}</div>
+                              <div className="text-xs text-slate-400 flex items-center gap-1"><Mail className="w-3 h-3" />{u.email}</div>
                             </div>
-                          </td>
-                          <td className={td}>{u.companyName || <span className="text-slate-600">—</span>}</td>
-                          <td className={td}>{roleBadge(u.role)}</td>
-                          <td className={td}><Badge tone={asstCount ? 'sky' : 'slate'}>{asstCount}</Badge></td>
-                          <td className={td}><Badge tone={leadCount ? 'amber' : 'slate'}>{leadCount}</Badge></td>
-                          <td className={td}><span className="text-xs text-slate-500">{fmtDate(u.createdAt)}</span></td>
-                          <td className={td}>
-                            <div className="flex items-center gap-1">
-                              <button className={iconBtn} title="Modifier" onClick={() => setEditingUser({ ...u })}><Pencil size={15} /></button>
-                              <button className={iconBtn} title="Supprimer" onClick={() => handleDeleteUser(u.uid, u.email)}><Trash2 size={15} className="hover:text-rose-400" /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredUsers.length === 0 && <tr><td colSpan={7} className={`${td} text-center text-slate-600 py-8`}>Aucun utilisateur trouvé.</td></tr>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{u.companyName ? <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5 text-slate-400" />{u.companyName}</span> : '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{u.phoneNumber || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${u.role === 'admin' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                            {u.role === 'admin' ? 'Admin' : 'Client'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center text-slate-700 font-semibold">{assistantsByUser[u.uid] || 0}</td>
+                        <td className="px-4 py-3 text-center text-slate-700 font-semibold">
+                          {assistantsList.filter(a => a.userId === u.uid).reduce((s, a) => s + (leadsByAssistant[a.id] || 0), 0)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{fmtDate(u.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setEditingUser(u);
+                                setEditDisplayName(u.displayName);
+                                setEditCompanyName(u.companyName || '');
+                                setEditPhoneNumber(u.phoneNumber || '');
+                                setEditRole(u.role === 'admin' ? 'admin' : 'user');
+                              }}
+                              className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all cursor-pointer" title="Modifier"
+                            >
+                              <UserCheck className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDeleteUser(u)} className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer" title="Supprimer">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {!loadingData && !filteredUsers.length && (
+                      <tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400 text-sm">Aucun client trouvé.</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* ================================================= ASSISTANTS */}
+          {/* ============================================ ASSISTANTS */}
           {activeTab === 'assistants' && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2"><Bot size={18} className="text-violet-400" /> Assistants IA ({filteredAssistants.length})</h2>
-                <select value={planFilter} onChange={e => setPlanFilter(e.target.value)} className={`${inp} w-auto`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">Tous les assistants</h1>
+                  <p className="text-sm text-slate-500">Bloque ou débloque un assistant via son plan, modifie toute sa configuration.</p>
+                </div>
+                <select
+                  value={assistantPlanFilter}
+                  onChange={(e) => setAssistantPlanFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-purple-500 cursor-pointer"
+                >
                   <option value="all">Tous les plans</option>
-                  <option value="free">Gratuit</option>
+                  <option value="free">Gratuit (bloqué)</option>
                   <option value="basic">Basic</option>
-                  <option value="pro">Pro</option>
+                  <option value="pro">Pro / Business</option>
                   <option value="enterprise">Enterprise</option>
                 </select>
               </div>
-
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-x-auto">
-                <table className="w-full min-w-[860px]">
-                  <thead className="border-b border-slate-800 bg-slate-900">
-                    <tr>
-                      <th className={th}>Assistant</th>
-                      <th className={th}>Propriétaire</th>
-                      <th className={th}>Plan</th>
-                      <th className={th}>Langues</th>
-                      <th className={th}>Prospects</th>
-                      <th className={th}>Créé</th>
-                      <th className={th}>Actions</th>
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 font-semibold">Assistant</th>
+                      <th className="px-4 py-3 font-semibold">Client</th>
+                      <th className="px-4 py-3 font-semibold">Plan (verrou IA)</th>
+                      <th className="px-4 py-3 font-semibold">Usage du mois</th>
+                      <th className="px-4 py-3 font-semibold text-center">Leads</th>
+                      <th className="px-4 py-3 font-semibold">Créé le</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/70">
-                    {filteredAssistants.map(a => {
-                      const owner = userById[a.userId];
-                      const leadCount = leadsList.filter(l => l.assistantId === a.id).length;
-                      const langs = a.languages ? Object.entries(a.languages).filter(([, v]) => v).map(([k]) => k.toUpperCase()).join(' · ') : '—';
-                      return (
-                        <tr key={a.id} className="hover:bg-slate-800/30">
-                          <td className={td}>
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center shrink-0"><Bot size={14} className="text-violet-400" /></div>
-                              <div className="min-w-0">
-                                <div className="text-slate-100 font-medium truncate">{a.businessName}</div>
-                                <div className="text-[11px] text-slate-500 truncate flex items-center gap-1">{a.websiteUrl && <><Globe size={10} /> {a.websiteUrl}</>}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className={td}><span className="text-xs text-slate-400">{owner?.email || <span className="text-slate-600">inconnu</span>}</span></td>
-                          <td className={td}>{planBadge(a.plan)}</td>
-                          <td className={td}><span className="text-[11px] text-slate-500">{langs}</span></td>
-                          <td className={td}><Badge tone={leadCount ? 'amber' : 'slate'}>{leadCount}</Badge></td>
-                          <td className={td}><span className="text-xs text-slate-500">{fmtDate(a.createdAt)}</span></td>
-                          <td className={td}>
-                            <div className="flex items-center gap-1">
-                              <button className={iconBtn} title="Copier le code du widget" onClick={() => handleCopy(widgetSnippet(a), 'code widget ' + a.businessName)}><Copy size={15} /></button>
-                              <button className={iconBtn} title="Voir la config JSON" onClick={() => setInspectingAssistantJson(a)}><FileJson size={15} /></button>
-                              <button className={iconBtn} title="Modifier" onClick={() => setEditingAssistant({ ...a, languages: a.languages || { fr: true, darija: false, en: false, ar: false } })}><Pencil size={15} /></button>
-                              <button className={iconBtn} title="Supprimer" onClick={() => handleDeleteAssistant(a.id, a.businessName)}><Trash2 size={15} className="hover:text-rose-400" /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredAssistants.length === 0 && <tr><td colSpan={7} className={`${td} text-center text-slate-600 py-8`}>Aucun assistant trouvé.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ================================================= LEADS */}
-          {activeTab === 'leads' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2"><Target size={18} className="text-amber-400" /> Prospects ({filteredLeads.length})</h2>
-                <select value={leadStatusFilter} onChange={e => setLeadStatusFilter(e.target.value)} className={`${inp} w-auto`}>
-                  <option value="all">Tous statuts</option>
-                  <option value="nouveau">Nouveau</option>
-                  <option value="contacte">Contacté</option>
-                  <option value="qualifie">Qualifié</option>
-                  <option value="converti">Converti</option>
-                  <option value="perdu">Perdu</option>
-                </select>
-                <select value={leadAssistantFilter} onChange={e => setLeadAssistantFilter(e.target.value)} className={`${inp} w-auto max-w-[220px]`}>
-                  <option value="all">Tous les assistants</option>
-                  {assistantsList.map(a => <option key={a.id} value={a.id}>{a.businessName}</option>)}
-                </select>
-                <div className="ml-auto flex gap-2">
-                  <button onClick={exportLeadsCSV} className={btnGhost}><Download size={15} /> CSV complet</button>
-                  <button onClick={exportAdsAudienceCSV} className={btnGhost}><Download size={15} /> CSV Audience Ads</button>
-                </div>
-              </div>
-
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-x-auto">
-                <table className="w-full min-w-[860px]">
-                  <thead className="border-b border-slate-800 bg-slate-900">
-                    <tr>
-                      <th className={th}>Prospect</th>
-                      <th className={th}>Besoin exprimé</th>
-                      <th className={th}>Assistant</th>
-                      <th className={th}>Statut</th>
-                      <th className={th}>Date</th>
-                      <th className={th}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/70">
-                    {filteredLeads.map(l => (
-                      <tr key={l.id} className="hover:bg-slate-800/30">
-                        <td className={td}>
-                          <div className="min-w-0">
-                            <div className="text-slate-100 font-medium">{l.name}</div>
-                            <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
-                              {l.phone && <span className="flex items-center gap-1"><Phone size={10} /> {l.phone}</span>}
-                              {l.email && <span className="flex items-center gap-1"><Mail size={10} /> {l.email}</span>}
+                  <tbody>
+                    {loadingData && <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>}
+                    {!loadingData && filteredAssistants.map(a => (
+                      <tr key={a.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-all">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center"><Bot className="w-4 h-4" /></div>
+                            <div>
+                              <div className="font-medium text-slate-800">{a.businessName}</div>
+                              <div className="text-xs text-slate-400 truncate max-w-[180px]">{a.websiteUrl || '—'}</div>
                             </div>
                           </div>
                         </td>
-                        <td className={td}><span className="text-xs text-slate-400 line-clamp-2 max-w-[260px] block">{l.need || '—'}</span></td>
-                        <td className={td}><span className="text-xs text-slate-400">{assistantById[l.assistantId]?.businessName || '—'}</span></td>
-                        <td className={td}>
-                          <select value={(l.status || 'nouveau').toLowerCase()} onChange={e => handleLeadStatus(l, e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1 text-slate-200 focus:outline-none focus:border-violet-500">
-                            <option value="nouveau">Nouveau</option>
-                            <option value="contacte">Contacté</option>
-                            <option value="qualifie">Qualifié</option>
-                            <option value="converti">Converti</option>
-                            <option value="perdu">Perdu</option>
+                        <td className="px-4 py-3 text-slate-600 text-xs">{userById[a.userId || '']?.email || a.userId?.slice(0, 8) || '—'}</td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={a.plan}
+                            onChange={(e) => handleChangePlan(a, e.target.value)}
+                            className={`text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer focus:outline-none ${PLAN_CHIPS[a.plan] || PLAN_CHIPS.free}`}
+                          >
+                            <option value="free">Gratuit — IA bloquée</option>
+                            <option value="basic">Basic — 1 000</option>
+                            <option value="pro">Pro — 5 000</option>
+                            <option value="enterprise">Enterprise — illimité</option>
                           </select>
                         </td>
-                        <td className={td}><span className="text-xs text-slate-500">{fmtDateTime(l.date)}</span></td>
-                        <td className={td}>
-                          <div className="flex items-center gap-1">
-                            <button className={iconBtn} title="Détails" onClick={() => setInspectingLead(l)}><Eye size={15} /></button>
-                            <button className={iconBtn} title="Supprimer" onClick={() => handleDeleteLead(l.id)}><Trash2 size={15} className="hover:text-rose-400" /></button>
+                        <td className="px-4 py-3"><UsageBar plan={a.plan} assistantId={a.id} /></td>
+                        <td className="px-4 py-3 text-center text-slate-700 font-semibold">{leadsByAssistant[a.id] || 0}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{fmtDate(a.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleCopy(widgetSnippet(a), `snippet-${a.id}`)}
+                              className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer" title="Copier le code du widget"
+                            >
+                              {copiedField === `snippet-${a.id}` ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                            <button onClick={() => setInspectAssistant(a)} className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer" title="Voir la config JSON">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingAssistant(a);
+                              }}
+                              className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all cursor-pointer" title="Modifier"
+                            >
+                              <Sparkles className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDeleteAssistant(a)} className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer" title="Supprimer">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
                     ))}
-                    {filteredLeads.length === 0 && <tr><td colSpan={6} className={`${td} text-center text-slate-600 py-8`}>Aucun prospect trouvé.</td></tr>}
+                    {!loadingData && !filteredAssistants.length && (
+                      <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">Aucun assistant trouvé.</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* ================================================= INVOICES */}
-          {activeTab === 'invoices' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2"><Receipt size={18} className="text-emerald-400" /> Factures ({filteredInvoices.length})</h2>
-                <div className="ml-auto flex items-center gap-3">
-                  <div className="text-xs text-slate-500">Total payé : <span className="text-emerald-400 font-bold">{money(stats.revenueDzd)}</span> <span className="text-slate-600">/</span> <span className="text-emerald-400 font-bold">${stats.revenueUsd.toLocaleString('fr-FR')}</span></div>
-                  <button onClick={() => setShowNewInvoiceModal(true)} className={btnPrimary}><Plus size={15} /> Nouvelle facture</button>
-                </div>
+          {/* ============================================ PLANS & QUOTAS */}
+          {activeTab === 'plans' && (
+            <div className="space-y-6">
+              <div>
+                <h1 className="text-xl font-bold text-slate-900">Plans & Quotas</h1>
+                <p className="text-sm text-slate-500">
+                  Les limites bloquent réellement l'IA (web + Instagram) dès qu'elles sont atteintes.
+                </p>
               </div>
 
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-x-auto">
-                <table className="w-full min-w-[860px]">
-                  <thead className="border-b border-slate-800 bg-slate-900">
-                    <tr>
-                      <th className={th}>N°</th>
-                      <th className={th}>Client</th>
-                      <th className={th}>Plan</th>
-                      <th className={th}>Montant</th>
-                      <th className={th}>Méthode</th>
-                      <th className={th}>Statut</th>
-                      <th className={th}>Date</th>
-                      <th className={th}>Actions</th>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { id: 'free', name: 'Gratuit', desc: '0 crédit IA — lIA ne répond jamais', color: 'slate' },
+                  { id: 'basic', name: 'Basic', desc: 'conversations / mois', color: 'blue' },
+                  { id: 'pro', name: 'Pro / Business', desc: 'conversations / mois', color: 'purple' },
+                  { id: 'enterprise', name: 'Enterprise', desc: 'laisser VIDE = illimité', color: 'amber' },
+                ].map(p => (
+                  <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                    <div className={`text-xs font-bold uppercase tracking-wider mb-2 ${p.color === 'slate' ? 'text-slate-500' : p.color === 'blue' ? 'text-blue-600' : p.color === 'purple' ? 'text-purple-600' : 'text-amber-600'}`}>
+                      {p.name}
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={p.id === 'free'}
+                      value={limitsDraft[p.id]}
+                      onChange={(e) => setLimitsDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      placeholder={p.id === 'enterprise' ? 'Illimité' : '0'}
+                      className="w-full text-2xl font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:bg-white disabled:bg-slate-100 disabled:text-slate-400 transition-all"
+                    />
+                    <div className="text-xs text-slate-400 mt-2">{p.id === 'free' ? p.desc : `${p.desc} · ${p.id === 'basic' ? '6850 DA' : p.id === 'pro' ? '18 700 DA' : '47 100 DA'}`}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveLimits}
+                  disabled={savingLimits}
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  {savingLimits ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Enregistrer les quotas
+                </button>
+                <span className="text-xs text-slate-400">Application immédiate, sans redémarrage.</span>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
+                <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-purple-600" />
+                  <span className="font-semibold text-slate-800 text-sm">Consommation par assistant — {totalConversationsThisMonth} conversations ce mois</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 font-semibold">Assistant</th>
+                      <th className="px-4 py-3 font-semibold">Plan</th>
+                      <th className="px-4 py-3 font-semibold">Consommation</th>
+                      <th className="px-4 py-3 font-semibold">État</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/70">
-                    {filteredInvoices.map(i => (
-                      <tr key={i.id} className="hover:bg-slate-800/30">
-                        <td className={td}><span className="font-mono text-xs text-slate-400">{i.id}</span></td>
-                        <td className={td}>
-                          <div className="text-slate-100 text-xs">{i.customerEmail}</div>
-                          <div className="text-[11px] text-slate-500">{i.customerName}</div>
-                        </td>
-                        <td className={td}><span className="text-xs text-slate-300">{i.planName}</span></td>
-                        <td className={td}>
-                          <div className="text-xs font-semibold text-slate-100">{money(i.amountDzd)}</div>
-                          <div className="text-[11px] text-slate-500">${Number(i.amountUsd || 0).toLocaleString('fr-FR')}</div>
-                        </td>
-                        <td className={td}><span className="text-[11px] text-slate-500">{i.paymentMethod}</span></td>
-                        <td className={td}>
-                          <div className="flex items-center gap-2">
-                            {invoiceBadge(i.status)}
-                            <select value={(i.status || 'paid').toLowerCase()} onChange={e => handleInvoiceStatus(i.id, e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1 text-slate-200 focus:outline-none focus:border-violet-500">
-                              <option value="paid">paid</option>
-                              <option value="pending">pending</option>
-                              <option value="failed">failed</option>
-                            </select>
-                          </div>
-                        </td>
-                        <td className={td}><span className="text-xs text-slate-500">{fmtDateTime(i.createdAt)}</span></td>
-                        <td className={td}>
-                          <button className={iconBtn} title="Supprimer" onClick={() => handleDeleteInvoice(i.id)}><Trash2 size={15} className="hover:text-rose-400" /></button>
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredInvoices.length === 0 && <tr><td colSpan={8} className={`${td} text-center text-slate-600 py-8`}>Aucune facture trouvée.</td></tr>}
-                  </tbody>
+                  <tbody>
+                  {assistantsList.map(a => (
+                    <tr key={a.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                      <td className="px-5 py-3 font-medium text-slate-800">{a.businessName}</td>
+                      <td className="px-4 py-3"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PLAN_CHIPS[a.plan] || PLAN_CHIPS.free}`}>{PLAN_LABELS[a.plan] || a.plan}</span></td>
+                      <td className="px-4 py-3"><UsageBar plan={a.plan} assistantId={a.id} /></td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const limit = limitForPlan(a.plan);
+                          const used = usageByAssistant[a.id] || 0;
+                          if (limit === 0) return <span className="text-xs font-semibold text-slate-500">IA bloquée (Gratuit)</span>;
+                          if (limit === null) return <span className="text-xs font-semibold text-emerald-600">Illimité</span>;
+                          if (used >= limit) return <span className="text-xs font-semibold text-red-600">Limite atteinte — envois bloqués</span>;
+                          if (used >= limit * 0.8) return <span className="text-xs font-semibold text-amber-600">Presque à la limite</span>;
+                          return <span className="text-xs font-semibold text-emerald-600">OK</span>;
+                        })()}
+                      </td>
+                    </tr>
+                  ))}
+                  {!assistantsList.length && (
+                    <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-400 text-sm">Aucun assistant.</td></tr>
+                  )}
+                </tbody>
                 </table>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3 text-sm text-blue-800">
+                <Zap className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Comment ça marche :</strong> chaque réponse de l'IA compte pour 1 conversation (web + Instagram, comptées séparément pour chaque assistant).
+                  Plan Gratuit = l'IA ne répond jamais. Basic = 1 000/mois, Pro = 5 000/mois, Enterprise = illimité.
+                  Une fois la limite atteinte, l'IA bloque l'envoi et invite le client à upgrader — et toi, tu peux changer son plan ici ou dans l'onglet Assistants.
+                </span>
               </div>
             </div>
           )}
 
-          {/* ================================================= SYSTEM */}
-          {activeTab === 'system' && (
-            <div className="space-y-4 max-w-3xl">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2"><Settings2 size={18} className="text-slate-400" /> Système & permissions</h2>
-
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3">
-                <div className="text-sm font-semibold text-white">État de la plateforme</div>
-                <div className="grid sm:grid-cols-2 gap-2 text-xs text-slate-400">
-                  <div className="flex justify-between bg-slate-800/50 rounded-lg px-3 py-2"><span>Admin connecté</span><span className="text-slate-200 font-semibold">{profile?.email || adminEmail}</span></div>
-                  <div className="flex justify-between bg-slate-800/50 rounded-lg px-3 py-2"><span>Rôle</span>{roleBadge(profile?.role || 'superadmin')}</div>
-                  <div className="flex justify-between bg-slate-800/50 rounded-lg px-3 py-2"><span>Projet Supabase</span><span className="text-slate-200 font-mono">{(supabase as any).supabaseUrl ? new URL((supabase as any).supabaseUrl).host.split('.')[0] : '—'}</span></div>
-                  <div className="flex justify-between bg-slate-800/50 rounded-lg px-3 py-2"><span>Données</span><span className="text-slate-200">{usersList.length} users · {assistantsList.length} assistants · {leadsList.length} leads · {invoicesList.length} factures</span></div>
+          {/* ============================================ LEADS */}
+          {activeTab === 'leads' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">Registre central des leads</h1>
+                  <p className="text-sm text-slate-500">Tous les prospects captés par tous les assistants.</p>
                 </div>
-              </div>
-
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-white"><Database size={15} className="text-violet-400" /> Permissions « tout faire » de la console</div>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Si un bouton de la console affiche une erreur de permission (changer le statut d'un prospect, modifier un rôle, supprimer…), exécutez une seule fois le bloc SQL ci-dessous dans <span className="text-slate-200">Supabase → SQL Editor</span>. Il est sans risque et peut être ré-exécuté (fichier <span className="font-mono text-violet-300">supabase/migration_admin_console.sql</span> du dépôt).
-                </p>
-                <div className="relative">
-                  <pre className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[10px] text-slate-400 overflow-auto max-h-56 whitespace-pre-wrap">{CONSOLE_SQL}</pre>
-                  <button onClick={() => handleCopy(CONSOLE_SQL, 'SQL permissions console')} className="absolute top-2 right-2 flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-2 py-1 text-slate-200">
-                    {copiedField?.startsWith('SQL') ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />} Copier
+                <div className="flex flex-wrap items-center gap-2">
+                  <select value={leadStatusFilter} onChange={(e) => setLeadStatusFilter(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                    <option value="all">Tous les statuts</option>
+                    <option value="nouveau">Nouveau</option>
+                    <option value="qualifie">Qualifié</option>
+                    <option value="converti">Converti</option>
+                  </select>
+                  <select value={leadAssistantFilter} onChange={(e) => setLeadAssistantFilter(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm max-w-[200px] focus:outline-none focus:border-purple-500 cursor-pointer">
+                    <option value="all">Tous les assistants</option>
+                    {assistantsList.map(a => <option key={a.id} value={a.id}>{a.businessName}</option>)}
+                  </select>
+                  <button onClick={() => exportLeadsCsv('full')} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm hover:bg-slate-50 flex items-center gap-1.5 transition-all cursor-pointer">
+                    <Download className="w-4 h-4" /> CSV complet
+                  </button>
+                  <button onClick={() => exportLeadsCsv('ads')} className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold flex items-center gap-1.5 shadow-sm shadow-purple-600/30 transition-all cursor-pointer">
+                    <Download className="w-4 h-4" /> Audience pub
                   </button>
                 </div>
               </div>
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 font-semibold">Prospect</th>
+                      <th className="px-4 py-3 font-semibold">Besoin</th>
+                      <th className="px-4 py-3 font-semibold">Assistant</th>
+                      <th className="px-4 py-3 font-semibold">Statut</th>
+                      <th className="px-4 py-3 font-semibold">Date</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingData && <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>}
+                    {!loadingData && filteredLeads.map(l => (
+                      <tr key={l.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-all">
+                        <td className="px-5 py-3">
+                          <div className="font-medium text-slate-800">{l.name || 'Prospect anonyme'}</div>
+                          <div className="text-xs text-slate-400 flex flex-wrap gap-x-3">
+                            {l.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{l.phone}</span>}
+                            {l.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{l.email}</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 max-w-[220px]"><div className="truncate">{l.need || '—'}</div></td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">{assistantById[l.assistantId || '']?.businessName || '—'}</td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={l.status}
+                            onChange={(e) => handleLeadStatus(l, e.target.value)}
+                            className={`text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer focus:outline-none ${
+                              l.status === 'converti' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : l.status === 'qualifie' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            <option value="nouveau">Nouveau</option>
+                            <option value="qualifie">Qualifié</option>
+                            <option value="converti">Converti</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{fmtDate(l.createdAt)} {fmtTime(l.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => setInspectLead(l)} className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer" title="Détail + conversation">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDeleteLead(l)} className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer" title="Supprimer">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {!loadingData && !filteredLeads.length && (
+                      <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">Aucun prospect trouvé.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-              <div className="bg-slate-900/80 border border-rose-500/30 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-rose-300"><AlertCircle size={15} /> Zone sensible</div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={fetchAllPlatformData} className={btnGhost}><RefreshCw size={15} /> Re-synchroniser toutes les données</button>
-                  <button onClick={handleAdminLogout} className={btnDanger}><LogOut size={15} /> Verrouiller la console</button>
+          {/* ============================================ FACTURES */}
+          {activeTab === 'invoices' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">Factures & Paiements</h1>
+                  <p className="text-sm text-slate-500">Créer une facture monte automatiquement le plan des assistants du client.</p>
                 </div>
+                <button
+                  onClick={() => { setShowNewInvoiceModal(true); }}
+                  className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm shadow-purple-600/30 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Nouvelle facture
+                </button>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 font-semibold">Facture</th>
+                      <th className="px-4 py-3 font-semibold">Client</th>
+                      <th className="px-4 py-3 font-semibold">Plan</th>
+                      <th className="px-4 py-3 font-semibold">Montant</th>
+                      <th className="px-4 py-3 font-semibold">Statut</th>
+                      <th className="px-4 py-3 font-semibold">Date</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingData && <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>}
+                    {!loadingData && invoicesList.map(inv => (
+                      <tr key={inv.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-all">
+                        <td className="px-5 py-3 font-mono text-xs text-slate-600">{inv.id}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-800">{inv.customerName || '—'}</div>
+                          <div className="text-xs text-slate-400">{inv.customerEmail}</div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">{inv.planName || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {Number(inv.amountDzd) ? `${Number(inv.amountDzd).toLocaleString('fr-FR')} DA` : `$${inv.amountUsd || 0}`}
+                        </td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={inv.status}
+                            onChange={(e) => handleInvoiceStatus(inv, e.target.value)}
+                            className={`text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer focus:outline-none ${
+                              inv.status === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : inv.status === 'failed' ? 'bg-red-50 text-red-700 border-red-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            <option value="paid">Payée</option>
+                            <option value="pending">En attente</option>
+                            <option value="failed">Échouée</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{fmtDate(inv.createdAt || inv.date)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleDeleteInvoice(inv)} className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer" title="Supprimer">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!loadingData && !invoicesList.length && (
+                      <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">Aucune facture.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================ SYSTÈME */}
+          {activeTab === 'system' && (
+            <div className="space-y-6 max-w-4xl">
+              <div>
+                <h1 className="text-xl font-bold text-slate-900">Maintenance & SQL</h1>
+                <p className="text-sm text-slate-500">État de la plateforme et permissions de la console.</p>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Connexion Supabase</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span className="text-slate-700">Données chargées correctement</span>
+                  </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Compteurs de quota</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    {sqlReady === false ? (
+                      <><AlertCircle className="w-4 h-4 text-amber-500" /><span className="text-amber-700">SQL à exécuter (ci-dessous)</span></>
+                    ) : (
+                      <><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span className="text-slate-700">Opérationnels</span></>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <div>
+                    <div className="font-semibold text-slate-800 text-sm">SQL des permissions console (une seule fois)</div>
+                    <div className="text-xs text-slate-500">Copie TOUT le bloc, colle-le dans Supabase → SQL Editor → Run. Sans risque, ré-exécutable.</div>
+                  </div>
+                  <button
+                    onClick={() => handleCopy(CONSOLE_SQL, 'console-sql')}
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-purple-600/30 transition-all cursor-pointer"
+                  >
+                    {copiedField === 'console-sql' ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copiedField === 'console-sql' ? 'Copié !' : 'Copier le SQL'}
+                  </button>
+                </div>
+                <pre className="bg-slate-900 text-slate-100 rounded-xl p-4 text-[11px] leading-relaxed overflow-x-auto max-h-72 overflow-y-auto whitespace-pre">
+                  {CONSOLE_SQL}
+                </pre>
               </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* ================================================= MODALS */}
-
+      {/* ============================================ MODALES */}
       {editingUser && (
-        <Modal title={`Modifier ${editingUser.email}`} onClose={() => setEditingUser(null)}>
+        <Modal title={`Modifier — ${editingUser.displayName}`} onClose={() => setEditingUser(null)}>
           <div className="space-y-4">
-            <Field label="Nom affiché">
-              <input className={inp} value={editingUser.displayName} onChange={e => setEditingUser({ ...editingUser, displayName: e.target.value })} />
-            </Field>
-            <Field label="Entreprise">
-              <input className={inp} value={editingUser.companyName} onChange={e => setEditingUser({ ...editingUser, companyName: e.target.value })} />
-            </Field>
-            <Field label="Téléphone">
-              <input className={inp} value={editingUser.phoneNumber} onChange={e => setEditingUser({ ...editingUser, phoneNumber: e.target.value })} />
-            </Field>
-            <Field label="Rôle">
-              <select className={inp} value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}>
-                <option value="user">user (client)</option>
-                <option value="admin">admin</option>
-                <option value="superadmin">superadmin</option>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Nom affiché</label>
+              <input value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Entreprise</label>
+              <input value={editCompanyName} onChange={(e) => setEditCompanyName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Téléphone</label>
+              <input value={editPhoneNumber} onChange={(e) => setEditPhoneNumber(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Rôle</label>
+              <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                <option value="user">Client</option>
+                <option value="admin">Admin (gestionnaire)</option>
               </select>
-            </Field>
-            <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><Shield size={12} /> L'e-mail et l'identifiant sont verrouillés (sécurité anti-escalade).</div>
-            <div className="flex gap-2 justify-end">
-              <button className={btnGhost} onClick={() => setEditingUser(null)}>Annuler</button>
-              <button className={btnPrimary} disabled={saving} onClick={handleSaveUser}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Enregistrer</button>
+              <p className="text-[11px] text-slate-400 mt-1">Le rôle « superadmin » (toi) ne peut pas être attribué ici — c'est une protection.</p>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleSaveUser} disabled={editSaving} className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer">
+                {editSaving && <Loader2 className="w-4 h-4 animate-spin" />} Enregistrer
+              </button>
+              <button onClick={() => setEditingUser(null)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 cursor-pointer">Annuler</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {editingAssistant && (
-        <Modal title={`Modifier ${editingAssistant.businessName}`} onClose={() => setEditingAssistant(null)} wide>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Nom du business">
-              <input className={inp} value={editingAssistant.businessName} onChange={e => setEditingAssistant({ ...editingAssistant, businessName: e.target.value })} />
-            </Field>
-            <Field label="Site web">
-              <input className={inp} value={editingAssistant.websiteUrl || ''} onChange={e => setEditingAssistant({ ...editingAssistant, websiteUrl: e.target.value })} />
-            </Field>
-            <Field label="Plan d'abonnement">
-              <select className={inp} value={(editingAssistant.plan || 'free').toLowerCase()} onChange={e => setEditingAssistant({ ...editingAssistant, plan: e.target.value })}>
-                <option value="free">free</option>
-                <option value="basic">basic</option>
-                <option value="pro">pro</option>
-                <option value="enterprise">enterprise</option>
-              </select>
-            </Field>
-            <Field label="Ton de l'assistant">
-              <select className={inp} value={editingAssistant.assistantTone || 'professionnel'} onChange={e => setEditingAssistant({ ...editingAssistant, assistantTone: e.target.value })}>
-                {['professionnel', 'amical', 'commercial', 'luxueux', 'décontracté', 'expert'].map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="WhatsApp (escalade)">
-              <input className={inp} value={editingAssistant.whatsappEscalation || ''} onChange={e => setEditingAssistant({ ...editingAssistant, whatsappEscalation: e.target.value })} placeholder="+213…" />
-            </Field>
-            <div className="flex flex-col gap-3 justify-end pb-1">
-              <Toggle checked={!!editingAssistant.siteShopping} onChange={v => setEditingAssistant({ ...editingAssistant, siteShopping: v })} label="Commandes via le site (siteShopping)" />
-              <Toggle checked={!!editingAssistant.autoLeadCapture} onChange={v => setEditingAssistant({ ...editingAssistant, autoLeadCapture: v })} label="Capture automatique de prospects" />
-            </div>
-            <div className="sm:col-span-2">
-              <Field label="Langues">
-                <div className="flex gap-4 flex-wrap">
-                  {(['fr', 'darija', 'en', 'ar'] as const).map(l => (
-                    <label key={l} className="flex items-center gap-2 text-sm text-slate-300">
-                      <input type="checkbox" checked={!!editingAssistant.languages?.[l]} onChange={e => setEditingAssistant({ ...editingAssistant, languages: { ...editingAssistant.languages, [l]: e.target.checked } })} className="accent-violet-600" />
-                      {l.toUpperCase()}
+      {editingAssistant && (() => {
+        const [local, setLocal] = [editingAssistant, setEditingAssistant];
+        return (
+          <Modal title={`Assistant — ${local.businessName}`} onClose={() => setEditingAssistant(null)} wide>
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Nom de l'entreprise</label>
+                  <input value={local.businessName} onChange={(e) => setLocal({ ...local, businessName: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Site web</label>
+                  <input value={local.websiteUrl || ''} onChange={(e) => setLocal({ ...local, websiteUrl: e.target.value })} placeholder="https://..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Plan (verrou IA)</label>
+                  <select value={local.plan} onChange={(e) => setLocal({ ...local, plan: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                    <option value="free">Gratuit — IA bloquée</option>
+                    <option value="basic">Basic — 1 000 conv/mois</option>
+                    <option value="pro">Pro — 5 000 conv/mois</option>
+                    <option value="enterprise">Enterprise — illimité</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Ton</label>
+                  <select value={local.tone || 'professionnel'} onChange={(e) => setLocal({ ...local, tone: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                    <option value="professionnel">Professionnel</option>
+                    <option value="amical">Amical</option>
+                    <option value="enthousiaste">Enthousiaste</option>
+                    <option value="concis">Concis</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">WhatsApp (escalade)</label>
+                  <input value={local.whatsappEscalation || ''} onChange={(e) => setLocal({ ...local, whatsappEscalation: e.target.value })} placeholder="+213..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                </div>
+                <div className="flex items-end gap-6 pb-1">
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={local.siteShopping} onChange={(e) => setLocal({ ...local, siteShopping: e.target.checked })} className="accent-purple-600 w-4 h-4" />
+                    Commandes via le site
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={local.autoLeadCapture} onChange={(e) => setLocal({ ...local, autoLeadCapture: e.target.checked })} className="accent-purple-600 w-4 h-4" />
+                    Capture auto des leads
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Langues de réponse</label>
+                <div className="flex flex-wrap gap-4">
+                  {([['fr', 'Français'], ['darija', 'Darija'], ['en', 'Anglais'], ['ar', 'Arabe']] as const).map(([k, lbl]) => (
+                    <label key={k} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!local.languages?.[k]}
+                        onChange={(e) => setLocal({ ...local, languages: { ...local.languages, [k]: e.target.checked } })}
+                        className="accent-purple-600 w-4 h-4"
+                      />
+                      {lbl}
                     </label>
                   ))}
                 </div>
-              </Field>
-            </div>
-            <div className="sm:col-span-2">
-              <Field label="Description du business">
-                <textarea className={`${inp} min-h-[90px]`} value={editingAssistant.businessDescription || ''} onChange={e => setEditingAssistant({ ...editingAssistant, businessDescription: e.target.value })} />
-              </Field>
-            </div>
-            <div className="sm:col-span-2">
-              <Field label="FAQ / infos métier">
-                <textarea className={`${inp} min-h-[90px]`} value={editingAssistant.faqText || ''} onChange={e => setEditingAssistant({ ...editingAssistant, faqText: e.target.value })} />
-              </Field>
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end mt-5">
-            <button className={btnGhost} onClick={() => setEditingAssistant(null)}>Annuler</button>
-            <button className={btnPrimary} disabled={saving} onClick={handleSaveAssistant}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Enregistrer</button>
-          </div>
-        </Modal>
-      )}
-
-      {inspectingLead && (
-        <Modal title={`Prospect : ${inspectingLead.name}`} onClose={() => setInspectingLead(null)} wide>
-          <div className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-3 text-sm">
-              <div className="bg-slate-800/50 rounded-xl px-3 py-2 flex items-center gap-2"><Phone size={14} className="text-emerald-400" /> {inspectingLead.phone || '—'}</div>
-              <div className="bg-slate-800/50 rounded-xl px-3 py-2 flex items-center gap-2"><Mail size={14} className="text-sky-400" /> {inspectingLead.email || '—'}</div>
-              <div className="bg-slate-800/50 rounded-xl px-3 py-2 flex items-center gap-2"><Bot size={14} className="text-violet-400" /> {assistantById[inspectingLead.assistantId]?.businessName || inspectingLead.assistantId}</div>
-              <div className="bg-slate-800/50 rounded-xl px-3 py-2 flex items-center gap-2"><Calendar size={14} className="text-amber-400" /> {fmtDateTime(inspectingLead.date)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Besoin exprimé</div>
-              <div className="bg-slate-800/50 rounded-xl px-3 py-2 text-sm text-slate-300 whitespace-pre-wrap">{inspectingLead.need || '—'}</div>
-            </div>
-            {inspectingLead.messages.length > 0 && (
+              </div>
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2 flex items-center gap-1"><MessageSquare size={12} /> Historique de conversation</div>
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {inspectingLead.messages.map((m: any, idx: number) => (
-                    <div key={idx} className={`rounded-xl px-3 py-2 text-xs ${m.role === 'user' || m.from === 'user' ? 'bg-sky-500/10 border border-sky-500/20 ml-8' : 'bg-slate-800/70 border border-slate-700 mr-8'}`}>
-                      <div className="text-[10px] text-slate-500 mb-0.5">{m.role === 'user' || m.from === 'user' ? 'Client' : 'Assistant IA'}</div>
-                      <div className="text-slate-300 whitespace-pre-wrap">{m.text || m.content || m.message || JSON.stringify(m)}</div>
-                    </div>
-                  ))}
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Description de l'entreprise</label>
+                <textarea value={local.businessDescription || ''} onChange={(e) => setLocal({ ...local, businessDescription: e.target.value })} rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">FAQ</label>
+                <textarea value={local.faqText || ''} onChange={(e) => setLocal({ ...local, faqText: e.target.value })} rows={3} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Code du widget (à copier chez le client)</label>
+                <div className="flex gap-2">
+                  <code className="flex-1 bg-slate-900 text-emerald-300 rounded-xl px-4 py-2.5 text-xs overflow-x-auto whitespace-nowrap">{widgetSnippet(local)}</code>
+                  <button onClick={() => handleCopy(widgetSnippet(local), 'modal-snippet')} className="px-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                    {copiedField === 'modal-snippet' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-slate-500" />}
+                  </button>
                 </div>
               </div>
-            )}
-            {inspectingLead.currentPage && <div className="text-[11px] text-slate-500">Page visitée : {inspectingLead.currentPage}</div>}
-            <div className="flex gap-2 justify-end">
-              <button className={btnGhost} onClick={() => handleCopy(JSON.stringify(inspectingLead.raw, null, 2), 'données du prospect')}><Copy size={14} /> Copier les données</button>
-              <button className={btnDanger} onClick={() => handleDeleteLead(inspectingLead.id)}><Trash2 size={14} /> Supprimer</button>
+              <div className="flex gap-2 pt-2">
+                <button onClick={handleSaveAssistant} disabled={assistantSaving} className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer">
+                  {assistantSaving && <Loader2 className="w-4 h-4 animate-spin" />} Enregistrer
+                </button>
+                <button onClick={() => setEditingAssistant(null)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 cursor-pointer">Annuler</button>
+              </div>
             </div>
-          </div>
+          </Modal>
+        );
+      })()}
+
+      {inspectAssistant && (
+        <Modal title={`Configuration JSON — ${inspectAssistant.businessName}`} onClose={() => setInspectAssistant(null)} wide>
+          <pre className="bg-slate-900 text-slate-100 rounded-xl p-4 text-[11px] leading-relaxed overflow-auto max-h-[60vh]">
+            {JSON.stringify(inspectAssistant._row, null, 2)}
+          </pre>
         </Modal>
       )}
 
-      {inspectingAssistantJson && (
-        <Modal title={`Configuration : ${inspectingAssistantJson.businessName}`} onClose={() => setInspectingAssistantJson(null)} wide>
-          <div className="relative">
-            <pre className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-400 overflow-auto max-h-[60vh]">{JSON.stringify({ id: inspectingAssistantJson.id, userId: inspectingAssistantJson.userId, businessName: inspectingAssistantJson.businessName, websiteUrl: inspectingAssistantJson.websiteUrl, widgetId: inspectingAssistantJson.widgetId, plan: inspectingAssistantJson.plan, config: inspectingAssistantJson.rawConfig }, null, 2)}</pre>
-            <button onClick={() => handleCopy(JSON.stringify(inspectingAssistantJson.rawConfig, null, 2), 'config JSON')} className="absolute top-2 right-2 flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-2 py-1 text-slate-200"><Copy size={12} /> Copier</button>
+      {inspectLead && (
+        <Modal title={`Prospect — ${inspectLead.name || inspectLead.phone || inspectLead.email || inspectLead.id}`} onClose={() => setInspectLead(null)} wide>
+          <div className="space-y-4">
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Contact</div>
+                <div className="text-slate-800 font-medium">{inspectLead.name || '—'}</div>
+                <div className="text-slate-600">{inspectLead.phone || '—'}</div>
+                <div className="text-slate-600">{inspectLead.email || '—'}</div>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Contexte</div>
+                <div className="text-slate-600">Assistant : {assistantById[inspectLead.assistantId || '']?.businessName || '—'}</div>
+                <div className="text-slate-600">Page : {inspectLead.currentPage || '—'}</div>
+                <div className="text-slate-600">Statut : {inspectLead.status}</div>
+              </div>
+            </div>
+            {inspectLead.need && (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-sm text-purple-900">
+                <div className="text-xs uppercase tracking-wider text-purple-500 mb-1">Besoin exprimé</div>
+                {inspectLead.need}
+              </div>
+            )}
+            <div>
+              <div className="text-xs text-slate-400 uppercase tracking-wider mb-2">Conversation ({inspectLead.messages.length} messages)</div>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {inspectLead.messages.map((m: any, i: number) => (
+                  <div key={i} className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${m.sender === 'user' ? 'bg-slate-100 text-slate-800 ml-auto' : 'bg-purple-50 text-purple-900'}`}>
+                    <div className="text-[10px] opacity-60 mb-0.5">{m.sender === 'user' ? 'Visiteur' : 'IA'}{m.timestamp ? ` · ${fmtTime(m.timestamp)}` : ''}</div>
+                    {m.text}
+                  </div>
+                ))}
+                {!inspectLead.messages.length && <div className="text-xs text-slate-400">Aucun message enregistré.</div>}
+              </div>
+            </div>
           </div>
         </Modal>
       )}
 
       {showNewInvoiceModal && (
-        <Modal title="Nouvelle facture manuelle" onClose={() => setShowNewInvoiceModal(false)}>
-          <form onSubmit={handleCreateManualInvoice} className="space-y-4">
-            <Field label="E-mail du client">
-              <input className={inp} type="email" value={newInvEmail} onChange={e => setNewInvEmail(e.target.value)} placeholder="client@exemple.com" required />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Plan">
-                <select className={inp} value={newInvPlan} onChange={e => setNewInvPlan(e.target.value as any)}>
-                  <option value="basic">Basic (29$)</option>
-                  <option value="pro">Pro (79$)</option>
-                  <option value="enterprise">Enterprise (199$)</option>
+        <Modal title="Nouvelle facture" onClose={() => setShowNewInvoiceModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Email du client</label>
+              <input value={newInvEmail} onChange={(e) => setNewInvEmail(e.target.value)} placeholder="client@exemple.com" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Nom du client (optionnel)</label>
+              <input value={newInvName} onChange={(e) => setNewInvName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Plan facturé</label>
+                <select
+                  value={newInvPlan}
+                  onChange={(e) => {
+                    const p = e.target.value as 'basic' | 'pro' | 'enterprise';
+                    setNewInvPlan(p);
+                    setNewInvAmountDzd(PLAN_PRICES[p].dzd);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer"
+                >
+                  <option value="basic">Basic</option>
+                  <option value="pro">Pro / Business</option>
+                  <option value="enterprise">Enterprise</option>
                 </select>
-              </Field>
-              <Field label="Montant (DZD)">
-                <input className={inp} type="number" value={newInvAmountDzd} onChange={e => setNewInvAmountDzd(Number(e.target.value))} />
-              </Field>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Montant (DA)</label>
+                <input type="number" value={newInvAmountDzd} onChange={(e) => setNewInvAmountDzd(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Moyen de paiement</label>
+                <select value={newInvMethod} onChange={(e) => setNewInvMethod(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                  <option value="baridimob_ccp">BaridiMob / CCP</option>
+                  <option value="slickpay_dzd">Slickpay (CIB)</option>
+                  <option value="stripe_card">Carte (Stripe)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Statut</label>
+                <select value={newInvStatus} onChange={(e) => setNewInvStatus(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                  <option value="paid">Payée</option>
+                  <option value="pending">En attente</option>
+                </select>
+              </div>
             </div>
-            <Field label="Méthode de paiement">
-              <select className={inp} value={newInvMethod} onChange={e => setNewInvMethod(e.target.value as any)}>
-                <option value="baridimob_ccp">CCP / BaridiMob</option>
-                <option value="slickpay_dzd">SlickPay (Edahabia/CIB)</option>
-                <option value="stripe_card">Carte bancaire</option>
-              </select>
-            </Field>
-            <p className="text-[11px] text-slate-500">La facture est créée « payée » et le plan des assistants du client est mis à niveau automatiquement.</p>
-            <div className="flex gap-2 justify-end">
-              <button type="button" className={btnGhost} onClick={() => setShowNewInvoiceModal(false)}>Annuler</button>
-              <button type="submit" className={btnPrimary} disabled={isCreatingInvoice}>{isCreatingInvoice ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Créer la facture</button>
+            <p className="text-xs text-slate-500 bg-blue-50 border border-blue-200 rounded-xl p-3">
+              À la création, tous les assistants de ce client passent automatiquement au plan facturé (l'IA sera débloquée à sa limite).
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleCreateInvoice} disabled={isCreatingInvoice || !newInvEmail.trim()} className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer">
+                {isCreatingInvoice && <Loader2 className="w-4 h-4 animate-spin" />} Créer la facture
+              </button>
+              <button onClick={() => setShowNewInvoiceModal(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 cursor-pointer">Annuler</button>
             </div>
-          </form>
+          </div>
         </Modal>
+      )}
+
+      {/* Notification toast */}
+      {statusNotification && (
+        <div className={`fixed top-20 right-6 z-[60] max-w-sm rounded-2xl border p-4 shadow-xl flex items-start gap-3 text-sm ${
+          statusNotification.type === 'success' ? 'bg-white border-emerald-200 text-slate-800' : 'bg-white border-red-200 text-slate-800'
+        }`}>
+          {statusNotification.type === 'success'
+            ? <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+            : <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />}
+          <span>{statusNotification.message}</span>
+        </div>
       )}
     </div>
   );

@@ -61,6 +61,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
   const [showTeaser, setShowTeaser] = useState(mergedConfig.showTeaser !== false);
   const [inputVal, setInputVal] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
   const [leadCaptured, setLeadCaptured] = useState(false);
   const [leadPhone, setLeadPhone] = useState('');
   const [showLeadForm, setShowLeadForm] = useState(false);
@@ -90,6 +91,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
   }, [mergedConfig.showTeaser]);
 
   const handleSendMessage = async (textToSend?: string) => {
+    if (limitReached) return; // plan du propriétaire : quota de conversations atteint
     const text = (textToSend || inputVal).trim();
     if (!text) return;
 
@@ -112,6 +114,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
       if (response.ok) {
         const data = await response.json();
         botReply = data.text || data.message || data.response || '';
+        if (data.limitReached) setLimitReached(true); // l'IA bloque l'envoi côté serveur
       } else {
         const errData = await response.json().catch(() => ({}));
         botReply = errData.message || `Bonjour ! Merci pour votre message chez ${businessName}. Laissez-nous vos coordonnées ou votre question, un conseiller vous répond très rapidement.`;
@@ -380,7 +383,8 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
               type="text"
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="Écrivez votre message..."
+              disabled={limitReached}
+              placeholder={limitReached ? 'Limite du plan atteinte — mise à niveau requise' : 'Écrivez votre message...'}
               className={`flex-1 text-xs sm:text-sm px-3.5 py-2 rounded-xl border focus:outline-none transition-all ${
                 themeMode === 'dark'
                   ? 'bg-[#151928] text-white border-white/10 placeholder-neutral-500 focus:border-purple-500'
@@ -389,7 +393,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
             />
             <button
               type="submit"
-              disabled={!inputVal.trim() || isTyping}
+              disabled={!inputVal.trim() || isTyping || limitReached}
               className="p-2 sm:p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-md shrink-0"
               style={{
                 background: useGradient

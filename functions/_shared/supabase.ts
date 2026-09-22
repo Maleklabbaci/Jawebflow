@@ -21,6 +21,11 @@ async function request(env: SupabaseEnv, path: string, init: RequestInit = {}) {
   return fetch(`${url}/rest/v1/${path}`, { ...init, headers });
 }
 
+// Exporté pour les modules frères (limits.ts) : requête REST en service_role.
+export async function supabaseRequest(env: SupabaseEnv, path: string, init: RequestInit = {}) {
+  return request(env, path, init);
+}
+
 export function supabaseConfigured(env: SupabaseEnv) {
   return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && !env.SUPABASE_SERVICE_ROLE_KEY.startsWith('sb_publishable_'));
 }

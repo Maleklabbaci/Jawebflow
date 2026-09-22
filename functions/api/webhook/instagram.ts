@@ -35,6 +35,13 @@ import {
 import { officialInfoBlock, businessPackBlock } from "../../_shared/prompt.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
 import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
+import {
+  supabaseGetPlanLimits,
+  supabaseCountMonthlyConversations,
+  supabaseLogConversation,
+  LIMIT_BLOCK_FREE,
+  limitBlockReached,
+} from "../../_shared/limits.ts";
 
 /** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -683,6 +690,24 @@ async function handleDirectMessage(env: Env, event: any) {
     console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
   }
 
+  // QUOTAS PAR PLAN (mêmes règles que /api/chat) : Gratuit = 0 crédit IA,
+  // Basic 1 000 conv/mois, Pro 5 000, Enterprise illimité. Limite atteinte =>
+  // on envoie le message de blocage au lieu de la réponse IA.
+  if (integration.assistantId && supabaseConfigured(env)) {
+    const limits = await supabaseGetPlanLimits(env);
+    const plan = String(config?.plan || "free").toLowerCase();
+    const limit = plan in limits ? limits[plan] : limits.free;
+    const used = typeof limit === "number" && limit > 0
+      ? await supabaseCountMonthlyConversations(env, integration.assistantId)
+      : 0;
+    if (limit === 0 || (typeof limit === "number" && limit > 0 && used >= limit)) {
+      const blockMsg = limit === 0 ? LIMIT_BLOCK_FREE : limitBlockReached(plan, limit);
+      console.log(`[instagram] plan ${plan} : quota ${used}/${limit} — réponse IA bloquée`);
+      await sendInstagramMessage(integration.igToken, customerId, blockMsg);
+      return;
+    }
+  }
+
   sendTypingOn(integration.igToken, customerId).catch(() => {});
 
   // "Tout passe par mon site" : si le client envoie une PHOTO sans texte,
@@ -732,6 +757,13 @@ async function handleDirectMessage(env: Env, event: any) {
       apiKey: env.GEMINI_API_KEY,
       chatModel: env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     }).catch((e: any) => console.error("[instagram][learning]", e?.message || e));
+    // Compteur de quota mensuel (1 ligne = 1 conversation consommée).
+    supabaseLogConversation(env, {
+      assistantId: integration.assistantId,
+      channel: "instagram",
+      message: incoming,
+      response: replyText,
+    }).catch((e: any) => console.error("[instagram][quota]", e?.message || e));
   }
 
   const messages = [
