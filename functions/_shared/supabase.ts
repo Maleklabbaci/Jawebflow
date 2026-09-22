@@ -36,15 +36,18 @@ export async function supabaseGetAssistant(env: SupabaseEnv, assistantId: string
 
 export async function supabasePatchAssistant(env: SupabaseEnv, assistantId: string, patch: Record<string, any>) {
   const configPatch = { ...patch };
-  const mapped: Record<string, any> = { updated_at: new Date().toISOString() };
+  const mapped: Record<string, any> = { id: assistantId, updated_at: new Date().toISOString() };
   if ('userId' in configPatch) { mapped.user_id = configPatch.userId; delete configPatch.userId; }
   if ('businessName' in configPatch) { mapped.business_name = configPatch.businessName; delete configPatch.businessName; }
   if ('websiteUrl' in configPatch) { mapped.website_url = configPatch.websiteUrl; delete configPatch.websiteUrl; }
   const existing = await supabaseGetAssistant(env, assistantId);
   mapped.config = { ...(existing.data?.config || {}), ...configPatch };
   if (patch.knowledgeNotes !== undefined) { mapped.knowledge_notes = patch.knowledgeNotes; delete mapped.config.knowledgeNotes; }
-  const res = await request(env, `assistants?id=eq.${encodeURIComponent(assistantId)}`, {
-    method: 'PATCH', body: JSON.stringify(mapped), headers: { Prefer: 'return=representation' }
+  if (!existing.ok) mapped.created_at = new Date().toISOString();
+  // Upsert : la ligne est créée si elle n'existe pas encore (assistant migré
+  // depuis Firestore, jamais écrit côté Supabase jusqu'ici), sinon mise à jour.
+  const res = await request(env, `assistants?on_conflict=id`, {
+    method: 'POST', body: JSON.stringify(mapped), headers: { Prefer: 'resolution=merge-duplicates,return=representation' }
   });
   if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
   return { ok: true, status: 200 };
@@ -69,4 +72,18 @@ export async function supabaseListKnowledge(env: SupabaseEnv, assistantId: strin
   const res = await request(env, `knowledge_documents?assistant_id=eq.${encodeURIComponent(assistantId)}&select=title,content,source_url&order=scanned_at.desc&limit=100`);
   if (!res.ok) return [];
   return await res.json() as Array<{ title?: string; content?: string; source_url?: string }>;
+}
+
+// Reconstruit un objet "config" au même format que celui utilisé partout
+// ailleurs dans le code (chat.js, crawler/analyze.ts...) — colonnes dédiées +
+// tout le reste rangé dans la colonne jsonb `config`.
+export function supabaseAssistantRowToConfig(row: Record<string, any>): Record<string, any> {
+  if (!row) return {};
+  return {
+    ...(row.config || {}),
+    userId: row.user_id,
+    businessName: row.business_name ?? row.config?.businessName,
+    websiteUrl: row.website_url ?? row.config?.websiteUrl,
+    knowledgeNotes: row.knowledge_notes ?? row.config?.knowledgeNotes ?? [],
+  };
 }
