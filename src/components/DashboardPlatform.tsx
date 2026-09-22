@@ -53,8 +53,8 @@ import {
   Shield
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, db, isUserAdmin, auth } from '../lib/firebase';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, db, isUserAdmin, auth } from '../lib/supabase';
+import { collection, query, where, orderBy, onSnapshot } from 'supabase/firestore';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
@@ -704,7 +704,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setScanStage("Recherche des informations, prix, horaires et coordonnées…");
 
       // Le scan écrit dans la base de connaissances : le serveur exige un jeton
-      // Firebase prouvant que l'assistant appartient bien à l'utilisateur connecté.
+      // supabase prouvant que l'assistant appartient bien à l'utilisateur connecté.
       // `true` force un jeton frais : sans ça, le SDK peut renvoyer un jeton en
       // cache déjà expiré (onglet resté ouvert longtemps, veille mobile...),
       // ce qui provoquait un 401 intermittent sans rien changer côté serveur.
@@ -1935,7 +1935,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
           )}
 
           {/* =================================================================
-              SECTION: INSTAGRAM INTEGRATION (FIREBASE OAUTH & DM MANAGEMENT)
+              SECTION: INSTAGRAM INTEGRATION (supabase OAUTH & DM MANAGEMENT)
               ================================================================= */}
           {currentSection === 'instagram' && (
             isPlanGated ? (
