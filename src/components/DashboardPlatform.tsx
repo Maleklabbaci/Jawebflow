@@ -50,7 +50,8 @@ import {
   Monitor,
   Instagram,
   Lock,
-  Shield
+  Shield,
+  BrainCircuit
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase } from '../lib/supabase';
@@ -64,7 +65,7 @@ import { LockedFeatureGate } from './LockedFeatureGate';
 import { WebhookTestingUtility } from './WebhookTestingUtility';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'widget' | 'simulator' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
 
 /**
  * Menu de l'espace client.
@@ -84,6 +85,7 @@ const NAV_GROUPS: Array<{
       { id: 'knowledge', label: 'Mes informations', icon: Database },
       { id: 'widget', label: 'Apparence', icon: Palette },
       { id: 'simulator', label: 'Tester l\'assistant', icon: MessageSquare, pro: true },
+      { id: 'learning', label: 'Apprentissage IA', icon: BrainCircuit },
     ],
   },
   {
@@ -237,6 +239,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   });
   const [autoLeadCapture, setAutoLeadCapture] = useState<boolean>(true);
   const [whatsappEscalation, setWhatsappEscalation] = useState<string>('');
+  // Informations officielles structurées (toujours citées telles quelles par l'IA)
+  const [businessInfo, setBusinessInfo] = useState<{ address?: string; phone?: string; hours?: string; closedDays?: string }>({});
+  // Boucle d'apprentissage : questions sans réponse signalées par l'IA / les 👎
+  const [learningQuestions, setLearningQuestions] = useState<any[]>([]);
+  const [learningLoading, setLearningLoading] = useState(false);
+  const [learningDrafts, setLearningDrafts] = useState<Record<string, string>>({});
+  const [learningSaving, setLearningSaving] = useState<string | null>(null);
+  const [learningNotice, setLearningNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string>('');
 
   // Billing & Plan State
@@ -411,6 +421,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             if (current.assistantTone) setAssistantTone(current.assistantTone);
             if (current.languages) setLanguages(current.languages);
             if (current.whatsappEscalation) setWhatsappEscalation(current.whatsappEscalation);
+            if (current.businessInfo) setBusinessInfo(current.businessInfo);
             if (current.webhookUrl) setWebhookUrl(current.webhookUrl);
             if (current.widgetConfig) {
               setWidgetConfig(prev => ({
@@ -432,6 +443,55 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       loadUserAssistant();
     }
   }, [user, profile]);
+
+  // ------------------------------------------------------------------
+  // APPRENTISSAGE IA : questions sans réponse (onglet "Apprentissage IA")
+  // ------------------------------------------------------------------
+  const fetchLearningQuestions = async () => {
+    if (!assistantId) return;
+    setLearningLoading(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token || null;
+      const res = await fetch(`/api/learning?assistantId=${encodeURIComponent(assistantId)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) setLearningQuestions((await res.json()).questions || []);
+    } catch (e) {
+      console.warn('Error fetching learning questions:', e);
+    } finally {
+      setLearningLoading(false);
+    }
+  };
+
+  const handleResolveLearning = async (q: any) => {
+    const answer = (learningDrafts[q.id] || '').trim();
+    if (!answer) {
+      setLearningNotice({ ok: false, text: 'Écris la bonne réponse avant de valider.' });
+      return;
+    }
+    setLearningSaving(q.id);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token || null;
+      const res = await fetch('/api/learning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, questionId: q.id, answer, title: q.question, question: q.question })
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erreur serveur');
+      setLearningNotice({ ok: true, text: "✅ Réponse ajoutée à la base de connaissance de l'IA !" });
+      setLearningDrafts(prev => ({ ...prev, [q.id]: '' }));
+      fetchLearningQuestions();
+    } catch (e: any) {
+      setLearningNotice({ ok: false, text: 'Erreur : ' + (e?.message || e) });
+    } finally {
+      setLearningSaving(null);
+    }
+  };
+
+  useEffect(() => {
+    if (currentSection === 'learning') fetchLearningQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSection, assistantId]);
 
   // Initial welcome message in simulator
   useEffect(() => {
@@ -518,6 +578,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         languages,
         autoLeadCapture,
         whatsappEscalation: whatsappEscalation.trim(),
+        businessInfo,
         webhookUrl: webhookUrl.trim(),
         widgetId: effectiveWidgetId,
         widgetConfig: {
@@ -562,6 +623,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         languages,
         autoLeadCapture,
         whatsappEscalation: whatsappEscalation.trim(),
+        businessInfo,
         webhookUrl: newUrl.trim(),
         widgetId: effectiveWidgetId,
         widgetConfig: {
@@ -1194,6 +1256,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 {currentSection === 'knowledge' && 'Mes informations'}
                 {currentSection === 'widget' && 'Apparence de la bulle'}
                 {currentSection === 'simulator' && 'Tester mon assistant'}
+                {currentSection === 'learning' && 'Apprentissage IA'}
                 {currentSection === 'integration' && 'Installer sur mon site'}
                 {currentSection === 'leads' && 'Clients & statistiques'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
@@ -1609,6 +1672,48 @@ echo "Réponse de l'Assistant : " . $result['message'];
               ================================================================= */}
           {currentSection === 'knowledge' && (
             <div className="animate-in fade-in duration-200">
+              {/* Informations officielles structurées : citées telles quelles
+                  par l'IA, jamais inventées. */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-4">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">📌 Informations officielles (toujours exactes)</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-4">
+                  Ces champs sont cités tels quels par ton IA — elle ne les invente et ne les contredit jamais.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    value={businessInfo.phone || ''}
+                    onChange={e => setBusinessInfo(p => ({ ...p, phone: e.target.value }))}
+                    placeholder="Téléphone (ex : 0550 12 34 56)"
+                    className="text-xs rounded-lg border border-slate-200 p-2.5 outline-none focus:border-purple-400"
+                  />
+                  <input
+                    value={businessInfo.hours || ''}
+                    onChange={e => setBusinessInfo(p => ({ ...p, hours: e.target.value }))}
+                    placeholder="Horaires (ex : sam–jeu, 9h–18h)"
+                    className="text-xs rounded-lg border border-slate-200 p-2.5 outline-none focus:border-purple-400"
+                  />
+                  <input
+                    value={businessInfo.address || ''}
+                    onChange={e => setBusinessInfo(p => ({ ...p, address: e.target.value }))}
+                    placeholder="Adresse (ex : 12 rue Didouche Mourad, Alger)"
+                    className="text-xs rounded-lg border border-slate-200 p-2.5 outline-none focus:border-purple-400"
+                  />
+                  <input
+                    value={businessInfo.closedDays || ''}
+                    onChange={e => setBusinessInfo(p => ({ ...p, closedDays: e.target.value }))}
+                    placeholder="Jours fermés (ex : vendredi)"
+                    className="text-xs rounded-lg border border-slate-200 p-2.5 outline-none focus:border-purple-400"
+                  />
+                </div>
+                <button
+                  onClick={() => handleSaveToDatabase()}
+                  disabled={isSavingDb}
+                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg px-3 py-1.5 disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5" /> Enregistrer ces informations
+                </button>
+              </div>
+
               <KnowledgeNotesManager
                 notes={knowledgeNotes}
                 onUpdateNotes={(updated) => {
@@ -1618,6 +1723,83 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 onScanClick={() => handleSectionChange('crawler')}
                 isScanning={isScanning}
               />
+            </div>
+          )}
+
+          {/* =================================================================
+              SECTION APPRENTISSAGE : questions sans réponse -> base de
+              connaissance en un clic.
+              ================================================================= */}
+          {currentSection === 'learning' && (
+            <div className="animate-in fade-in duration-200 space-y-4">
+              {learningNotice && (
+                <div className={`text-xs font-medium rounded-lg px-3 py-2 ${learningNotice.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                  {learningNotice.text}
+                </div>
+              )}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <BrainCircuit className="w-5 h-5 text-purple-600" />
+                  <h2 className="font-bold text-slate-900">Questions sans réponse</h2>
+                </div>
+                <p className="text-xs text-slate-500 mb-4">
+                  Quand ton IA n'a pas l'information (ou reçoit un 👎 dans le chat), la question arrive ici.
+                  Réponds une fois : la réponse entre directement dans sa base de connaissance et elle la connaîtra pour toujours.
+                </p>
+                {learningLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-500 py-6 justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Chargement des questions…
+                  </div>
+                ) : learningQuestions.filter(q => q.status === 'open').length === 0 ? (
+                  <div className="text-center py-8 text-sm text-slate-500">
+                    🎉 Aucune question en attente — ton IA a trouvé ses réponses jusqu'ici !
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {learningQuestions.filter(q => q.status === 'open').map(q => (
+                      <div key={q.id} className="border border-slate-200 rounded-xl p-4 bg-slate-50/60">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-800">« {q.question} »</p>
+                          {q.occurrences > 1 && (
+                            <span className="shrink-0 text-[10px] font-bold bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">×{q.occurrences}</span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {new Date(q.created_at).toLocaleDateString('fr-FR')} · {q.reason === 'thumbs_down' ? '👎 visiteur mécontent' : '❓ information manquante'}
+                        </p>
+                        <textarea
+                          value={learningDrafts[q.id] || ''}
+                          onChange={e => setLearningDrafts(prev => ({ ...prev, [q.id]: e.target.value }))}
+                          placeholder="Écris la bonne réponse que l'IA devra donner désormais…"
+                          className="mt-3 w-full text-xs rounded-lg border border-slate-200 bg-white p-2.5 min-h-[60px] outline-none focus:border-purple-400"
+                        />
+                        <button
+                          onClick={() => handleResolveLearning(q)}
+                          disabled={learningSaving === q.id}
+                          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg px-3 py-1.5 disabled:opacity-50"
+                        >
+                          {learningSaving === q.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          Apprendre cette réponse à l'IA
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {learningQuestions.some(q => q.status === 'resolved') && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                  <h3 className="text-sm font-bold text-slate-800 mb-3">✅ Déjà appris</h3>
+                  <div className="space-y-2">
+                    {learningQuestions.filter(q => q.status === 'resolved').slice(0, 10).map(q => (
+                      <div key={q.id} className="text-xs text-slate-500 border-b border-slate-100 pb-2">
+                        <span className="line-through opacity-60">« {q.question} »</span>
+                        <span className="ml-2 text-emerald-600 font-medium">→ {q.answer}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

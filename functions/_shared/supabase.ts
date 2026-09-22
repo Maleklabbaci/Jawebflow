@@ -213,3 +213,130 @@ export function supabaseAssistantRowToConfig(row: Record<string, any>): Record<s
     knowledgeNotes: row.knowledge_notes ?? row.config?.knowledgeNotes ?? [],
   };
 }
+
+// ----------------------------------------------------------------------
+// Boucle d'apprentissage (questions sans réponse + feedback 👍/👎)
+// ----------------------------------------------------------------------
+
+export interface LearningQuestion {
+  id: string;
+  assistant_id: string;
+  question: string;
+  ai_answer?: string | null;
+  reason: string;
+  status: string;
+  answer?: string | null;
+  occurrences: number;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+/**
+ * Enregistre une question à laquelle l'IA n'a pas su répondre. Si la même
+ * question (insensible à la casse) est déjà ouverte, incrémente `occurrences`.
+ * Appelé par functions/api/chat.js (waitUntil) et /api/feedback (👎).
+ */
+export async function supabaseLogLearningQuestion(
+  env: SupabaseEnv,
+  assistantId: string,
+  question: string,
+  aiAnswer: string,
+  reason: string
+): Promise<void> {
+  const clean = String(question || '').trim();
+  if (!clean || clean.length < 3) return;
+  const norm = clean.toLowerCase();
+
+  const findRes = await request(
+    env,
+    `learning_questions?assistant_id=eq.${encodeURIComponent(assistantId)}&status=eq.open&select=id,question,occurrences&limit=200`
+  );
+  if (findRes.ok) {
+    const rows = (await findRes.json()) as Array<{ id: string; question: string; occurrences: number }>;
+    const dup = rows.find((r) => String(r.question).trim().toLowerCase() === norm);
+    if (dup) {
+      await request(env, `learning_questions?id=eq.${encodeURIComponent(dup.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ occurrences: (dup.occurrences || 1) + 1, ai_answer: (aiAnswer || '').slice(0, 2000) || null }),
+      });
+      return;
+    }
+  }
+
+  const res = await request(env, 'learning_questions', {
+    method: 'POST',
+    body: JSON.stringify({
+      assistant_id: assistantId,
+      question: clean.slice(0, 500),
+      ai_answer: (aiAnswer || '').slice(0, 2000) || null,
+      reason,
+    }),
+  });
+  if (!res.ok) {
+    console.error('[learning] écriture Supabase refusée:', (await res.text()).slice(0, 200));
+  }
+}
+
+export async function supabaseListLearningQuestions(env: SupabaseEnv, assistantId: string): Promise<LearningQuestion[]> {
+  const res = await request(
+    env,
+    `learning_questions?assistant_id=eq.${encodeURIComponent(assistantId)}&order=created_at.desc&limit=100`
+  );
+  if (!res.ok) return [];
+  return (await res.json()) as LearningQuestion[];
+}
+
+export async function supabaseResolveLearningQuestion(env: SupabaseEnv, id: string, answer: string): Promise<boolean> {
+  const res = await request(env, `learning_questions?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'resolved', answer, resolved_at: new Date().toISOString() }),
+  });
+  return res.ok;
+}
+
+/**
+ * Ajoute une note de connaissance apprise depuis une conversation à
+ * l'assistant (jsonb `knowledge_notes`), au même format que les notes
+ * manuelles : chat.js l'injecte dans le prompt dès le message suivant.
+ */
+export async function supabaseAddKnowledgeNote(
+  env: SupabaseEnv,
+  assistantId: string,
+  note: { title: string; content: string }
+): Promise<boolean> {
+  const readRes = await request(env, `assistants?id=eq.${encodeURIComponent(assistantId)}&select=knowledge_notes`);
+  if (!readRes.ok) return false;
+  const rows = (await readRes.json()) as Array<{ knowledge_notes: any[] }>;
+  if (!rows[0]) return false;
+  const notes = Array.isArray(rows[0].knowledge_notes) ? rows[0].knowledge_notes : [];
+  notes.push({
+    id: `learned_${Date.now()}`,
+    title: note.title.slice(0, 120),
+    content: note.content.slice(0, 4000),
+    category: 'learned',
+    enabled: true,
+    source: 'learning',
+    createdAt: new Date().toISOString(),
+  });
+  const res = await request(env, `assistants?id=eq.${encodeURIComponent(assistantId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ knowledge_notes: notes, updated_at: new Date().toISOString() }),
+  });
+  return res.ok;
+}
+
+export async function supabaseInsertFeedback(
+  env: SupabaseEnv,
+  row: { assistant_id: string; session_id?: string; rating: 'up' | 'down'; message_text?: string }
+): Promise<boolean> {
+  const res = await request(env, 'message_feedback', {
+    method: 'POST',
+    body: JSON.stringify({
+      assistant_id: row.assistant_id,
+      session_id: row.session_id || null,
+      rating: row.rating,
+      message_text: (row.message_text || '').slice(0, 2000) || null,
+    }),
+  });
+  return res.ok;
+}

@@ -22,6 +22,7 @@ export interface JawebChatWidgetProps {
   whatsappNumber?: string;
   faqKnowledge?: string;
   initialOpen?: boolean;
+  assistantId?: string;
 }
 
 const DEFAULT_WIDGET_CONFIG: WidgetCustomization = {
@@ -48,7 +49,8 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
   config: userConfig,
   whatsappNumber = '',
   faqKnowledge = '',
-  initialOpen = false
+  initialOpen = false,
+  assistantId
 }) => {
   const mergedConfig: WidgetCustomization = {
     ...DEFAULT_WIDGET_CONFIG,
@@ -183,6 +185,21 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
     }
   };
 
+  // Feedback 👍/👎 (nourrit l'apprentissage via /api/feedback).
+  const sendReactFeedback = (rating: 'up' | 'down', botText: string, idx: number) => {
+    if (!assistantId) return;
+    let questionText = '';
+    for (let j = idx - 1; j >= 0; j--) {
+      if (messages[j].sender === 'user') { questionText = messages[j].text; break; }
+    }
+    fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assistantId, rating, messageText: botText, questionText, sessionId: 'react_widget' }),
+      keepalive: true
+    }).catch(() => {});
+  };
+
   return (
     <div
       className={`fixed bottom-3 sm:bottom-5 z-[999999] flex flex-col items-${isLeft ? 'start' : 'end'} font-sans antialiased pointer-events-none`}
@@ -270,6 +287,20 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
                 >
                   {renderMessageContent(m.text, themeMode)}
                 </div>
+                {m.sender === 'bot' && idx > 0 && assistantId && (
+                  <div className="flex gap-1 mt-0.5 ml-1">
+                    {(['up', 'down'] as const).map(r => (
+                      <button
+                        key={r}
+                        onClick={() => sendReactFeedback(r, m.text, idx)}
+                        className="text-[11px] opacity-40 hover:opacity-100 transition-opacity"
+                        aria-label={r === 'up' ? 'Bonne réponse' : 'Mauvaise réponse'}
+                      >
+                        {r === 'up' ? '👍' : '👎'}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <span className="text-[9px] text-neutral-400 mt-1 px-1">{m.time}</span>
               </div>
             ))}

@@ -77,6 +77,7 @@ export interface AssistantConfig {
   languages: { fr: boolean; darija: boolean; en: boolean; ar: boolean };
   autoLeadCapture: boolean;
   whatsappEscalation?: string;
+  businessInfo?: { address?: string; phone?: string; hours?: string; closedDays?: string };
   webhookUrl?: string;
   widgetId: string;
   widgetConfig?: WidgetCustomization;

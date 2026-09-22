@@ -6,6 +6,7 @@ import {
   Upload, X, AlertCircle, FileUp, Image, File
 } from 'lucide-react';
 import { KnowledgeNote } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface KnowledgeNotesManagerProps {
   notes: KnowledgeNote[];
@@ -82,8 +83,9 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
     setSuccess('');
 
     try {
-      const user = (window as any).__jawebflow_user;
-      const token = user ? await user.getIdToken() : null;
+      // Jeton Supabase Auth (l'ancien `__jawebflow_user` Firebase n'était
+      // jamais défini -> 401 silencieux sur l'import de documents).
+      const token = (await supabase.auth.getSession()).data.session?.access_token || null;
 
       const formData = new FormData();
       formData.append('rawText', rawText);
