@@ -71,7 +71,7 @@ export function AdminPage() {
   const { user: authUser, profile, logout } = useAuth();
   
   // Super Admin verification state
-  const isSuperAdminLogged = isUserAdmin(authUser, profile);
+  const isSuperAdminLogged = isUserAdmin(profile);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(isSuperAdminLogged);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminEmail, setAdminEmail] = useState('admin@jawebflow.com');
@@ -112,7 +112,7 @@ export function AdminPage() {
 
   // Auto-authenticate if already logged in with super admin credentials
   useEffect(() => {
-    if (isUserAdmin(authUser, profile)) {
+    if (isUserAdmin(profile)) {
       setIsAdminAuthenticated(true);
     } else {
       const stored = sessionStorage.getItem('jawebflow_admin_auth');
@@ -207,7 +207,7 @@ export function AdminPage() {
 
       const adminProfile = profileData || null;
 
-      if (!isUserAdmin(authData.user, adminProfile)) {
+      if (!isUserAdmin(adminProfile)) {
         await supabase.auth.signOut();
         setAuthError("Ce compte n'a pas les droits Super Admin.");
         return;
@@ -976,7 +976,7 @@ export function AdminPage() {
                         )
                         .map(u => {
                           const userAssistants = assistantsList.filter(a => a.userId === u.uid);
-                          const isSuper = isUserAdmin({ email: u.email }, u);
+                          const isSuper = isUserAdmin(u);
                           return (
                             <tr key={u.uid} className="hover:bg-slate-50/80 transition-colors">
                               <td className="py-4 px-4">
