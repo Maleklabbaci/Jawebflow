@@ -41,28 +41,16 @@ import {
   Target
 } from 'lucide-react';
 import { 
-  auth, 
-  db, 
   isUserAdmin, 
   updateAssistantPlan, 
   deleteAssistantDocument, 
   deleteUserRecord, 
   deleteProspectRecord, 
   UserProfile, 
-  AssistantConfig 
+  AssistantConfig,
+  supabase 
 } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { 
-  collection, 
-  getDocs, 
-  getDoc,
-  doc, 
-  setDoc, 
-  query, 
-  orderBy, 
-  serverTimestamp 
-} from '../lib/supabase';
-import { signInWithEmailAndPassword, signOut } from '../lib/supabase';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'leads' | 'invoices' | 'system';
 
@@ -155,17 +143,31 @@ export function AdminPage() {
   const fetchAllPlatformData = async () => {
     setLoadingData(true);
     try {
-      const [usersSnap, asstSnap, prosSnap, invSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'assistants')),
-        getDocs(collection(db, 'prospects')),
-        getDocs(query(collection(db, 'invoices'), orderBy('createdAt', 'desc'))).catch(() => getDocs(collection(db, 'invoices')))
+      const [usersRes, asstRes, prosRes, invRes] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('assistants').select('*'),
+        supabase.from('prospects').select('*'),
+        supabase.from('invoices').select('*').order('createdAt', { ascending: false })
       ]);
 
-      const users: UserProfile[] = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
-      const assistants: AssistantConfig[] = asstSnap.docs.map(d => ({ id: d.id, ...d.data() } as AssistantConfig));
-      const prospects: any[] = prosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const invoices: AdminInvoice[] = invSnap.docs.map(d => ({ id: d.id, ...d.data() } as AdminInvoice));
+      if (usersRes.error) throw usersRes.error;
+      if (asstRes.error) throw asstRes.error;
+      if (prosRes.error) throw prosRes.error;
+
+      let invoicesData = [];
+      if (invRes.error) {
+        // Fallback sans ordonner s'il y a un souci sur la colonne de tri
+        const fallbackRes = await supabase.from('invoices').select('*');
+        if (fallbackRes.error) throw fallbackRes.error;
+        invoicesData = fallbackRes.data || [];
+      } else {
+        invoicesData = invRes.data || [];
+      }
+
+      const users: UserProfile[] = (usersRes.data || []).map(d => ({ uid: d.uid || d.id, ...d } as UserProfile));
+      const assistants: AssistantConfig[] = (asstRes.data || []).map(d => ({ id: d.id, ...d } as AssistantConfig));
+      const prospects: any[] = (prosRes.data || []).map(d => ({ id: d.id, ...d }));
+      const invoices: AdminInvoice[] = invoicesData.map(d => ({ id: d.id, ...d } as AdminInvoice));
 
       setUsersList(users);
       setAssistantsList(assistants);
@@ -173,7 +175,7 @@ export function AdminPage() {
       setInvoicesList(invoices);
     } catch (err: any) {
       console.error('Error fetching admin platform data:', err);
-      notify('Erreur de synchronisation supabase : ' + (err.message || 'Vérifiez la connexion'), 'error');
+      notify('Erreur de synchronisation Supabase : ' + (err.message || 'Vérifiez la connexion'), 'error');
     } finally {
       setLoadingData(false);
     }
@@ -184,26 +186,37 @@ export function AdminPage() {
     setAuthLoading(true);
     setAuthError('');
 
-    // ⚠️ SÉCURITÉ : des mots de passe Super Admin étaient écrits en dur ici
-    // (« Malek2001 », « Admin2026! »). Comme ce fichier est embarqué dans le
-    // bundle JavaScript public, n'importe quel visiteur pouvait les lire et
-    // ouvrir la console d'administration. L'accès passe désormais uniquement par
-    // supabase Auth + la liste d'administrateurs (isUserAdmin).
     try {
-      const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
-      const profileSnap = await getDoc(doc(db, 'users', cred.user.uid));
-      const adminProfile = profileSnap.exists() ? (profileSnap.data() as any) : null;
+      // Connexion avec Supabase Auth
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: adminEmail.trim(),
+        password: adminPassword,
+      });
 
-      if (!isUserAdmin(cred.user, adminProfile)) {
-        await signOut(auth);
+      if (signInError) throw signInError;
+      if (!authData.user) throw new Error('Utilisateur non retourné par Supabase.');
+
+      // Récupération du profil
+      const { data: profileData, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .or(`uid.eq.${authData.user.id},id.eq.${authData.user.id}`)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+
+      const adminProfile = profileData || null;
+
+      if (!isUserAdmin(authData.user, adminProfile)) {
+        await supabase.auth.signOut();
         setAuthError("Ce compte n'a pas les droits Super Admin.");
         return;
       }
 
       setIsAdminAuthenticated(true);
-      // Pas de drapeau persistant : la session supabase suffit et expire seule.
       sessionStorage.removeItem('jawebflow_admin_auth');
     } catch (err: any) {
+      console.error(err);
       setAuthError('Identifiants Super Admin invalides.');
     } finally {
       setAuthLoading(false);
@@ -212,6 +225,7 @@ export function AdminPage() {
 
   const handleAdminLogout = async () => {
     sessionStorage.removeItem('jawebflow_admin_auth');
+    await supabase.auth.signOut();
     setIsAdminAuthenticated(false);
     setAdminPassword('');
   };
@@ -283,11 +297,16 @@ export function AdminPage() {
         date: new Date().toLocaleDateString('fr-FR')
       };
 
-      await setDoc(doc(db, 'invoices', invId), {
-        ...newInvoiceData,
-        createdAt: serverTimestamp(),
-        validatedByAdmin: true
-      });
+      // Insertion dans la table des factures sur Supabase
+      const { error: insertError } = await supabase
+        .from('invoices')
+        .insert([{
+          ...newInvoiceData,
+          createdAt: new Date().toISOString(),
+          validatedByAdmin: true
+        }]);
+
+      if (insertError) throw insertError;
 
       // Auto-upgrade client's assistant if found in supabase
       const clientUser = usersList.find(u => u.email?.toLowerCase() === newInvEmail.trim().toLowerCase());
@@ -519,7 +538,7 @@ export function AdminPage() {
     {
       group: 'SYSTÈME',
       items: [
-        { id: 'system', label: 'Maintenance & supabase', icon: Database, badge: null }
+        { id: 'system', label: 'Maintenance & Supabase', icon: Database, badge: null }
       ]
     }
   ];
@@ -670,7 +689,7 @@ export function AdminPage() {
                   {activeTab === 'assistants' && "Tous les Assistants IA"}
                   {activeTab === 'leads' && "Registre Central des Leads"}
                   {activeTab === 'invoices' && "Factures & Encaissements"}
-                  {activeTab === 'system' && "Maintenance Système & supabase"}
+                  {activeTab === 'system' && "Maintenance Système & Supabase"}
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono font-bold uppercase">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -678,7 +697,7 @@ export function AdminPage() {
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                Données réelles synchronisées avec supabase · {assistantsList.length} assistants actifs
+                Données réelles synchronisées avec Supabase · {assistantsList.length} assistants actifs
               </p>
             </div>
           </div>
@@ -818,8 +837,8 @@ export function AdminPage() {
                                 <span>{asst.businessName || 'Assistant sans nom'}</span>
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
                                   asst.plan === 'enterprise' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                                  asst.plan === 'pro' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                                  asst.plan === 'basic' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                  asst.plan === 'pro' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                  asst.plan === 'basic' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                   'bg-slate-100 text-slate-600 border border-slate-200'
                                 }`}>
                                   {asst.plan || 'free'}
