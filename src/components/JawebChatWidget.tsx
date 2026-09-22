@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   ChevronDown
 } from 'lucide-react';
-import { WidgetCustomization } from '../lib/firebase';
+import { WidgetCustomization } from '../lib/supabase';
 import { renderMessageContent } from '../utils/renderMessageContent';
 
 export interface JawebChatWidgetProps {

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { supabase, getUserAssistants } from '../lib/supabase';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, CartesianGrid } from 'recharts';
 import { Loader2, TrendingUp, Users, MessageSquare, MousePointerClick, Zap } from 'lucide-react';
 
@@ -13,30 +12,26 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
       if (!user) return;
       try {
         setLoading(true);
-        // Fetch all prospects and events to compute insights
-        const assistantsRef = collection(db, "assistants");
-        const asstQuery = query(assistantsRef, where("userId", "==", user.uid));
-        const asstSnap = await getDocs(asstQuery);
-        
-        if (asstSnap.empty) {
+        // Fetch assistant + prospects to compute insights
+        const assistants = await getUserAssistants(user.uid);
+        if (assistants.length === 0) {
           setLoading(false);
           return;
         }
+        const asstId = assistants[0].id;
 
-        const asstId = asstSnap.docs[0].id;
-        
-        // Prospects (Visiteurs + Leads)
-        const prospectsRef = collection(db, "prospects");
-        const prosQuery = query(prospectsRef, where("assistantId", "==", asstId));
-        const prosSnap = await getDocs(prosQuery);
-        
-        const prospects: any[] = [];
+        // Prospects (Visiteurs + Leads) via l'endpoint /api/leads (RLS service_role
+        // empêche une lecture directe de la table `prospects` depuis le navigateur).
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch(`/api/leads?assistantId=${encodeURIComponent(asstId || '')}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const prospects: any[] = res.ok ? ((await res.json()).prospects || []) : [];
         let leadsCount = 0;
         let convCount = 0;
 
-        prosSnap.forEach(doc => {
-          const data = doc.data();
-          prospects.push(data);
+        prospects.forEach(data => {
           if (data.status === 'qualifie') leadsCount++;
           if (data.status === 'qualifie' || data.status === 'nouveau' || data.messages?.length > 1) {
              // If there's an actual conversation
@@ -44,27 +39,11 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
           }
         });
 
-        // Track Events
-        const eventsRef = collection(db, "interaction_events");
-        const evQuery = query(eventsRef, where("assistantId", "==", asstId));
-        const evSnap = await getDocs(evQuery);
-        
-        const interactions: Record<string, number> = {};
-        let evCount = 0;
-        
-        // Calculate real interaction events from Firestore
-        evSnap.forEach(doc => {
-          const data = doc.data();
-          if (data.label) {
-            interactions[data.label] = (interactions[data.label] || 0) + 1;
-          }
-          evCount++;
-        });
-
-        const topInteractions = Object.entries(interactions)
-          .map(([label, count]) => ({ label, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 5);
+        // NOTE: le suivi détaillé des interactions (clics, étapes du widget)
+        // n'a pas encore de table dédiée côté Supabase (existait sous
+        // Firestore : `interaction_events`). En attendant cette table, on
+        // laisse ce classement vide plutôt que d'afficher une fausse donnée.
+        const topInteractions: Array<{ label: string; count: number }> = [];
 
         // Daily Traffic calculated from real prospects timestamps
         const dailyData: Record<string, { visitors: number, convs: number }> = {};
@@ -79,12 +58,7 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
 
         // Aggregate actual prospects by day
         prospects.forEach(p => {
-          let pDate: Date | null = null;
-          if (p.updatedAt?.seconds) {
-            pDate = new Date(p.updatedAt.seconds * 1000);
-          } else if (p.createdAt?.seconds) {
-            pDate = new Date(p.createdAt.seconds * 1000);
-          }
+          const pDate: Date | null = p.updatedAt ? new Date(p.updatedAt) : null;
           if (pDate) {
             const dateStr = pDate.toLocaleDateString('fr-FR', { weekday: 'short' });
             if (dailyData[dateStr]) {

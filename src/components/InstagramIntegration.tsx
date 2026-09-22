@@ -23,14 +23,7 @@ import {
   Globe,
   Edit2
 } from 'lucide-react';
-import { 
-  FacebookAuthProvider, 
-  signInWithPopup, 
-  linkWithPopup,
-  fetchSignInMethodsForEmail
-} from 'firebase/auth';
-import { auth, db, sanitizeFirestoreData } from '../lib/firebase';
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export interface InstagramIntegrationData {
@@ -130,6 +123,29 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     }
   };
 
+  // Remplace les anciens `doc(db,...)/getDoc/setDoc` Firestore : la table
+  // Supabase `instagram_integrations` est en RLS service_role uniquement,
+  // donc on passe par /api/instagram/integration avec le jeton Supabase.
+  const authHeader = async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  };
+
+  const loadRemoteIntegration = async (): Promise<Partial<InstagramIntegrationData> | null> => {
+    const res = await fetch('/api/instagram/integration', { headers: await authHeader() });
+    if (!res.ok) return null;
+    const { data } = await res.json();
+    return data || null;
+  };
+
+  const saveRemoteIntegration = async (patch: Partial<InstagramIntegrationData>): Promise<void> => {
+    await fetch('/api/instagram/integration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify(patch)
+    });
+  };
+
   // Load existing Instagram connection from Firestore or Local Cache
   useEffect(() => {
     let isMounted = true;
@@ -148,25 +164,19 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         }));
       }
 
-      // Step 2: Sync with Firestore with offline safety
+      // Step 2: Sync with Supabase (via l'API, RLS service_role) avec repli local
       try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        const snap = await getDoc(docRef);
-        if (snap.exists() && isMounted) {
-          const data = snap.data() as InstagramIntegrationData;
-          const merged = { ...integrationData, ...data, assistantId: data.assistantId || assistantId };
+        const data = await loadRemoteIntegration();
+        if (data && isMounted) {
+          const merged = { ...integrationData, ...data, assistantId: (data as any).assistantId || assistantId };
           setIntegrationData(merged);
           saveLocalCache(user.uid, merged);
-          if (assistantId && data.assistantId !== assistantId) {
-            await setDoc(docRef, { assistantId }, { merge: true });
+          if (assistantId && (data as any).assistantId !== assistantId) {
+            await saveRemoteIntegration({ assistantId });
           }
         }
       } catch (err: any) {
-        // Gracefully handle offline or network hiccups without noisy console errors
-        const isOffline = err?.code === 'unavailable' || err?.message?.includes('offline') || err?.message?.includes('client is offline');
-        if (!isOffline) {
-          console.warn('Note: Chargement Firestore Instagram en mode local/cache:', err?.message || err);
-        }
+        console.warn('Note: Chargement Supabase Instagram en mode local/cache:', err?.message || err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -255,10 +265,9 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       if (user?.uid) {
         saveLocalCache(user.uid, updatedPayload);
         try {
-          const docRef = doc(db, 'instagram_integrations', user.uid);
-          await setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
+          await saveRemoteIntegration(updatedPayload);
         } catch (e) {
-          console.warn('Firestore integration sync note:', e);
+          console.warn('Supabase integration sync note:', e);
         }
       }
 
@@ -377,10 +386,9 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     if (user?.uid) {
       saveLocalCache(user.uid, updatedPayload);
       try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        await setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
+        await saveRemoteIntegration(updatedPayload);
       } catch (e) {
-        console.warn('Firestore direct write notice:', e);
+        console.warn('Supabase direct write notice:', e);
       }
     }
 
@@ -411,8 +419,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       setIntegrationData(disconnectedPayload);
 
       try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        await setDoc(docRef, sanitizeFirestoreData({ connected: false, webhookStatus: 'pending' }), { merge: true });
+        await saveRemoteIntegration({ connected: false, webhookStatus: 'pending' });
       } catch (fsErr) {
         // Safe offline fallback
       }
@@ -436,11 +443,10 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       saveLocalCache(user.uid, integrationData);
 
       try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        await setDoc(docRef, sanitizeFirestoreData({
+        await saveRemoteIntegration({
           ...integrationData,
-          updatedAt: serverTimestamp()
-        }), { merge: true });
+          updatedAt: new Date().toISOString()
+        });
       } catch (fsErr) {
         // Safe offline fallback
       }
@@ -577,8 +583,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       setIntegrationData(updatedPayload);
       saveLocalCache(user.uid, updatedPayload);
       try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        await setDoc(docRef, sanitizeFirestoreData({ webhookStatus: updatedPayload.webhookStatus }), { merge: true });
+        await saveRemoteIntegration({ webhookStatus: updatedPayload.webhookStatus });
       } catch (e) { /* offline fallback */ }
 
       setNotification({
@@ -661,8 +666,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       }
 
       try {
-        const docRef = doc(db, 'instagram_integrations', user.uid);
-        await setDoc(docRef, sanitizeFirestoreData(updatedPayload), { merge: true });
+        await saveRemoteIntegration(updatedPayload);
       } catch (e) {
         // Safe fallback
       }

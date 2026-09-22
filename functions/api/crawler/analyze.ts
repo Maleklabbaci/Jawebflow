@@ -6,13 +6,13 @@
 import {
   adminGetDocument,
   adminPatchDocument,
-  verifyFirebaseIdToken,
   parseFields,
   isPublicHttpUrl,
 } from "../../_shared/google.ts";
 import {
   supabaseConfigured,
   supabaseGetAssistant,
+  verifySupabaseIdToken,
   supabasePatchAssistant,
   supabaseAssistantRowToConfig,
 } from "../../_shared/supabase.ts";
@@ -508,7 +508,7 @@ export async function onRequestPost(context: {
   try {
     // ── FIX #2 — AUTH EN PREMIER avant tout traitement coûteux ──────────────
     const authHeader = context.request.headers.get("Authorization");
-    const caller = await verifyFirebaseIdToken(context.env, authHeader);
+    const caller = await verifySupabaseIdToken(context.env, authHeader);
     if (!caller) {
       log.warn("Auth échouée", { ip: context.request.headers.get("cf-connecting-ip") ?? "unknown" });
       return json({ error: "Authentification requise." }, 401);

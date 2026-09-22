@@ -22,7 +22,7 @@ import {
   Send,
   X
 } from 'lucide-react';
-import { WidgetCustomization } from '../lib/firebase';
+import { WidgetCustomization } from '../lib/supabase';
 
 interface WidgetCustomizerProps {
   businessName: string;

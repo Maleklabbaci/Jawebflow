@@ -53,8 +53,7 @@ import {
   Shield
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, db, isUserAdmin, auth } from '../lib/supabase';
-import { collection, query, where, orderBy, onSnapshot } from 'supabase/firestore';
+import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase } from '../lib/supabase';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
@@ -451,23 +450,29 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   useEffect(() => {
     if (!assistantId) return;
 
-    const q = query(
-      collection(db, 'prospects'),
-      where('assistantId', '==', assistantId)
-    );
+    // La table `prospects` est en RLS service_role uniquement côté Supabase
+    // (pas de onSnapshot possible depuis le navigateur) : on fait du polling
+    // sur l'endpoint /api/leads toutes les 8s à la place.
+    let cancelled = false;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const prospects: any[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        prospects.push({
-          id: doc.id,
+    const fetchLeads = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/leads?assistantId=${encodeURIComponent(assistantId)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok || cancelled) return;
+        const { prospects: rows } = await res.json();
+        const prospects = (rows || []).map((data: any) => ({
+          id: data.id,
           name: data.name || 'Visiteur Anonyme',
           phone: data.phone || 'Non fourni',
           email: data.email || 'Non fourni',
           need: data.need || (data.status === 'visited' ? 'Visite simple du site' : (data.status === 'opened_bubble' ? 'A ouvert la bulle de chat' : 'En attente de discussion')),
           status: data.status === 'visited' || data.status === 'opened_bubble' ? 'nouveau' : 'qualifie',
-          date: data.updatedAt ? new Date(data.updatedAt.seconds * 1000).toLocaleString('fr-FR', {
+          date: data.updatedAt ? new Date(data.updatedAt).toLocaleString('fr-FR', {
             day: '2-digit',
             month: '2-digit',
             hour: '2-digit',
@@ -478,20 +483,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           userAgent: data.userAgent || '',
           language: data.language || '',
           messages: data.messages || []
-        });
-      });
+        }));
+        if (!cancelled) setLeadsList(prospects);
+      } catch (error) {
+        console.warn('Error fetching prospects:', error);
+      }
+    };
 
-      // Simple stable sort client-side to avoid needing complex Firestore indexes
-      prospects.sort((a, b) => {
-        return b.id.localeCompare(a.id);
-      });
-
-      setLeadsList(prospects);
-    }, (error) => {
-      console.warn('Error listening to prospects:', error);
-    });
-
-    return () => unsubscribe();
+    fetchLeads();
+    const interval = setInterval(fetchLeads, 8000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [assistantId]);
 
   const handleSaveToDatabase = async (notesOverride?: KnowledgeNote[], metadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>) => {
@@ -708,7 +709,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       // `true` force un jeton frais : sans ça, le SDK peut renvoyer un jeton en
       // cache déjà expiré (onglet resté ouvert longtemps, veille mobile...),
       // ce qui provoquait un 401 intermittent sans rien changer côté serveur.
-      const idToken = await auth.currentUser?.getIdToken(true).catch(() => null);
+      const idToken = (await supabase.auth.getSession()).data.session?.access_token || null;
       const response = await fetch("/api/crawler/analyze", {
         method: "POST",
         headers: {
