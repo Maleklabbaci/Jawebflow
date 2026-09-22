@@ -106,7 +106,11 @@ export default function App() {
   useEffect(() => {
     if (!routeReady || loading) return;
 
-    const needsAccount = currentPage === 'create-assistant' || currentPage === 'checkout' || currentPage === 'admin';
+    // /admin est exclu volontairement : la console admin possède son propre
+    // formulaire de déverrouillage (signInWithPassword) et ne doit JAMAIS
+    // être renvoyée vers /login quand aucune session globale n'existe —
+    // c'est ce renvoi qui faisait "recharger" /admin en boucle.
+    const needsAccount = currentPage === 'create-assistant' || currentPage === 'checkout';
 
     if (!user && needsAccount) {
       // Petit délai avant de renvoyer vers la connexion : sur un réseau lent la
@@ -124,8 +128,11 @@ export default function App() {
               : (dashboardSection && dashboardSection !== 'overview' ? `/dashboard/${dashboardSection}` : '/dashboard');
           sessionStorage.setItem('jw_after_login', intended);
         } catch { /* storage indisponible */ }
-        setCurrentPage('login');
-        window.history.replaceState({ page: 'login', section: 'overview' }, '', '/login');
+        // CTA "Créer mon assistant" sans compte -> inscription (pas connexion) :
+        // un visiteur qui veut créer un assistant n'a pas encore de compte.
+        const dest = currentPage === 'create-assistant' ? 'signup' : 'login';
+        setCurrentPage(dest as PageId);
+        window.history.replaceState({ page: dest, section: 'overview' }, '', `/${dest}`);
       }, 350);
       return () => clearTimeout(timer);
     }
