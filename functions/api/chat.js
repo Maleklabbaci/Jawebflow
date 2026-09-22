@@ -10,7 +10,7 @@
  */
 
 import { adminGetDocument } from '../_shared/google.ts';
-import { supabaseConfigured, supabaseListKnowledge } from '../_shared/supabase.ts';
+import { supabaseConfigured, supabaseListKnowledge, supabaseGetAssistant, supabaseAssistantRowToConfig } from '../_shared/supabase.ts';
 
 // Modèle Gemini : surchargeable par variable d'environnement (Pages → Settings →
 // Environment variables) sans redéploiement de code. Les identifiants « 2.5 »
@@ -104,17 +104,29 @@ export async function onRequestPost(context) {
       return reply("Configuration du widget manquante (assistantId). Contacte le support JawebFlow.", diagnostics);
     }
 
-    // 1. Récupération de la configuration complète de l'assistant depuis Firestore.
-    //    Lecture Admin (compte de service) : une lecture REST avec seulement la clé
-    //    Web est anonyme et se fait refuser par les règles — la config restait alors
-    //    vide et l'IA répondait sans la base de connaissances du client.
+    // 1. Récupération de la configuration complète de l'assistant.
+    //    Supabase en priorité (migration en cours) ; Firestore reste un filet
+    //    de sécurité tant que la clé service_role n'est pas correctement
+    //    configurée côté Cloudflare (supabaseConfigured renvoie false dans ce cas).
     let config = {};
-    const configRead = await adminGetDocument(env, `assistants/${assistantId}`);
-    if (configRead.ok) {
-      config = parseFirestoreDoc({ fields: configRead.fields }) || {};
-    } else {
-      diagnostics.push(`config assistant non chargée: ${configRead.error}`);
-      console.error(`[chat] config ${assistantId} non chargée:`, configRead.error);
+    let configLoaded = false;
+    if (supabaseConfigured(env)) {
+      const sb = await supabaseGetAssistant(env, assistantId);
+      if (sb.ok) {
+        config = supabaseAssistantRowToConfig(sb.data);
+        configLoaded = true;
+      } else {
+        diagnostics.push(`config Supabase non chargée: ${sb.error || sb.status}`);
+      }
+    }
+    if (!configLoaded) {
+      const configRead = await adminGetDocument(env, `assistants/${assistantId}`);
+      if (configRead.ok) {
+        config = parseFirestoreDoc({ fields: configRead.fields }) || config;
+      } else {
+        diagnostics.push(`config assistant non chargée: ${configRead.error}`);
+        console.error(`[chat] config ${assistantId} non chargée:`, configRead.error);
+      }
     }
 
     // 2. Construction du prompt : l'identité passe en premier (voir buildIdentityBlock),
