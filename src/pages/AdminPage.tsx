@@ -216,7 +216,7 @@ function normAssistant(d: any): NormAssistant {
     userId: d.user_id || cfg.userId || undefined,
     businessName: cfg.businessName || d.business_name || '(Sans nom)',
     websiteUrl: cfg.websiteUrl || d.website_url || undefined,
-    plan: String(cfg.plan || d.plan || 'free').toLowerCase(),
+    plan: String(cfg.plan || d.plan || 'basic').toLowerCase(),
     tone: cfg.assistantTone || cfg.tone || undefined,
     languages: cfg.languages || { fr: true, darija: true, en: true, ar: false },
     whatsappEscalation: cfg.whatsappEscalation || cfg.whatsappNumber || undefined,
@@ -856,8 +856,9 @@ export function AdminPage() {
     },
   ];
 
+  // widget.js lit l'attribut data-assistant-id (PAS data-widget-id).
   const widgetSnippet = (a: NormAssistant) =>
-    `<script src="${window.location.origin}/cdn/widget.js" data-widget-id="${a.id}" async></script>`;
+    `<script src="${window.location.origin}/cdn/widget.js" data-assistant-id="${a.id}" async></script>`;
 
   const StatCard = ({ icon: Icon, label, value, sub, color }: any) => (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">

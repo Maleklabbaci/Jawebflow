@@ -695,7 +695,8 @@ async function handleDirectMessage(env: Env, event: any) {
   // on envoie le message de blocage au lieu de la réponse IA.
   if (integration.assistantId && supabaseConfigured(env)) {
     const limits = await supabaseGetPlanLimits(env);
-    const plan = String(config?.plan || "free").toLowerCase();
+    // Sans plan enregistré => 'basic' : ne pas couper les assistants existants.
+    const plan = String(config?.plan || "basic").toLowerCase();
     const limit = plan in limits ? limits[plan] : limits.free;
     const used = typeof limit === "number" && limit > 0
       ? await supabaseCountMonthlyConversations(env, integration.assistantId)

@@ -147,7 +147,10 @@ export async function onRequestPost(context) {
       }
       if (supabaseConfigured(env)) {
         const limits = await supabaseGetPlanLimits(env);
-        const plan = String(config.plan || 'free').toLowerCase();
+        // SANS plan enregistré => 'basic' (fail-safe) : les assistants créés
+        // avant l'arrivée des quotas gardent l'IA active (1 000/mois) au lieu
+        // d'être bloqués par erreur comme des "Gratuit".
+        const plan = String(config.plan || 'basic').toLowerCase();
         const limit = plan in limits ? limits[plan] : limits.free;
         if (limit === 0) {
           diagnostics.push(`plan ${plan} : 0 crédit IA, envoi bloqué`);

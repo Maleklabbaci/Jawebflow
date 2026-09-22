@@ -54,7 +54,7 @@ import {
   BrainCircuit
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase } from '../lib/supabase';
+import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
@@ -321,6 +321,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       };
 
       setActivePlan(selectedCheckoutPlan);
+      // Persiste le plan DANS LA BASE immédiatement : sans ça, le blocage IA
+      // (qui lit config.plan côté serveur) laissait le client bloqué même
+      // après son paiement.
+      if (assistantId) {
+        updateAssistantPlan(assistantId, selectedCheckoutPlan).catch((e) =>
+          console.error('[checkout] plan non persisté dans Supabase:', e)
+        );
+      }
       setInvoicesList(prev => [newInv, ...prev]);
       setIsProcessingPayment(false);
       setBillingNotification(`Abonnement ${planNameStr} activé avec succès ! Quittance N° ${newInv.id} enregistrée.`);
@@ -566,6 +574,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       const savedId = await saveAssistantToDatabase({
         id: assistantId || undefined,
         userId: user.uid,
+        plan: activePlan, // préservé à chaque sauvegarde (sinon le jsonb config est écrasé SANS plan => IA bloquée)
         businessName: (metadataOverride?.businessName ?? businessName).trim() || 'Mon Entreprise',
         websiteUrl: (metadataOverride?.websiteUrl ?? websiteUrl).trim(),
         siteType: metadataOverride?.siteType ?? siteType,
@@ -612,6 +621,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       const savedId = await saveAssistantToDatabase({
         id: assistantId || undefined,
         userId: user.uid,
+        plan: activePlan, // même règle : ne jamais perdre le plan à la sauvegarde
         businessName: businessName.trim() || 'Mon Entreprise',
         websiteUrl: websiteUrl.trim(),
         siteType,

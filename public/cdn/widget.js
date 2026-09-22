@@ -49,6 +49,9 @@
 
   var isOpen = false;
   var isTyping = false;
+  // Quota du plan du propriétaire atteint : l'IA ne répond plus, la saisie est
+  // désactivée (le blocage réel est appliqué côté serveur dans /api/chat).
+  var limitReached = false;
   var messages = [{ sender: 'bot', text: welcomeMessage }];
 
   // --- Icones SVG (fonctions separees, aucune imbrication de backticks) ---
@@ -121,38 +124,52 @@
     '.jw-send-btn:disabled{opacity:.5;cursor:default;}' +
     '.jw-whatsapp-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;background:#25d366;color:#fff;text-decoration:none;border-radius:12px;font-size:12.5px;font-weight:600;margin-top:4px;width:100%;}' +
     '.jw-whatsapp-btn svg{width:16px;height:16px;}' +
-    '.jw-branding{text-align:center;font-size:10px;opacity:.5;padding:8px;text-decoration:none;color:inherit;display:block;}';
+    '.jw-branding{text-align:center;font-size:10px;opacity:.5;padding:8px;text-decoration:none;color:inherit;display:block;}' +
+    '.jw-feedback{display:flex;gap:2px;align-self:flex-start;margin:-8px 0 0 4px;}' +
+    '.jw-feedback button{background:none;border:none;cursor:pointer;font-size:11px;opacity:.4;padding:1px 3px;transition:opacity .15s,transform .15s;}' +
+    '.jw-feedback button:hover{opacity:1;}' +
+    '.jw-feedback button.jw-fb-on{opacity:1;transform:scale(1.2);}';
   shadow.appendChild(styleEl);
 
-  // --- Suivi prospect (Firestore, best-effort, ne bloque jamais l'IA) ---
-  var firestoreDb;
-  var firebaseConfig = {
-    projectId: 'gen-lang-client-0772569610',
-    appId: '1:637772471412:web:496cc86493ac5970d48521',
-    apiKey: 'AIzaSyBvweAHBrF8IyHkE1yEOHpwglzLR0kLszk',
-    authDomain: 'gen-lang-client-0772569610.firebaseapp.com',
-    firestoreDatabaseId: 'ai-studio-jawebflow-3b5eca8a-3aea-4c7a-8009-6f854b13701c',
-    storageBucket: 'gen-lang-client-0772569610.firebasestorage.app',
-    messagingSenderId: '637772471412'
-  };
+  // --- Suivi prospect (Supabase via /api/track, best-effort, ne bloque jamais l'IA) ---
   function trackProspect(status, extra) {
-    if (!window.firebase) return;
     try {
-      if (!firestoreDb) firestoreDb = firebase.app().firestore(firebaseConfig.firestoreDatabaseId || undefined);
-      var docId = assistantId + '_' + visitorId;
-      var ref = firestoreDb.collection('prospects').doc(docId);
       var payload = {
-        id: docId, assistantId: assistantId, visitorId: visitorId,
-        currentPage: window.location.href, language: navigator.language || 'fr',
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        assistantId: assistantId,
+        visitorId: visitorId,
+        currentPage: window.location.href,
+        userAgent: navigator.userAgent || '',
+        language: navigator.language || 'fr'
       };
       if (status) payload.status = status;
       if (extra) {
-        for (var k in extra) if (extra.hasOwnProperty(k) && k !== 'messages') payload[k] = extra[k];
+        for (var k in extra) if (extra.hasOwnProperty(k)) payload[k] = extra[k];
       }
-      if (extra && extra.messages) payload.messages = firebase.firestore.FieldValue.arrayUnion.apply(null, extra.messages);
-      ref.set(payload, { merge: true }).catch(function () {});
+      fetch((apiOrigin || '') + '/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true
+      }).catch(function () {});
     } catch (e) { /* silencieux, ne doit jamais casser le widget */ }
+  }
+
+  // --- Feedback 👍/👎 sur les réponses de l'IA (nourrit l'apprentissage) ---
+  function sendFeedback(rating, botText, questionText) {
+    try {
+      fetch((apiOrigin || '') + '/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: assistantId,
+          rating: rating,
+          messageText: botText,
+          questionText: questionText || '',
+          sessionId: visitorId
+        }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) { /* silencieux */ }
   }
   function loadScript(src, onload) {
     var s = document.createElement('script');
@@ -251,11 +268,35 @@
 
       var body = document.createElement('div');
       body.className = 'jw-body';
-      messages.forEach(function (m) {
+      messages.forEach(function (m, i) {
         var msg = document.createElement('div');
         msg.className = 'jw-msg ' + (m.sender === 'user' ? 'jw-msg-user' : 'jw-msg-bot');
         msg.textContent = m.text;
         body.appendChild(msg);
+
+        // Boutons 👍/👎 sous chaque réponse de l'IA (pas le message d'accueil).
+        if (m.sender === 'bot' && i > 0) {
+          var prevUser = '';
+          for (var j = i - 1; j >= 0; j--) {
+            if (messages[j].sender === 'user') { prevUser = messages[j].text; break; }
+          }
+          var fbRow = document.createElement('div');
+          fbRow.className = 'jw-feedback';
+          [['👍', 'up'], ['👎', 'down']].forEach(function (pair) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = pair[0];
+            b.setAttribute('aria-label', pair[1] === 'up' ? 'Bonne réponse' : 'Mauvaise réponse');
+            b.onclick = function () {
+              if (fbRow.dataset.done) return;
+              fbRow.dataset.done = '1';
+              b.className = 'jw-fb-on';
+              sendFeedback(pair[1], m.text, prevUser);
+            };
+            fbRow.appendChild(b);
+          });
+          body.appendChild(fbRow);
+        }
       });
       if (isTyping) {
         var typingMsg = document.createElement('div');
@@ -284,18 +325,25 @@
       var inputWrap = document.createElement('div');
       inputWrap.className = 'jw-input-wrapper';
       var input = document.createElement('input');
-      input.type = 'text'; input.className = 'jw-input'; input.placeholder = 'Posez une question...';
+      input.type = 'text'; input.className = 'jw-input';
+      if (limitReached) {
+        input.disabled = true;
+        input.placeholder = 'Limite du plan atteinte - mise a niveau requise';
+      } else {
+        input.placeholder = 'Posez une question...';
+      }
       inputWrap.appendChild(input);
       form.appendChild(inputWrap);
       var sendBtn = document.createElement('button');
       sendBtn.type = 'submit'; sendBtn.className = 'jw-send-btn';
+      if (limitReached) sendBtn.disabled = true;
       sendBtn.innerHTML = sendIconSvg;
       form.appendChild(sendBtn);
 
       form.onsubmit = function (ev) {
         ev.preventDefault();
         var text = input.value.trim();
-        if (!text || isTyping) return;
+        if (!text || isTyping || limitReached) return;
 
         messages.push({ sender: 'user', text: text });
 
@@ -360,39 +408,31 @@
 
   render();
 
-  // --- Config distante (branding, couleurs, base de connaissances liee a l'assistant) ---
-  loadScript('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js', function () {
-    loadScript('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js', function () {
-      if (!window.firebase) return;
-      if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-      firestoreDb = firebase.app().firestore(firebaseConfig.firestoreDatabaseId || undefined);
-      firestoreDb.collection('assistants').doc(assistantId).get().then(function (snap) {
-        if (snap.exists) {
-          var d = snap.data();
-          if (d.brandingEnabled === false) brandingEnabled = false;
-          if (d.businessName) businessName = d.businessName;
-          if (d.whatsappEscalation) whatsappNumber = d.whatsappEscalation;
-          if (d.widgetConfig) {
-            var c = d.widgetConfig;
-            if (c.primaryColor) primaryColor = namedColors[c.primaryColor.toLowerCase()] || c.primaryColor;
-            if (c.gradientSecondary) secondaryColor = namedColors[c.gradientSecondary.toLowerCase()] || c.gradientSecondary;
-            if (c.themeMode) { theme = c.themeMode; isDark = theme === 'dark'; }
-            if (c.position) { position = c.position; isLeft = position === 'bottom-left'; }
-            if (c.shape) shape = c.shape;
-            if (c.teaserText) teaserText = c.teaserText;
-            if (c.welcomeMessage) messages[0] = { sender: 'bot', text: c.welcomeMessage };
-            if (c.headerTitle) businessName = c.headerTitle;
-            if (c.icon) icon = c.icon;
-          }
-          var s = shadow.querySelector('#jawebflow-widget-styles') || styleEl;
-          s.textContent = s.textContent
-            .replace(/--primary:\s*[^;]+/g, '--primary: ' + primaryColor)
-            .replace(/--secondary:\s*[^;]+/g, '--secondary: ' + secondaryColor)
-            .replace(/--radius-shape:\s*[^;]+/g, '--radius-shape: ' + (shape === 'squircle' ? '16px' : '50%'));
-          render();
-        }
-      }).catch(function (e) { console.warn('JawebFlow sync error:', e); })
-        .finally(function () { trackProspect('visited'); });
-    });
-  });
+  // --- Config distante (branding, couleurs...) : Supabase via /api/widget-config ---
+  fetch((apiOrigin || '') + '/api/widget-config?id=' + encodeURIComponent(assistantId))
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d) return;
+      if (d.brandingEnabled === false) brandingEnabled = false;
+      if (d.businessName) businessName = d.businessName;
+      if (d.whatsappEscalation) whatsappNumber = d.whatsappEscalation;
+      var c = d.widgetConfig || {};
+      if (c.primaryColor) primaryColor = namedColors[String(c.primaryColor).toLowerCase()] || c.primaryColor;
+      if (c.gradientSecondary) secondaryColor = namedColors[String(c.gradientSecondary).toLowerCase()] || c.gradientSecondary;
+      if (c.themeMode) { theme = c.themeMode; isDark = theme === 'dark'; }
+      if (c.position) { position = c.position; isLeft = position === 'bottom-left'; }
+      if (c.shape) shape = c.shape;
+      if (c.teaserText) teaserText = c.teaserText;
+      if (c.welcomeMessage) messages[0] = { sender: 'bot', text: c.welcomeMessage };
+      if (c.headerTitle) businessName = c.headerTitle;
+      if (c.icon) icon = c.icon;
+      var s = shadow.querySelector('#jawebflow-widget-styles') || styleEl;
+      s.textContent = s.textContent
+        .replace(/--primary:\s*[^;]+/g, '--primary: ' + primaryColor)
+        .replace(/--secondary:\s*[^;]+/g, '--secondary: ' + secondaryColor)
+        .replace(/--radius-shape:\s*[^;]+/g, '--radius-shape: ' + (shape === 'squircle' ? '16px' : '50%'));
+      render();
+    })
+    .catch(function (e) { console.warn('JawebFlow sync error:', e); })
+    .finally(function () { trackProspect('visited'); });
 })();
