@@ -1,4 +1,5 @@
 import { subscribeToInstagramMessages } from "../subscribe";
+import { supabaseConfigured, supabaseRequest } from "../../../_shared/supabase.ts";
 
 interface Env {
   INSTAGRAM_APP_ID?: string;
@@ -33,6 +34,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     const body = await context.request.json().catch(() => ({})) as {
       code?: string;
       redirectUri?: string;
+      userId?: string;
     };
 
     // 1. Nettoyage du code OAuth
@@ -123,7 +125,46 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       subscribeError = subErr?.message || "Erreur réseau pendant l'abonnement webhook.";
     }
 
-    // 7. Succès
+    // 7. SAUVEGARDE SERVEUR IMMÉDIATE : le webhook lit la table Supabase
+    // instagram_integrations — on enregistre la connexion ICI (service role),
+    // sans dépendre du navigateur (qui peut fermer avant, ou échouer en
+    // silence comme c'était le cas : le dashboard affichait « connecté »
+    // alors que la table restait vide -> robot muet).
+    let serverSaved = false;
+    let saveError: string | undefined;
+    const uid = String(body.userId || "").trim();
+    if (supabaseConfigured(context.env as any)) {
+      if (/^[0-9a-fA-F-]{36}$/.test(uid)) {
+        try {
+          const saveRes = await supabaseRequest(context.env as any, "instagram_integrations?on_conflict=user_id", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+            body: JSON.stringify({
+              user_id: uid,
+              connected: true,
+              instagram_user_id: String(profile.id),
+              instagram_username: profile.username || null,
+              page_name: profile.name || profile.username || null,
+              profile_picture_url: profile.profile_picture_url || null,
+              access_token: accessToken,
+              auto_reply_enabled: true,
+              last_connected_at: new Date().toISOString(),
+              webhook_status: subscribed ? "active" : "error",
+              updated_at: new Date().toISOString(),
+            }),
+          });
+          serverSaved = saveRes.ok;
+          if (!saveRes.ok) saveError = `HTTP ${saveRes.status}: ${(await saveRes.text()).slice(0, 200)}`;
+        } catch (e: any) {
+          saveError = e?.message || String(e);
+        }
+        if (!serverSaved) console.error("[instagram][exchange] sauvegarde serveur échouée:", saveError);
+      } else {
+        saveError = "userId absent/invalide (session non chargée ?)";
+      }
+    }
+
+    // 8. Succès
     return json({
       success: true,
       instagramUserId: String(profile.id),
@@ -132,7 +173,9 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       profilePictureUrl: profile.profile_picture_url || "",
       accessToken: accessToken,
       subscribed,
-      subscribeError
+      subscribeError,
+      serverSaved,
+      saveError
     });
 
   } catch (error: any) {
