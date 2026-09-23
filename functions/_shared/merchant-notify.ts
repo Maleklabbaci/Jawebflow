@@ -90,18 +90,30 @@ export function isNotifyAccount(cfg: NotifyConfig, instagramAccountId?: string):
 }
 
 /** Le message arrive sur le compte JawebFlow : code d'activation ou aide. Renvoie true si géré. */
-export async function handleNotifyAccountMessage(env: any, event: any): Promise<boolean> {
+export async function handleNotifyAccountMessage(env: any, event: any, isEcho = false): Promise<boolean> {
   const cfg = await getNotifyConfig(env);
-  if (!isNotifyAccount(cfg, event?.recipient?.id) || !cfg.token) return false;
+  if (!isNotifyAccount(cfg, event?.recipient?.id) || !cfg.token) {
+    // diagnostic : un code JF est passé mais le compte destinataire ne matche pas
+    const t0 = String(event?.message?.text || "");
+    if (/^JF[-\s]?[A-Z2-9]{4,10}$/i.test(t0.trim())) {
+      console.log(`[notificateur] MISMATCH : recipient=${String(event?.recipient?.id || "?")} ≠ enregistré=${cfg.igUserId || "(aucun)"}`);
+    }
+    return false;
+  }
   const senderId: string | undefined = event?.sender?.id;
   const text: string = typeof event?.message?.text === "string" ? event.message.text.trim() : "";
-  console.log(`[notificateur] DM reçu de ${String(senderId || "?").slice(0, 10)}… : "${text.slice(0, 24)}" · compte enregistré : ${cfg.igUserId}`);
+  console.log(`[notificateur] DM reçu de ${String(senderId || "?").slice(0, 10)}… : "${text.slice(0, 24)}"${isEcho ? " (via écho)" : ""} · compte enregistré : ${cfg.igUserId}`);
   if (!senderId) return true;
 
   const codeMatch = text.match(/^JF[-\s]?([A-Z2-9]{4,10})$/i);
   if (codeMatch && cfg.codes) {
     const code = "JF-" + codeMatch[1].toUpperCase();
     const entry = cfg.codes[code];
+    if (!entry && cfg.links[senderId]) {
+      // code déjà consommé (le vrai événement arrive après l'écho) : déjà lié
+      await sendDm(cfg.token, senderId, "✅ Ton compte est déjà activé ! Les alertes arrivent ici.");
+      return true;
+    }
     if (entry && entry.exp > Date.now()) {
       cfg.links = { ...(cfg.links || {}), [senderId]: { uid: entry.uid, aid: entry.aid, at: new Date().toISOString() } };
       delete cfg.codes[code];
