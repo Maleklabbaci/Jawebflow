@@ -1244,3 +1244,4 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
     </div>
   );
 };
+ 
