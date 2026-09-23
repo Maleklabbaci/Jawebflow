@@ -105,12 +105,21 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
     try {
       const imgToSend = pendingImg;
       setPendingImg(null);
+      // Session par visiteur : permet la commande « stop » individuelle
+      const sessionKey = (() => {
+        try {
+          let id = localStorage.getItem('jawebflow_widget_session');
+          if (!id) { id = 'web_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem('jawebflow_widget_session', id); }
+          return id;
+        } catch { return 'web_anon'; }
+      })();
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assistantId: businessName,
           message: text,
+          sessionId: sessionKey,
           ...(imgToSend ? { image: imgToSend } : {})
         })
       });
@@ -120,6 +129,7 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
         const data = await response.json();
         botReply = data.text || data.message || data.response || '';
         if (data.limitReached) setLimitReached(true); // l'IA bloque l'envoi côté serveur
+        if (data.muted) return; // bot silencieux : le visiteur a demandé « stop »
       } else {
         const errData = await response.json().catch(() => ({}));
         botReply = errData.message || `Bonjour ! Merci pour votre message chez ${businessName}. Laissez-nous vos coordonnées ou votre question, un conseiller vous répond très rapidement.`;

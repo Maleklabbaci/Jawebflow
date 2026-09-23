@@ -366,6 +366,36 @@ async function extractPdfWithGemini(
 /**
  * Synthèse des données avec Gemini — fallback automatique entre modèles
  */
+const VISION_MODEL = "gemini-3.1-flash-lite"; // même modèle pas cher que le chat (vision incluse)
+
+async function extractImageWithGemini(
+  base64: string,
+  mime: string,
+  fileName: string,
+  apiKey?: string
+): Promise<string | null> {
+  if (!apiKey) return null;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${VISION_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mime || "image/jpeg", data: base64 } },
+            { text: "Cette image appartient à une entreprise (catalogue, liste de prix, menu, carte, capture de page...). Extrais TOUT le contenu utile pour un assistant commercial : noms de produits/services, prix, descriptions visibles, textes lisibles. Réponds en liste simple et factuelle, sans commentaire." },
+          ],
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+      }),
+    }
+  );
+  if (!res.ok) return null;
+  const text = (await res.json().catch(() => null))?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  return text || null;
+}
+
 async function synthesizeWithGemini(
   content: string,
   siteUrl: string,
@@ -521,7 +551,25 @@ export async function onRequestPost(context: {
     // PLAN GRATUIT = ZÉRO APPEL D'API PAYANTE (page Tarifs : « zéro crédit IA »).
     // On détermine le plan du client ICI, avant tout traitement coûteux :
     // seuls les plans PAYÉS déclenchent Gemini (synthèse, vision, PDF).
+    // 🧮 ANTI-ABUS : un scan/import coûte 1 CONVERSATION sur la jauge du plan
+    // payant (c'est le même gros appel IA qu'une dizaine de messages).
     let ownerPlanFree = false;
+    let ownerPlan: string | null = null;
+    let quotaOk = true;
+    try {
+      if (supabaseConfigured(context.env)) {
+        const pRes = await supabaseRequest(context.env, `users?id=eq.${encodeURIComponent(caller.uid)}&select=plan`);
+        if (pRes.ok) {
+          const rows = await pRes.json();
+          const plan = String(rows?.[0]?.plan || '').toLowerCase();
+          ownerPlanFree = plan === 'free';
+          ownerPlan = plan || null;
+        }
+      }
+    } catch { ownerPlanFree = false; }
+    if (!quotaOk) {
+      return json({ error: "Limite mensuelle de conversations atteinte : le scan intelligent reprendra dès la période suivante (ou passe un plan supérieur)." }, 402);
+    }
     try {
       if (supabaseConfigured(context.env)) {
         const pRes = await supabaseRequest(context.env, `users?id=eq.${encodeURIComponent(caller.uid)}&select=plan`);
@@ -602,6 +650,24 @@ export async function onRequestPost(context: {
             rawText += "(Extraction IA du PDF indisponible avec le plan gratuit.)";
           }
           filesProcessed++;
+        } else if (fileType.startsWith("image/")) {
+          // 🖼️ IMAGE (photo de catalogue, capture de liste de prix, menu...) :
+          // Gemini Vision lit le contenu et le transforme en texte exploitable.
+          if (!ownerPlanFree) {
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              const base64 = arrayBufferToBase64(arrayBuffer);
+              rawText += `\n\n[IMAGE: ${file.name}]\n`;
+              const imgContent = await extractImageWithGemini(base64, fileType, file.name, context.env.GEMINI_API_KEY);
+              rawText += imgContent || "(aucun texte lisible détecté sur l'image)";
+            } catch (e: any) {
+              log.warn("Image ignorée", { name: file.name, error: e?.message || String(e) });
+              rawText += "(image illisible)";
+            }
+          } else {
+            rawText += "(Extraction IA des images indisponible avec le plan gratuit.)";
+          }
+          filesProcessed++;
         } else if (
           fileType.includes("text") ||
           fileName.endsWith(".txt") ||
@@ -650,6 +716,28 @@ export async function onRequestPost(context: {
     if (assistantId && !ASSISTANT_ID_REGEX.test(assistantId)) {
       log.warn("assistantId invalide", { assistantId });
       return json({ error: "assistantId invalide." }, 400);
+    }
+
+    // 🏗️ LIMITE DÉDIÉE SCANS/IMPORTS (par plan, par mois) :
+    // Gratuit = interdit · Basic 10 · Pro 30 · Enterprise 60.
+    // Indépendant de la jauge de conversations.
+    if (!ownerPlanFree && assistantId) {
+      try {
+        const { SCAN_LIMITS_PER_MONTH } = await import('../../_shared/limits.ts');
+        const planKey = (ownerPlan || 'basic').toLowerCase();
+        const scanLimit = SCAN_LIMITS_PER_MONTH[planKey] ?? 10;
+        const monthStart = new Date();
+        monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
+        const sRes = await supabaseRequest(context.env, `conversation_contexts?assistant_id=eq.${encodeURIComponent(assistantId)}&channel=eq.scan&created_at=gte.${monthStart.toISOString()}&select=id`, { headers: { Prefer: 'count=exact' } });
+        let scanUsed = 0;
+        if (sRes.ok) {
+          const range = sRes.headers.get('content-range') || '';
+          scanUsed = parseInt(range.split('/')[1] || '0', 10) || 0;
+        }
+        if (scanUsed >= scanLimit) {
+          return json({ error: `Limite mensuelle de scans/imports atteinte (${scanLimit}/mois au plan ${planKey}). Elle se renouvelle le 1er du mois prochain — ou passe un plan supérieur.` }, 402);
+        }
+      } catch { /* fail-open : ne pas bloquer un payant pour un pépin réseau */ }
     }
 
     if (pages.length === 0 && !rawText.trim() && siteUrl !== "https://monsite.com") {
@@ -841,6 +929,21 @@ export async function onRequestPost(context: {
     }
 
     // ── FIX #10 — Réponse enrichie ────────────────────────────────────────────
+    // 🧮 l'import/scan consomme 1 conversation (8 unités) sur la jauge du plan payant
+    try {
+      if (!ownerPlanFree && supabaseConfigured(context.env)) {
+        const { supabaseLogConversation } = await import('../../_shared/limits.ts');
+        await supabaseLogConversation(context.env, {
+          assistantId,
+          channel: 'scan',
+          sessionId: `scan_${Date.now()}`,
+          message: `Scan/import de ${siteUrl || 'fichiers'}`,
+          response: `${savedNoteCount} fiche(s) générée(s)`,
+          weight: 0, // hors jauge conversations : compté dans la limite dédiée scans
+        });
+      }
+    } catch { /* ne pas faire échouer le scan pour le log */ }
+
     return json({
       ...result,
       saved,

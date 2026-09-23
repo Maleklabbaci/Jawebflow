@@ -21,8 +21,15 @@ export async function runBackgroundLearning(
     let logIt = FALLBACK_RE.test(aiText);
     let reason = 'no_info';
 
-    // Auto-évaluation Gemini (mini appel, temperature 0) si pas de signal simple.
-    if (!logIt && opts.apiKey) {
+    // 🧮 ÉCONOMIE : PAS d'appel Gemini caché ici. On ne considère « échec
+    // probable » QUE si l'heuristique GRATUITE le signale (la réponse propose
+    // d'être rappelé / demande le numéro / est anormalement courte pour une
+    // vraie question). Les 9 réponses normales sur 10 ne coûtent PLUS RIEN.
+    const looksLikeFailure = logIt
+      || (/d[eé]sol[eé]|je vais v[eé]rifier|ne peux pas|pas d'information|je ne sais pas/i.test(aiText))
+      || (aiText.length < 60 && question.length > 25);
+    if (!looksLikeFailure) return; // réponse saine : zéro appel, zéro coût
+    if (opts.apiKey) {
       try {
         const evalRes = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${opts.chatModel || 'gemini-3.1-flash-lite'}:generateContent?key=${opts.apiKey}`,

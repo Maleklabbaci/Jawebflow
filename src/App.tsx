@@ -61,6 +61,7 @@ export default function App() {
           test: 'simulator', chatbot: 'simulator', integration: 'integration', script: 'integration', embed: 'integration',
           instagram: 'instagram', ig: 'instagram', meta: 'instagram', direct: 'instagram', leads: 'leads', crm: 'leads', prospects: 'leads',
           settings: 'settings', parametres: 'settings', whatsapp: 'settings',
+          behavior: 'behavior', comportement: 'behavior', personnalite: 'behavior',
         };
         return { page: 'create-assistant', section: sections[sub] || 'overview' };
       }

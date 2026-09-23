@@ -69,7 +69,18 @@ function extractProductLinks(html: string, base: string): SiteSearchResult[] {
  * jusqu'à 5 liens produits. Silencieux ([]) en cas d'échec : l'IA retombe
  * alors sur sa base de connaissance.
  */
+// 🧮 CACHE 15 min : la même recherche produit (même site + même requête)
+// ne re-télécharge PAS le site du client à chaque message (lenteur ÷3,
+// moins de charge sur son hébergeur). Les résultats VIDES ne sont jamais
+// mis en cache (un produit ajouté entre-temps reste trouvable).
+const SEARCH_CACHE = new Map<string, { at: number; results: any[] }>();
+const SEARCH_CACHE_TTL = 15 * 60 * 1000;
+
 export async function searchClientSite(config: any, query: string): Promise<SiteSearchResult[]> {
+  const __q = `${config?.websiteUrl || ''}|${String(query || '').toLowerCase().trim()}`;
+  const __hit = SEARCH_CACHE.get(__q);
+  if (__hit && Date.now() - __hit.at < SEARCH_CACHE_TTL) return __hit.results;
+
   const base = String(config?.websiteUrl || '').trim().replace(/\/+$/, '');
   const q = encodeURIComponent(String(query || '').trim().slice(0, 80));
   if (!base || !q || !/^https?:\/\//i.test(base)) return [];
@@ -92,7 +103,7 @@ export async function searchClientSite(config: any, query: string): Promise<Site
       if (!contentType.includes('text/html')) continue;
       const html = (await res.text()).slice(0, 800_000);
       const results = extractProductLinks(html, base);
-      if (results.length > 0) return results.slice(0, 5);
+      if (results.length > 0) { const top = results.slice(0, 5); SEARCH_CACHE.set(__q, { at: Date.now(), results: top }); return top; }
     } catch {
       continue; // pattern suivant
     }

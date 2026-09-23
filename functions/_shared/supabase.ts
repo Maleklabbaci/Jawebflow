@@ -112,10 +112,17 @@ export async function supabaseUpsertProspect(
   // champ (phone/email/messages) déjà capturé lors d'un appel précédent.
   const existingRes = await request(env, `prospects?id=eq.${encodeURIComponent(docId)}&select=data`);
   const existing = existingRes.ok ? ((await existingRes.json()) as any[])[0]?.data || {} : {};
+  // Les champs du patch écrasent les anciens (le client peut CORRIGER son
+  // numéro/nom/ville), SAUF messages : on CONCATÈNE l'historique (20 derniers).
+  const mergedMessages = Array.isArray(patch.messages) || Array.isArray(existing.messages)
+    ? [...(Array.isArray(existing.messages) ? existing.messages : []), ...(Array.isArray(patch.messages) ? patch.messages : [])].slice(-20)
+    : undefined;
+  const data = { ...existing, ...patch };
+  if (mergedMessages) data.messages = mergedMessages;
   const row = {
     id: docId,
     assistant_id: assistantId,
-    data: { ...existing, ...patch },
+    data,
     updated_at: new Date().toISOString(),
   };
   const res = await request(env, 'prospects?on_conflict=id', {

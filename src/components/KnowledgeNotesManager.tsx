@@ -169,7 +169,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".pdf,.txt,.csv,.md,.json,.xlsx,.docx,image/*"
+              accept=".pdf,.txt,.csv,.md,.json,.xlsx,.docx"
               className="hidden"
               onChange={e => handleFiles(e.target.files)}
             />
@@ -177,7 +177,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
             <p className="text-xs font-semibold text-slate-700">
               Glissez vos fichiers ici ou <span className="text-emerald-600">cliquez pour choisir</span>
             </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">PDF, images, TXT, CSV, JSON, Excel...</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">PDF, TXT, CSV, JSON, Excel... (le texte de tes images se colle dans la zone en dessous)</p>
           </div>
 
           {/* Fichiers sélectionnés */}

@@ -22,6 +22,15 @@ export interface PlanLimits {
   [plan: string]: number | null;
 }
 
+// 🏗️ LIMITES DÉDIÉES scans/imports de fichiers (par MOIS, par assistant).
+// Le commerçant reçoit un quota propre : fini les abus de re-scans.
+export const SCAN_LIMITS_PER_MONTH: Record<string, number> = {
+  free: 0,     // interdit (zéro IA)
+  basic: 3,    // 3 scans/imports / mois (décision du propriétaire)
+  pro: 6,
+  enterprise: 12,
+};
+
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 0,        // Plan Gratuit = zéro crédit IA (page Tarifs)
   basic: 1000,    // « Jusqu’à 1 000 conversations par mois »
@@ -50,6 +59,20 @@ export function monthStartIso(): string {
 /** Nombre de conversations IA déjà consommées ce mois-ci par un assistant. */
 export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assistantId: string): Promise<number> {
   try {
+    // 🧮 COMPTEUR PONDÉRÉ : 1 conversation commerciale = 8 unités, avec
+    // poids par message (photo = 4, recherche produits = +2, message = 1).
+    // Les unités du mois sont agrégées en base par la vue SQL
+    // assistant_monthly_usage (voir supabase/migration_ai_usage.sql).
+    const vRes = await supabaseRequest(
+      env,
+      `assistant_monthly_usage?assistant_id=eq.${encodeURIComponent(assistantId)}&month=eq.${encodeURIComponent(monthStartIso())}&select=units,messages`
+    );
+    if (vRes.ok) {
+      const vRows = (await vRes.json().catch(() => [])) as any[];
+      const units = Number(vRows?.[0]?.units || 0);
+      return Math.ceil(units / 8);
+    }
+    // Repli si la vue n'existe pas encore : ancien comptage (1 ligne = 1 unité).
     const res = await supabaseRequest(
       env,
       `conversation_contexts?assistant_id=eq.${encodeURIComponent(assistantId)}&created_at=gte.${monthStartIso()}&select=id`,
@@ -58,9 +81,9 @@ export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assist
     if (!res.ok) return 0; // en cas de pépin on ne bloque PAS le client (fail-open)
     const range = res.headers.get('content-range') || '';
     const total = parseInt(range.split('/')[1] || '', 10);
-    if (!isNaN(total)) return total;
+    if (!isNaN(total)) return Math.ceil(total / 8);
     const rows = (await res.json()) as any[];
-    return Array.isArray(rows) ? rows.length : 0;
+    return Math.ceil((Array.isArray(rows) ? rows.length : 0) / 8);
   } catch {
     return 0;
   }
@@ -69,7 +92,7 @@ export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assist
 /** Trace une conversation IA (compteur de quota) — appelé en waitUntil. */
 export async function supabaseLogConversation(
   env: SupabaseEnv,
-  entry: { assistantId: string; channel: string; sessionId?: string; message: string; response: string }
+  entry: { assistantId: string; channel: string; sessionId?: string; message: string; response: string; tokensIn?: number; tokensOut?: number; model?: string; weight?: number }
 ): Promise<void> {
   try {
     await supabaseRequest(env, 'conversation_contexts', {
@@ -81,6 +104,10 @@ export async function supabaseLogConversation(
         user_message: (entry.message || '').slice(0, 2000),
         assistant_response: (entry.response || '').slice(0, 4000),
         created_at: new Date().toISOString(),
+        weight: entry.weight || 1,
+        ...(entry.tokensIn ? { tokens_in: entry.tokensIn } : {}),
+        ...(entry.tokensOut ? { tokens_out: entry.tokensOut } : {}),
+        ...(entry.model ? { model: entry.model } : {}),
       }),
       headers: { Prefer: 'return=minimal' },
     });

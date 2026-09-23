@@ -367,6 +367,20 @@ export function AdminPage() {
   const [campBusy, setCampBusy] = useState<'preview' | 'prepareTest' | 'prepareReal' | 'cancel' | null>(null);
   const [campMsg, setCampMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [campCount, setCampCount] = useState<number | null>(null);
+  // 💸 Coût IA ce mois (tokens réels consommés par les bots)
+  const [aiUsage, setAiUsage] = useState<{ rows: any[]; totals: any } | null>(null);
+  const [aiUsageBusy, setAiUsageBusy] = useState(false);
+
+  const loadAiUsage = async () => {
+    setAiUsageBusy(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/ai-usage', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok) setAiUsage({ rows: data.rows || [], totals: data.totals });
+    } catch { /* silencieux */ } finally { setAiUsageBusy(false); }
+  };
+  useEffect(() => { loadAiUsage(); }, []);
 
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
     setStatusNotification({ type, message });
@@ -1714,6 +1728,51 @@ export function AdminPage() {
                 <pre className="bg-slate-900 text-slate-100 rounded-xl p-4 text-[11px] leading-relaxed overflow-x-auto max-h-72 overflow-y-auto whitespace-pre">
                   {CONSOLE_SQL}
                 </pre>
+              </div>
+
+              {/* COÛT IA CE MOIS */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-800 text-sm">💸 Coût IA ce mois (tokens réels)</div>
+                    <div className="text-xs text-slate-500">Consommation Gemini mesurée conversation par conversation — tarif flash-lite (0,25 $/M entrée · 1,50 $/M sortie).</div>
+                  </div>
+                  <button onClick={loadAiUsage} disabled={aiUsageBusy} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                    {aiUsageBusy ? '…' : 'Actualiser'}
+                  </button>
+                </div>
+                {aiUsage && (
+                  <>
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div className="bg-slate-50 rounded-xl p-3">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase">Conversations</div>
+                        <div className="text-lg font-bold text-slate-800">{aiUsage.totals?.conversations ?? 0}</div>
+                        <div className="text-[10px] text-slate-400">{aiUsage.totals?.messages ?? 0} messages IA</div>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase">Tokens</div>
+                        <div className="text-lg font-bold text-slate-800">{((aiUsage.totals?.tokensIn ?? 0) + (aiUsage.totals?.tokensOut ?? 0) > 1000 ? (((aiUsage.totals?.tokensIn ?? 0) + (aiUsage.totals?.tokensOut ?? 0)) / 1000).toFixed(1) + 'k' : ((aiUsage.totals?.tokensIn ?? 0) + (aiUsage.totals?.tokensOut ?? 0)))}</div>
+                        <div className="text-[10px] text-slate-400">ce mois-ci</div>
+                      </div>
+                      <div className="bg-purple-50 rounded-xl p-3">
+                        <div className="text-[10px] font-bold text-purple-400 uppercase">Coût estimé</div>
+                        <div className="text-lg font-bold text-purple-700">${(aiUsage.totals?.costUsd ?? 0).toFixed(3)}</div>
+                        <div className="text-[10px] text-purple-400">≈ {((aiUsage.totals?.costUsd ?? 0) * 135).toFixed(0)} DA</div>
+                      </div>
+                    </div>
+                    {(aiUsage.rows || []).length > 0 && (
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                        {aiUsage.rows.map((r: any) => (
+                          <div key={r.assistantId} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2">
+                            <span className="font-semibold text-slate-700 truncate">{String(r.name).slice(0, 24)}</span>
+                            <span className="text-slate-400">{r.conversations} conv · {r.messages} msg</span>
+                            <span className={`font-bold ${r.costUsd > 0.5 ? 'text-red-600' : 'text-slate-600'}`}>${r.costUsd.toFixed(4)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               {/* CAMPAGNE EMAIL (news / annonces) */}

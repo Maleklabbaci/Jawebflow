@@ -15,7 +15,7 @@
  * doublons ignorés (titre similaire déjà présent).
  */
 
-import { supabaseRequest, supabaseConfigured, supabaseAddKnowledgeNote } from '../../_shared/supabase.ts';
+import { supabaseRequest, supabaseConfigured, supabaseAddKnowledgeNote, supabasePatchAssistant } from '../../_shared/supabase.ts';
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
@@ -49,7 +49,7 @@ async function handle(context) {
     if (fRes.ok) for (const u of await fRes.json()) freeIds.add(u.id);
   } catch { /* en cas de pépin, on traite quand même (comportement précédent) */ }
 
-  const aRes = await supabaseRequest(env, 'assistants?select=id,user_id,business_name,knowledge_notes&order=updated_at.desc&limit=30');
+  const aRes = await supabaseRequest(env, 'assistants?select=id,user_id,business_name,knowledge_notes,config&order=updated_at.desc&limit=30');
   if (!aRes.ok) return json({ ok: false, error: 'lecture assistants impossible' }, 500);
   const assistants = await aRes.json();
 
@@ -84,7 +84,9 @@ RÈGLES STRICTES :
 - formulation neutre et factuelle, utilisable comme fiche de référence
 - si rien de nouveau : liste vide
 
-RÉPONDS UNIQUEMENT en JSON : {"notes":[{"title":"Titre court","content":"Fait précis avec les chiffres/détails"}]}
+ET AUSSI (profil de la cible) : déduis des échanges QUI parle à ce bot (langue réellement utilisée, style, attentes) et comment l'assistant doit adapter son ton pour être plus performant avec CETTE cible.
+
+RÉPONDS UNIQUEMENT en JSON : {"notes":[{"title":"Titre court","content":"Fait précis avec les chiffres/détails"}],"audience":{"langue":"fr | darija | mixte observé","style":"comment les clients parlent (tutoiement, jeunes, pressés...)","insights":"3 à 4 phrases maximum : qui est la cible et comment adapter le ton pour mieux vendre"}}
 
 ÉCHANGES :
 ${transcript.slice(0, 12000)}`;
@@ -114,6 +116,16 @@ ${transcript.slice(0, 12000)}`;
           content: String(note.content),
         });
         if (ok) { added++; existingTitles.push(note.title); }
+      }
+      // 🎭 AUTO-DÉVELOPPEMENT : le bot affine SON STYLE avec SA cible,
+      // chaque semaine, à partir des vraies conversations.
+      const aud = parsed?.audience;
+      if (aud && typeof aud.insights === 'string' && aud.insights.trim().length > 30) {
+        const beh = (assistant.config && assistant.config.behavior) || {};
+        await supabasePatchAssistant(env, assistant.id, {
+          behavior: { ...beh, autoInsights: String(aud.insights).slice(0, 600) },
+        });
+        console.log(`[learn] ${assistant.business_name || assistant.id} : profil de cible mis à jour`);
       }
       if (added) { updated++; console.log(`[learn] ${assistant.business_name || assistant.id} : +${added} note(s) auto`); }
       else skipped++;

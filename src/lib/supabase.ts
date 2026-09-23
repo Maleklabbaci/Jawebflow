@@ -73,6 +73,7 @@ export interface AssistantConfig {
   faqText?: string;
   pricingServicesText?: string;
   specialRulesText?: string;
+  behavior?: { language?: string; length?: string; websiteMentions?: string; stopWhenConfused?: boolean; stopCommand?: boolean; customRules?: string };
   knowledgeNotes?: KnowledgeNote[];
   assistantTone: string;
   languages: { fr: boolean; darija: boolean; en: boolean; ar: boolean };

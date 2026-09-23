@@ -34,7 +34,8 @@ import {
   supabaseUpsertProspect,
   supabaseRequest,
 } from "../../_shared/supabase.ts";
-import { officialInfoBlock, businessPackBlock } from "../../_shared/prompt.ts";
+import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, localGreeting, compactKnowledgeNotes } from "../../_shared/prompt.ts";
+import { extractLeadFacts } from "../../_shared/lead-facts.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
 import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
 import {
@@ -46,11 +47,10 @@ import {
 } from "../../_shared/limits.ts";
 
 /** Modèles Gemini valides essayés dans l'ordre (repli si quota/erreur). */
-const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"; // le moins cher de la famille
 const FALLBACK_MODELS = [
-  "gemini-3.5-flash-lite",
-  "gemini-3.5-flash",
   "gemini-3.1-flash-lite",
+  "gemini-3.5-flash-lite",
   "gemini-flash-lite-latest",
 ];
 
@@ -289,7 +289,7 @@ async function writeDocument(
 /** Prompt construit avec la VRAIE base de connaissances de l'entreprise.
  * Verrouillé pour empêcher l'IA de répondre à des sujets hors périmètre
  * (politique, culture générale, code, autre entreprise, conseils perso...). */
-function buildSystemPrompt(config: any, extraBlocks = ""): string {
+function buildSystemPrompt(config: any, extraBlocks = "", message = ""): string {
   // Ajout minimal (le reste de la fonction est inchangé) : une identité forte
   // en tête, basée sur businessName, pour que le bot se présente comme la
   // marque du client plutôt que comme "l'assistant JawebFlow" générique.
@@ -320,12 +320,16 @@ Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucu
     ? config.knowledgeNotes.filter((n: any) => n && n.enabled !== false)
     : [];
   if (notes.length > 0) {
-    prompt += `\n\n### 📋 BASE DE CONNAISSANCE DE L'ENTREPRISE (SEULE SOURCE DE VÉRITÉ AUTORISÉE) :\n`;
-    for (const note of notes) prompt += `- [${note.category || note.title || "Note"}] ${note.content || ""}\n`;
-    prompt += `\n⚠️ Tu ne dois RIEN affirmer qui ne soit pas écrit ci-dessus ou dans les sections FAQ/Tarifs/Règles. Si l'information n'y est pas, dis que tu vas vérifier et propose de laisser un numéro de téléphone.`;
+    // 🧮 mêmes règles d'économie que le web : vitales toujours, pertinentes selon
+    // la question, coupées court, filet de sécurité (question floue = tout).
+    prompt += compactKnowledgeNotes(notes, message).replace(
+      "BASE DE CONNAISSANCE DE L'ENTREPRISE",
+      "BASE DE CONNAISSANCE DE L'ENTREPRISE (SEULE SOURCE DE VÉRITÉ AUTORISÉE)"
+    );
+    prompt += "\n⚠️ Tu ne dois RIEN affirmer qui ne soit pas écrit ci-dessus ou dans les sections FAQ/Tarifs/Règles. Si l'information n'y est pas, dis que tu vas vérifier et propose de laisser un numéro de téléphone.";
   }
-  if (config?.faqText) prompt += `\n\n### ❓ FAQ :\n${config.faqText}`;
-  if (config?.pricingServicesText) prompt += `\n\n### 💰 TARIFS & SERVICES :\n${config.pricingServicesText}`;
+  if (config?.faqText) prompt += `\n\n### ❓ FAQ :\n${String(config.faqText).slice(0, 2000)}`;
+  if (config?.pricingServicesText) prompt += `\n\n### 💰 TARIFS & SERVICES :\n${String(config.pricingServicesText).slice(0, 2000)}`;
   if (config?.specialRulesText) prompt += `\n\n### ⚠️ RÈGLES SPÉCIALES :\n${config.specialRulesText}`;
 
   // Infos officielles + pack métier : partagés avec le chat web (mêmes
@@ -340,6 +344,8 @@ Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucu
   if (hardRules) {
     prompt += `\n\n### 🚨 RAPPEL — RÈGLES ABSOLUES DU CLIENT, AUCUNE EXCEPTION :\n${hardRules}\nCes règles priment sur tout le reste en cas de conflit.`;
   }
+  // 🎭 Comportement du bot (langue, quantité, site, honnêteté, règles libres)
+  prompt += behaviorBlock(config?.behavior);
 
   if (notes.length === 0 && !config?.faqText && !config?.pricingServicesText && !config?.specialRulesText) {
     prompt += `\n\n### ⚠️ ATTENTION\nAucune information détaillée n'est encore enregistrée : reste vague sur les prix et les délais, et propose de laisser un numéro de téléphone pour être rappelé. Ne réponds à AUCUNE question générale en l'absence d'informations.`;
@@ -356,7 +362,8 @@ Si tu hésites entre répondre normalement ou refuser car hors-sujet : REFUSE et
  * Meta (`/{mid}/attachments`), puis Gemini Vision la décrit en quelques mots
  * pour en faire une requête de recherche produit sur le site du client.
  */
-async function describeAttachmentImage(env: Env, igToken: string, mid: string): Promise<string | null> {
+/** Télécharge la photo jointe d'un DM (partagé : description vision ET inline). */
+async function fetchAttachmentImage(env: Env, igToken: string, mid: string): Promise<{ mime: string; base64: string } | null> {
   try {
     const metaRes = await fetchWithTimeout(
       `https://graph.facebook.com/v21.0/${encodeURIComponent(mid)}/attachments?access_token=${encodeURIComponent(igToken)}`,
@@ -373,6 +380,19 @@ async function describeAttachmentImage(env: Env, igToken: string, mid: string): 
     const buf = await img.arrayBuffer();
     if (!buf || buf.byteLength === 0) return null;
     const mime = (img.headers.get("content-type") || "image/jpeg").split(";")[0];
+    if (buf.byteLength > 5 * 1024 * 1024) return null;
+    return { mime, base64: base64(buf) };
+  } catch {
+    return null;
+  }
+}
+
+async function describeAttachmentImage(env: Env, igToken: string, mid: string): Promise<string | null> {
+  try {
+    const inline = await fetchAttachmentImage(env, igToken, mid);
+    if (!inline) return null;
+    const mime = inline.mime;
+    const b64 = inline.base64;
 
     const g = await fetchWithTimeout(
       `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
@@ -382,11 +402,11 @@ async function describeAttachmentImage(env: Env, igToken: string, mid: string): 
         body: JSON.stringify({
           contents: [{
             parts: [
-              { inline_data: { mime_type: mime, data: base64(buf) } },
-              { text: "Décris ce produit en 5 à 10 mots, comme une recherche dans une boutique en ligne (ex : coque antichoc transparente iPhone 13). Réponds sans phrase, sans ponctuation finale." },
+              { inline_data: { mime_type: mime, data: b64 } },
+              { text: "Identifie le produit PRINCIPAL sur cette photo pour une recherche dans une boutique. Méthode : 1) catégorie EXACTE (t-shirt, jersey/maillot de sport, jean/pantalon en denim, jogging/sweatpant, sweat/hoodie, veste, short, chemise, chaussures, casquette, sac, accessoire...) ; 2) couleur et coupe ; 3) texte ou logo lisible s'il y en a un. ATTENTION : un jean (denim) n'est PAS un jersey — base-toi sur la MATIÈRE et la coupe, pas sur un logo. Réponds en 6 à 12 mots, sans phrase complète, sans ponctuation finale." },
             ],
           }],
-          generationConfig: { temperature: 0, maxOutputTokens: 40 },
+          generationConfig: { temperature: 0, maxOutputTokens: 60 },
         }),
       },
       9000
@@ -405,8 +425,10 @@ async function generateReply(
   env: Env,
   systemPrompt: string,
   message: string,
-  history: Array<{ role: string; text: string }>
-): Promise<{ text: string | null; diagnostics: string[] }> {
+  history: Array<{ role: string; text: string }>,
+  image?: { mime: string; base64: string } | null,
+  maxOutputTokens = 450
+): Promise<{ text: string | null; diagnostics: string[]; usage?: { promptTokens: number; outputTokens: number; model: string } }> {
   const diagnostics: string[] = [];
   if (!env.GEMINI_API_KEY) {
     diagnostics.push("GEMINI_API_KEY absente (Cloudflare → Settings → Environment variables)");
@@ -417,7 +439,9 @@ async function generateReply(
   const contents = history
     .slice(-HISTORY_LIMIT)
     .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.text }] }));
-  contents.push({ role: "user", parts: [{ text: message }] });
+  const userParts: any[] = [{ text: message }];
+  if (image?.base64) userParts.unshift({ inline_data: { mime_type: image.mime || "image/jpeg", data: image.base64 } });
+  contents.push({ role: "user", parts: userParts });
 
   for (const model of models) {
     const startedAt = Date.now();
@@ -432,7 +456,7 @@ async function generateReply(
             contents,
             generationConfig: {
               temperature: 0.6,
-              maxOutputTokens: 400,
+              maxOutputTokens, // 🧮 450 (700 détaillé) : coût de sortie ÷2
               thinkingConfig: { thinkingBudget: 0 },
             },
           }),
@@ -456,7 +480,8 @@ async function generateReply(
         continue;
       }
       diagnostics.push(`modèle utilisé: ${model} (${Date.now() - startedAt}ms)`);
-      return { text, diagnostics };
+      const um = data?.usageMetadata || {};
+      return { text, diagnostics, usage: { model, promptTokens: Number(um.promptTokenCount || 0), outputTokens: Number(um.candidatesTokenCount || 0) } };
     } catch (e: any) {
       const isTimeout = e?.name === "AbortError";
       diagnostics.push(
@@ -836,23 +861,36 @@ async function handleDirectMessage(env: Env, event: any) {
           : "";
         if (priorMsgs || d.need || d.phone) {
           webMemory += `\n\n### 🧠 MÉMOIRE CLIENT — DÉJÀ EN CONTACT VIA LE SITE WEB
-Nom : ${d.name || "inconnu"} | Téléphone : ${d.phone || (phoneInMsg ? phoneInMsg[0] : "")} | Demande : ${String(d.need || "").slice(0, 200)}
+Nom : ${d.name || "inconnu"} | Téléphone : ${d.phone || (phoneInMsg ? phoneInMsg[0] : "")}${d.city ? ` | Ville : ${d.city}` : ""} | Demande : ${String(d.need || "").slice(0, 200)}
 ${priorMsgs ? `Derniers échanges sur le site :\n${priorMsgs}\n` : ""}
 Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
           console.log("[instagram] mémoire site reconnue pour", customerId);
         }
       }
-      // Lien d'identité : on attache l'identifiant Instagram au prospect
+      // 📇 FICHE CLIENT ALIMENTÉE PAR LA DISCUSSION : nom (« je m'appelle
+      // Malek »), ville (« j'habite à Blida »), email, téléphone — et les
+      // CORRECTIONS sont appliquées sur la même fiche (jamais dupliquée :
+      // l'id est déterministe par client Instagram).
+      const facts = extractLeadFacts(groupedText);
+      const leadMessages = groupedText ? [{ sender: "user", text: groupedText.slice(0, 500), timestamp: new Date().toISOString() }] : [];
+      const factsPatch: Record<string, any> = {
+        ...(facts.phone ? { phone: facts.phone } : {}),
+        ...(facts.name ? { name: facts.name } : {}),
+        ...(facts.city ? { city: facts.city } : {}),
+        ...(facts.email ? { email: facts.email } : {}),
+      };
       if (known?.id) {
-        await supabaseUpsertProspect(env, known.id, integration.assistantId, { igUserId: customerId });
+        await supabaseUpsertProspect(env, known.id, integration.assistantId, { igUserId: customerId, ...factsPatch, ...(leadMessages.length ? { messages: leadMessages } : {}) });
+        if (Object.keys(factsPatch).length) console.log("[instagram] fiche client enrichie/corrigée :", JSON.stringify(factsPatch));
       } else if (phoneInMsg) {
         const linkedId = `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200);
         await supabaseUpsertProspect(env, linkedId, integration.assistantId, {
+          ...factsPatch,
           phone: phoneInMsg[0].replace(/[\s.-]/g, ""),
           igUserId: customerId,
           status: "qualifie",
           need: groupedText.slice(0, 2000),
-          messages: groupedText ? [{ sender: "user", text: groupedText, timestamp: new Date().toISOString() }] : [],
+          ...(leadMessages.length ? { messages: leadMessages } : {}),
         });
         console.log("[instagram] nouvelle identité liée (téléphone) :", linkedId);
       }
@@ -880,6 +918,38 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
     }
   }
 
+  // ✋ STOP / reprise : le client garde la main (règle de comportement).
+  if (config?.behavior?.stopCommand !== false && integration.assistantId) {
+    const sessionKey = `ig_${customerId}`;
+    const normMsg = groupedText.trim().toLowerCase().replace(/[!?.,;:]+$/g, "").trim();
+    const STOP_WORDS = ["stop", "arrete", "arrête", "arrêtes", "silence", "assez", "توقف"];
+    const RESUME_WORDS = ["reprends", "reprend", "continue", "continu", "go", "كمل"];
+    try {
+      if (STOP_WORDS.includes(normMsg)) {
+        await supabaseRequest(env, "bot_mutes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates" },
+          body: JSON.stringify({ assistant_id: integration.assistantId, session_id: sessionKey }),
+        });
+        await sendInstagramMessage(integration.igToken, customerId, "D'accord, je ne vous dérange plus. Écrivez « reprends » quand vous voudrez me relancer. 😊");
+        return;
+      }
+      if (RESUME_WORDS.includes(normMsg)) {
+        await supabaseRequest(env, `bot_mutes?assistant_id=eq.${encodeURIComponent(integration.assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}`, { method: "DELETE" });
+        await sendInstagramMessage(integration.igToken, customerId, "C'est reparti ! 😊 Comment puis-je vous aider ?");
+        return;
+      }
+      const mRes = await supabaseRequest(env, `bot_mutes?assistant_id=eq.${encodeURIComponent(integration.assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}&select=assistant_id`);
+      if (mRes.ok) {
+        const mRows = await mRes.json().catch(() => []);
+        if (Array.isArray(mRows) && mRows.length > 0) {
+          console.log("[instagram] bot silencieux (le client a dit stop) — aucun envoi.");
+          return;
+        }
+      }
+    } catch { /* ne jamais bloquer le bot pour ça */ }
+  }
+
   sendTypingOn(integration.igToken, customerId).catch(() => {});
 
   // "Tout passe par mon site" : si le client envoie une PHOTO sans texte,
@@ -888,13 +958,16 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
   let extraBlocks = "";
   let incoming = groupedText;
   let imageDescription = "";
-  if (config?.siteShopping && config?.websiteUrl) {
+  // 🧮 POIDS DE QUOTA (même règle que le web) : photo = 4 · recherche produits = +2 · message = 1
+  let shoppingRan = false;
+  if (config?.siteShopping && config?.websiteUrl && config?.behavior?.websiteMentions !== "never") {
     if (!groupedText && hasAttachment && message?.mid && env.GEMINI_API_KEY) {
       imageDescription = (await describeAttachmentImage(env, integration.igToken, message.mid)) || "";
       if (imageDescription) console.log("[instagram] photo décrite :", imageDescription);
     }
     const shoppingQuery = groupedText || imageDescription;
     if (shoppingQuery) {
+      shoppingRan = true;
       const found = await searchClientSite(config, shoppingQuery);
       extraBlocks = siteShoppingPromptBlock(found, config);
       if (found.length) console.log(`[instagram] ${found.length} produit(s) trouvé(s) sur le site`);
@@ -905,13 +978,46 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
   }
   extraBlocks += webMemory;
 
+  // 🆓 politesse pure -> réponse locale gratuite (pas d'IA, pas de quota).
+  // Le bot muet (le client a dit stop) reste muet.
+  if (isSmallTalk(incoming || groupedText)) {
+    if (integration.assistantId && config?.behavior?.stopCommand !== false) {
+      try {
+        const mRes = await supabaseRequest(env, `bot_mutes?assistant_id=eq.${encodeURIComponent(integration.assistantId)}&session_id=eq.ig_${encodeURIComponent(customerId)}&select=assistant_id`);
+        const mRows = mRes.ok ? await mRes.json().catch(() => []) : [];
+        if (Array.isArray(mRows) && mRows.length > 0) return;
+      } catch { /* ignore */ }
+    }
+    console.log("[instagram] politesse -> réponse locale sans IA");
+    await sendInstagramMessage(integration.igToken, customerId, localGreeting(groupedText, config));
+    return;
+  }
+
   if (!incoming) incoming = imageDescription || "Le client a envoyé une image que tu ne peux pas lire.";
 
+  // 🧮 photo en 1 SEUL appel quand ce n'est pas une recherche produit : l'image
+  // part directement dans l'appel principal (au lieu d'une description séparée).
+  let inlineImage: { mime: string; base64: string } | null = null;
+  if (!config?.siteShopping && !groupedText && hasAttachment && message?.mid) {
+    inlineImage = await fetchAttachmentImage(env, integration.igToken, message.mid);
+    if (inlineImage) incoming = "Le client a envoyé cette photo — identifie précisément l'article (catégorie exacte, matière, couleur) et aide-le avec notre base de connaissances.";
+  }
+
   console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
-  const { text: aiText, diagnostics } = await generateReply(env, buildSystemPrompt(config, extraBlocks), incoming, history);
+  const { text: aiText, diagnostics, usage: aiUsage } = await generateReply(
+    env,
+    buildSystemPrompt(config, extraBlocks, incoming),
+    incoming,
+    history,
+    inlineImage,
+    config?.behavior?.length === "detailed" ? 700 : 450
+  );
   console.log(`[instagram] diagnostics IA (${Date.now() - startedAt}ms écoulées):`, diagnostics.join(" | "));
 
   const businessName = config?.businessName || "notre équipe";
+  const quotaWeight = 1
+    + ((hasAttachment && (Boolean(imageDescription) || Boolean(inlineImage))) ? 3 : 0)
+    + (shoppingRan ? 2 : 0);
   const replyText =
     aiText ||
     (hasAttachment && !groupedText
@@ -938,6 +1044,10 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
       sessionId: `ig_${customerId}`,
       message: incoming,
       response: replyText,
+      weight: quotaWeight,
+      tokensIn: aiUsage?.promptTokens,
+      tokensOut: aiUsage?.outputTokens,
+      model: aiUsage?.model,
     }).catch((e: any) => console.error("[instagram][quota]", e?.message || e));
   }
 

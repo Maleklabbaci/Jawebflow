@@ -51,7 +51,8 @@ import {
   Instagram,
   Lock,
   Shield,
-  BrainCircuit
+  BrainCircuit,
+  SlidersHorizontal
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -65,7 +66,7 @@ import { LockedFeatureGate } from './LockedFeatureGate';
 import { WebhookTestingUtility } from './WebhookTestingUtility';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
 
 /**
  * Menu de l'espace client.
@@ -83,6 +84,7 @@ const NAV_GROUPS: Array<{
       { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
       { id: 'crawler', label: 'Mon site web', icon: Store, pro: true },
       { id: 'knowledge', label: 'Mes informations', icon: Database },
+      { id: 'behavior', label: 'Comportement', icon: SlidersHorizontal },
       { id: 'widget', label: 'Apparence', icon: Palette },
       { id: 'simulator', label: 'Tester l\'assistant', icon: MessageSquare, pro: true },
       { id: 'learning', label: 'Apprentissage IA', icon: BrainCircuit },
@@ -198,6 +200,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [faqText, setFaqText] = useState<string>('');
   const [pricingServicesText, setPricingServicesText] = useState<string>('');
   const [specialRulesText, setSpecialRulesText] = useState<string>('');
+  const [behavior, setBehavior] = useState<{ language: string; length: string; websiteMentions: string; stopWhenConfused: boolean; stopCommand: boolean; customRules: string } & { autoInsights?: string }>({
+    language: 'auto',
+    length: 'normal',
+    websiteMentions: 'auto',
+    stopWhenConfused: true,
+    stopCommand: true,
+    customRules: '',
+  });
 
   // Widget Customizer State
   const [widgetConfig, setWidgetConfig] = useState<WidgetCustomization>({
@@ -597,6 +607,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             if (current.businessInfo) setBusinessInfo(current.businessInfo);
             setSiteShopping(Boolean(current.siteShopping));
             if (current.webhookUrl) setWebhookUrl(current.webhookUrl);
+            if (current.behavior) setBehavior({ language: 'auto', length: 'normal', websiteMentions: 'auto', stopWhenConfused: true, stopCommand: true, customRules: '', ...current.behavior });
             if (current.widgetConfig) {
               setWidgetConfig(prev => ({
                 ...prev,
@@ -702,6 +713,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const prospects = (rows || []).map((data: any) => ({
           id: data.id,
           name: data.name || 'Visiteur Anonyme',
+          city: data.city || '',
           phone: data.phone || 'Non fourni',
           email: data.email || 'Non fourni',
           need: data.need || (data.status === 'visited' ? 'Visite simple du site' : (data.status === 'opened_bubble' ? 'A ouvert la bulle de chat' : 'En attente de discussion')),
@@ -749,6 +761,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         faqText: faqText.trim(),
         pricingServicesText: pricingServicesText.trim(),
         specialRulesText: specialRulesText.trim(),
+        behavior,
         assistantTone,
         languages,
         autoLeadCapture,
@@ -799,6 +812,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         faqText: faqText.trim(),
         pricingServicesText: pricingServicesText.trim(),
         specialRulesText: specialRulesText.trim(),
+        behavior,
         assistantTone,
         languages,
         autoLeadCapture,
@@ -1642,22 +1656,17 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 </div>
               )}
 
-              {/* Résumé quotidien par email (réel, via Brevo) */}
+              {/* Résumé quotidien : envoyé AUTOMATIQUEMENT chaque soir (automation plateforme) */}
               {!isPlanGated && (
                 <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">📧 Résumé quotidien par email</p>
-                    <p className="text-sm text-slate-500">Chaque soir : conversations du jour, contacts captés, questions à traiter — sans ouvrir le tableau de bord.</p>
+                    <p className="text-sm text-slate-500">Chaque soir à 21h : conversations du jour, contacts captés, questions à traiter — envoyé automatiquement à ton adresse, rien à configurer.</p>
                     {emailTestMsg && <p className="mt-1 text-xs font-medium text-slate-700">{emailTestMsg}</p>}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSendTestEmail}
-                    disabled={emailTestBusy}
-                    className="shrink-0 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {emailTestBusy ? 'Envoi...' : 'Recevoir un exemple'}
-                  </button>
+                  <span className="shrink-0 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm font-medium text-emerald-700">
+                    ✅ Automatique chaque soir
+                  </span>
                 </div>
               )}
 
@@ -2882,6 +2891,9 @@ echo "Réponse de l'Assistant : " . $result['message'];
                               <span className="text-slate-400">Nom Complet:</span>
                               <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                                 <span>{lead.name}</span>
+                                {lead.city && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-semibold">📍 {lead.city}</span>
+                                )}
                                 {lead.name !== 'Visiteur Anonyme' && (
                                   <button
                                     type="button"
@@ -3130,6 +3142,83 @@ echo "Réponse de l'Assistant : " . $result['message'];
             );
           })()}
             </>
+          )}
+
+          {/* =================================================================
+              SECTION: COMPORTEMENT (comment le bot parle)
+              ================================================================= */}
+          {currentSection === 'behavior' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <div className="mb-1 flex items-center gap-2">
+                  <SlidersHorizontal className="w-5 h-5 text-purple-600" />
+                  <h2 className="text-lg font-bold text-slate-800">Comment le bot parle</h2>
+                </div>
+                <p className="text-sm text-slate-500 mb-5">La personnalité de ton bot. Ces règles sont <b>prioritaires sur sa base de connaissances</b> : si tu interdis ici quelque chose, il l'interdit — même si l'info existe dans « Mes informations ». Actif sur le site ET Instagram.</p>
+
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">🗣️ Langue de réponse</label>
+                    <select value={behavior.language} onChange={(e) => setBehavior({ ...behavior, language: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                      <option value="auto">Automatique — il répond dans la langue du client</option>
+                      <option value="fr">Français uniquement</option>
+                      <option value="darija_dz">100% algérien (darija algérienne)</option>
+                      <option value="darija_tn">100% tunisien (darija tunisienne)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">📏 Quantité de parole</label>
+                    <div className="flex flex-wrap gap-2">
+                      {([['short', 'Bref — parle pas trop'], ['normal', 'Normal'], ['detailed', 'Détaillé']] as const).map(([v, l]) => (
+                        <button key={v} type="button" onClick={() => setBehavior({ ...behavior, length: v })}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${behavior.length === v ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-purple-300'}`}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">🌐 Le lien de ton site</label>
+                    <select value={behavior.websiteMentions} onChange={(e) => setBehavior({ ...behavior, websiteMentions: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                      <option value="auto">Automatique — il l'envoie quand c'est utile</option>
+                      <option value="on_request">Seulement si le client le demande</option>
+                      <option value="never">Ne JAMAIS mentionner le site</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input type="checkbox" checked={behavior.stopWhenConfused} onChange={(e) => setBehavior({ ...behavior, stopWhenConfused: e.target.checked })} className="mt-0.5 w-4 h-4 accent-purple-600 cursor-pointer" />
+                      <span className="text-sm text-slate-700">Quand il ne comprend pas, il le dit honnêtement au lieu d'inventer une réponse</span>
+                    </label>
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input type="checkbox" checked={behavior.stopCommand} onChange={(e) => setBehavior({ ...behavior, stopCommand: e.target.checked })} className="mt-0.5 w-4 h-4 accent-purple-600 cursor-pointer" />
+                      <span className="text-sm text-slate-700">Le client peut faire taire le bot en écrivant « stop » — et le relancer avec « reprends »</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">📝 Tes règles particulières (obligatoires pour le bot)</label>
+                    <textarea value={behavior.customRules} onChange={(e) => setBehavior({ ...behavior, customRules: e.target.value })} rows={4} maxLength={1000} placeholder="Ex : ne jamais parler de politique · toujours proposer la promo d'abord · tutoyer les clients · ne répondre qu'aux questions sur nos produits" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                    <p className="text-[11px] text-slate-400 mt-1">Une règle par ligne. Le bot les respecte à la lettre — elles priment sur tout le reste.</p>
+                  </div>
+
+                  <button onClick={handleSaveToDatabase} disabled={isSavingDb} className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-2 cursor-pointer">
+                    {isSavingDb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Enregistrer le comportement
+                  </button>
+                  {savedDbSuccess && <p className="text-sm text-emerald-600 font-medium">✅ Comportement enregistré — actif sur le site ET Instagram.</p>}
+                  {behavior.autoInsights && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="text-sm font-semibold text-emerald-900">🎯 Ce que le bot a appris de TA cible</p>
+                      <p className="text-sm text-emerald-800 mt-1">{behavior.autoInsights}</p>
+                      <p className="text-[11px] text-emerald-600 mt-2">Mis à jour automatiquement chaque semaine à partir des vraies conversations de ton assistant (flux « Apprentissage »).</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* =================================================================
