@@ -35,6 +35,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       code?: string;
       redirectUri?: string;
       userId?: string;
+      assistantId?: string;
     };
 
     // 1. Nettoyage du code OAuth
@@ -147,6 +148,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
             body: JSON.stringify({
               user_id: uid,
               connected: true,
+              // Rattache l'assistant en cours de configuration : SANS ce lien,
+              // le webhook trouve la connexion mais ne charge NI la base de
+              // connaissances NI les informations officielles (réponses vides).
+              ...(String(body.assistantId || "").trim()
+                ? { assistant_id: String(body.assistantId).trim().slice(0, 120) }
+                : {}),
               instagram_user_id: String(profile.user_id || profile.id),
               instagram_username: profile.username || null,
               page_name: profile.name || profile.username || null,
