@@ -138,12 +138,22 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     return data || null;
   };
 
-  const saveRemoteIntegration = async (patch: Partial<InstagramIntegrationData>): Promise<void> => {
-    await fetch('/api/instagram/integration', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-      body: JSON.stringify(patch)
-    });
+  const saveRemoteIntegration = async (patch: Partial<InstagramIntegrationData>): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/instagram/integration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify(patch)
+      });
+      if (!res.ok) {
+        console.warn('[instagram] sauvegarde serveur refusée:', res.status, (await res.text().catch(() => '')).slice(0, 200));
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      console.warn('[instagram] sauvegarde serveur impossible:', e?.message || e);
+      return false;
+    }
   };
 
   // Load existing Instagram connection from Firestore or Local Cache
@@ -267,22 +277,26 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         unresolvedCount: 0
       };
 
-      if (user?.uid) {
+      // La connexion est-elle VRAIMENT mémorisée côté serveur ?
+      // (l'échange serveur la sauvegarde lui-même ; sinon on le fait ici)
+      let serverSaved = serverResult.serverSaved === true;
+      if (!serverSaved && user?.uid) {
         saveLocalCache(user.uid, updatedPayload);
-        try {
-          await saveRemoteIntegration(updatedPayload);
-        } catch (e) {
-          console.warn('Supabase integration sync note:', e);
-        }
+        serverSaved = await saveRemoteIntegration(updatedPayload);
       }
 
       setIntegrationData(updatedPayload);
       setIsConnecting(false);
 
-      if (isSubscribed) {
+      if (!serverSaved) {
+        setNotification({
+          type: 'error',
+          message: `⚠️ Compte connecté chez Meta, MAIS la mémorisation sur le serveur a échoué (${serverResult.saveError || 'raison inconnue'}) : le robot ne pourra pas répondre. Déconnecte puis reconnecte le compte ; si ça persiste, vérifie la table instagram_integrations.`
+        });
+      } else if (isSubscribed) {
         setNotification({
           type: 'success',
-          message: `Compte Instagram (${finalUsername}) connecté et abonné aux messages avec un jeton Meta réel. L’IA Gemini est prête pour vos DMs.`
+          message: `Compte Instagram (${finalUsername}) connecté, mémorisé sur le serveur et abonné aux messages. L'IA est prête pour vos DMs.`
         });
       } else {
         setNotification({
@@ -308,7 +322,10 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     try {
       const storedCode = localStorage.getItem('jawebflow_last_ig_auth_code');
       if (!authCode && storedCode) authCode = storedCode;
-      if (storedCode) localStorage.removeItem('jawebflow_last_ig_auth_code');
+      // On ne consomme le code QUE si l'utilisateur est chargé (sinon on le
+      // garde : l'effet se relance à l'arrivée de la session). Le jeter
+      // prématurément perdait la connexion — faux « connecté » jamais sauvé.
+      if (storedCode && user) localStorage.removeItem('jawebflow_last_ig_auth_code');
     } catch (e) {
       // Safe fallback
     }
@@ -316,6 +333,8 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     if (authCode && user && !oauthError) {
       window.history.replaceState({}, document.title, window.location.pathname);
       processAuthCode(authCode);
+    } else if (authCode && !user) {
+      try { localStorage.setItem('jawebflow_last_ig_auth_code', authCode); } catch { /* ignore */ }
     }
 
     // 2. Listen for messages sent from popup window
