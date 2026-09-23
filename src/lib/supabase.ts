@@ -255,10 +255,30 @@ export async function sendResetPassword(email: string): Promise<void> {
 // Assistants
 // ----------------------------------------------------------------------
 
+/** Nettoie un objet pour Supabase : supprime TOUT ce qui n'est pas
+ * sérialisable en JSON (éléments DOM, fonctions, références circulaires —
+ * ex : un <img> ou un event capturé par erreur dans widgetConfig/knowledgeNotes).
+ * Convertit aussi les Date en chaînes ISO. Évite l'erreur
+ * « Converting circular structure to JSON » qui faisait échouer la sauvegarde. */
+function sanitizeForDb<T>(value: T, depth = 0): T {
+  if (value == null || depth > 8) return value;
+  if (value instanceof Date) return value.toISOString() as unknown as T;
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return value.map(v => sanitizeForDb(v, depth + 1)) as unknown as T;
+    const out: any = {};
+    for (const [k, v] of Object.entries(value as any)) {
+      if (typeof v === 'function' || (typeof v === 'object' && v !== null && !Array.isArray(v) && !(v instanceof Date) && Object.keys(v).some(key => key.startsWith('__')))) continue;
+      out[k] = sanitizeForDb(v, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
 export async function saveAssistantToDatabase(
   assistant: Omit<AssistantConfig, 'createdAt' | 'updatedAt'>
 ): Promise<string> {
-  const row = assistantToRow(assistant);
+  const row = assistantToRow(sanitizeForDb(assistant));
   const { data, error } = await supabase
     .from('assistants')
     .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: 'id' })
