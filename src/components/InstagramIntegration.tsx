@@ -68,8 +68,13 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   // 🔔 Alertes Instagram : le compte officiel JawebFlow envoie les leads et
   // les demandes d'aide humaine en DM au marchand (10 s d'activation, une fois).
+  // Parcours clair : 1) le code se COPIE en un clic — 2) un bouton ouvre la
+  // discussion avec le message déjà pré-rempli (coller en secours) — 3) Envoyer.
   const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
   const [notifBusy, setNotifBusy] = useState<boolean>(false);
+  const [notifCode, setNotifCode] = useState<string>('');
+  const [notifLink, setNotifLink] = useState<string>('');
+  const [codeCopied, setCodeCopied] = useState<boolean>(false);
 
   const activateNotifs = async () => {
     setNotifBusy(true);
@@ -82,9 +87,13 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.link) {
-        window.open(data.link, '_blank');
-        setNotifEnabled(true);
-        setNotification({ type: 'success', message: `Instagram s'ouvre : envoie le code ${data.code} au compte JawebFlow — c'est activé pour toujours.` });
+        setNotifCode(String(data.code || ''));
+        setNotifLink(String(data.link));
+        setCodeCopied(false);
+        try {
+          await navigator.clipboard.writeText(String(data.code || ''));
+          setCodeCopied(true);
+        } catch { /* bouton manuel à l'étape 1 */ }
       } else {
         setNotification({ type: 'error', message: data.error || "Activation impossible pour le moment." });
       }
@@ -92,6 +101,14 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       setNotification({ type: 'error', message: 'Réseau indisponible.' });
     }
     setNotifBusy(false);
+  };
+
+  const copyNotifCode = async () => {
+    if (!notifCode) return;
+    try {
+      await navigator.clipboard.writeText(notifCode);
+      setCodeCopied(true);
+    } catch { /* navigateur ancien : sélection manuelle */ }
   };
 
   // Integration Configuration State
@@ -761,20 +778,50 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   return (
     <div className="space-y-8 max-w-6xl mx-auto animate-in fade-in duration-200">
 
-      {/* 🔔 Alertes Instagram — le compte JawebFlow prévient le marchand en DM */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-bold text-sm text-slate-900">🔔 Recevoir les alertes dans Instagram</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Nouveau client intéressé, demande d'aide humaine — tu reçois tout en DM depuis le compte officiel JawebFlow, dans l'app que tu as déjà ouverte toute la journée.</p>
-        </div>
-        <button
-          type="button"
-          onClick={activateNotifs}
-          disabled={notifBusy || notifEnabled}
-          className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors ${notifEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50'}`}
-        >
-          {notifEnabled ? '✅ Activé' : notifBusy ? '…' : 'Activer'}
-        </button>
+      {/* 🔔 Alertes Instagram — parcours guidé en 2 étapes */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <p className="font-bold text-sm text-slate-900">🔔 Recevoir les alertes dans Instagram</p>
+        <p className="text-[11px] text-slate-500 mt-0.5">Nouveau client intéressé, demande d'aide humaine — tu reçois tout en DM depuis le compte officiel JawebFlow. Activation en 30 secondes, une seule fois.</p>
+
+        {!notifCode ? (
+          <button
+            type="button"
+            onClick={activateNotifs}
+            disabled={notifBusy || notifEnabled}
+            className={`mt-3 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${notifEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50'}`}
+          >
+            {notifEnabled ? '✅ Alertes activées' : notifBusy ? '…' : 'Activer mes alertes'}
+          </button>
+        ) : (
+          <div className="mt-3 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Étape 1 ·</span>
+              <button
+                type="button"
+                onClick={copyNotifCode}
+                title="Cliquer pour copier"
+                className="px-3 py-1.5 rounded-lg border-2 border-dashed border-purple-300 bg-purple-50 hover:bg-purple-100 transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <span className="font-mono font-bold text-sm tracking-widest text-purple-700">{notifCode}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${codeCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-600 text-white'}`}>
+                  {codeCopied ? 'Copié ✓' : 'Copier'}
+                </span>
+              </button>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Étape 2 ·</span>
+              <a
+                href={notifLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm inline-flex items-center gap-1.5 transition-colors"
+              >
+                💬 Ouvrir Instagram — la discussion s'ouvre avec le code déjà écrit → appuie sur Envoyer
+              </a>
+            </div>
+            <p className="text-[10px] text-slate-400">Si le message n'est pas pré-écrit : colle le code (il est déjà copié) et envoie-le. Tu recevras la confirmation « ✅ C'est activé ! » dans la discussion.</p>
+          </div>
+        )}
       </div>
       
       {/* Notification Toast */}
