@@ -1,5 +1,6 @@
 import { subscribeToInstagramMessages } from "../subscribe";
-import { supabaseConfigured, supabaseRequest } from "../../../_shared/supabase.ts";
+import { supabaseConfigured, supabaseRequest, verifySupabaseIdToken } from "../../../_shared/supabase.ts";
+import { registerNotifyAccount } from "../../../_shared/merchant-notify.ts";
 
 interface Env {
   INSTAGRAM_APP_ID?: string;
@@ -36,6 +37,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       redirectUri?: string;
       userId?: string;
       assistantId?: string;
+      mode?: string;
     };
 
     // 1. Nettoyage du code OAuth
@@ -114,6 +116,19 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
         error: profile.error?.message || "Token généré mais impossible de récupérer le profil Instagram.",
         details: profile 
       }, 400);
+    }
+
+    // 🏢 MODE NOTIFICATEUR : ce code OAuth concerne le compte officiel
+    // JawebFlow (celui qui envoie les alertes aux marchands). Réservé à
+    // l'équipe (role admin) — un clic suffit, zéro copier-coller.
+    if (String(body.mode || "") === "notificator") {
+      const me = await verifySupabaseIdToken(context.env as any, context.request.headers.get("Authorization"));
+      if (!me?.uid) return json({ error: "Non authentifié." }, 401);
+      const rRes = await supabaseRequest(context.env as any, `users?id=eq.${encodeURIComponent(me.uid)}&select=role`);
+      const role = rRes.ok ? ((await rRes.json().catch(() => [])) || [])[0]?.role : null;
+      if (role !== "admin" && role !== "superadmin") return json({ error: "Réservé à l'équipe JawebFlow." }, 403);
+      await registerNotifyAccount(context.env as any, String(profile.username || ""), accessToken, String(profile.user_id || profile.id));
+      return json({ ok: true, mode: "notificator", handle: profile.username || null });
     }
 
     // 6. Abonnement obligatoire aux événements "messages" du webhook.
