@@ -42,7 +42,14 @@ async function handle(context) {
 
   // Assistant aux identifiants compatibles Firestore pour l'instant => on ne
   // traite que Supabase (les colonnes knowledge_notes existent ici).
-  const aRes = await supabaseRequest(env, 'assistants?select=id,business_name,knowledge_notes&order=updated_at.desc&limit=30');
+  // Clients GRATUITS = zéro appel IA : leurs assistants sont ignorés.
+  const freeIds = new Set();
+  try {
+    const fRes = await supabaseRequest(env, 'users?plan=eq.free&select=id');
+    if (fRes.ok) for (const u of await fRes.json()) freeIds.add(u.id);
+  } catch { /* en cas de pépin, on traite quand même (comportement précédent) */ }
+
+  const aRes = await supabaseRequest(env, 'assistants?select=id,user_id,business_name,knowledge_notes&order=updated_at.desc&limit=30');
   if (!aRes.ok) return json({ ok: false, error: 'lecture assistants impossible' }, 500);
   const assistants = await aRes.json();
 
@@ -50,6 +57,7 @@ async function handle(context) {
 
   for (const assistant of assistants || []) {
     try {
+      if (freeIds.has(assistant.user_id)) { skipped++; continue; } // plan gratuit : zéro API
       if (calls >= 15) { skipped++; continue; } // budget : max 15 appels IA par passage
 
       // Conversations des 14 derniers jours

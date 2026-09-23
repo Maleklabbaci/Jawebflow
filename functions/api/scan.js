@@ -9,7 +9,7 @@
  * comme proxy SSRF).
  */
 import { adminGetDocument, verifyFirebaseIdToken, isPublicHttpUrl, getGoogleAccessToken, firestoreDocumentsBase } from '../_shared/google.ts';
-import { supabaseConfigured, supabasePatchAssistant, supabaseUpsertKnowledge } from '../_shared/supabase.ts';
+import { supabaseConfigured, supabasePatchAssistant, supabaseUpsertKnowledge, supabaseRequest } from '../_shared/supabase.ts';
 
 const EMBEDDING_MODEL = 'gemini-embedding-001';
 const VISION_MODEL = 'gemini-3.1-flash-lite';
@@ -139,6 +139,20 @@ export async function onRequestPost(context) {
     if (!ownerId || ownerId !== caller.uid) {
       console.warn(`[scan] accès refusé: uid=${caller.uid} sur assistantId=${assistantId}`);
       return new Response(JSON.stringify({ error: "Accès refusé : cet assistant ne vous appartient pas." }), { status: 403, headers: cors });
+    }
+
+    // 1 bis. PLAN GRATUIT = ZÉRO APPEL D'API PAYANTE (vision + embeddings Gemini).
+    if (supabaseConfigured(env)) {
+      try {
+        const pRes = await supabaseRequest(env, `users?id=eq.${encodeURIComponent(caller.uid)}&select=plan`);
+        if (pRes.ok) {
+          const planRows = await pRes.json();
+          const ownerPlan = String(planRows?.[0]?.plan || '').toLowerCase();
+          if (ownerPlan === 'free') {
+            return new Response(JSON.stringify({ error: "Le scan intelligent (analyse IA) n'est pas inclus dans le plan gratuit. Active un plan Basic, Pro ou Enterprise pour l'utiliser." }), { status: 402, headers: cors });
+          }
+        }
+      } catch { /* fail-safe : ne pas bloquer un payant par pépin réseau */ }
     }
 
     // 2. Anti-SSRF : on refuse les adresses internes (localhost, 10.x, 169.254.x…)

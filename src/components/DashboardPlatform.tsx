@@ -256,6 +256,22 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [activePlan, setActivePlan] = useState<PaymentPlanId>('free');
   const [billingNotification, setBillingNotification] = useState<string | null>(null);
   const isPlanGated = activePlan === 'free';
+
+  // PLAN FIXÉ PAR L'ADMIN (colonne users.plan) : fait foi pour débloquer le
+  // compte, même quand le client n'a pas encore d'assistant. Un plan payant
+  // présent sur l'assistant lui-même reste prioritaire (chargé plus haut).
+  useEffect(() => {
+    const p = String(profile?.plan || '').toLowerCase();
+    if (p === 'basic' || p === 'pro' || p === 'enterprise') {
+      setActivePlan(prev => (prev === 'free' ? (p as PaymentPlanId) : prev));
+    }
+  }, [profile?.plan]);
+
+  // Cohérence avec la page Tarifs : le plan Gratuit garde l'accès à TOUTE la
+  // configuration (scan, apparence, test, Instagram, statistiques) — seules
+  // les RÉPONSES de l'IA sont bloquées, côté serveur. Plus de pages verrouillées.
+  const showLockedGates = false;
+  const isFreePlan = activePlan === 'free';
   
   const [billingViewMode, setBillingViewMode] = useState<'overview' | 'checkout'>(() => {
     if (typeof window !== 'undefined' && (window.location.pathname === '/checkout' || window.location.search.includes('plan='))) {
@@ -555,7 +571,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             setAssistantId(current.id || '');
             if (current.id) localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, current.id);
             setWidgetId(current.widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`);
-            if (current.plan) setActivePlan(current.plan as PaymentPlanId);
+            const asstPlan = String(current.plan || '').toLowerCase();
+            if (asstPlan === 'basic' || asstPlan === 'pro' || asstPlan === 'enterprise') {
+              setActivePlan(asstPlan as PaymentPlanId);
+            }
             if (current.businessName) setBusinessName(current.businessName);
             if (current.websiteUrl) {
               setWebsiteUrl(current.websiteUrl);
@@ -746,6 +765,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       if (savedId) {
         setAssistantId(savedId);
         localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, savedId);
+        // Plan effectif immédiat dans l'interface : plan payé choisi > plan admin (fiche client) > gratuit
+        const eff = activePlan !== 'free' ? activePlan : String(profile?.plan || '').toLowerCase();
+        if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
       }
       setSavedDbSuccess(true);
       setTimeout(() => setSavedDbSuccess(false), 3000);
@@ -793,6 +815,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       if (savedId) {
         setAssistantId(savedId);
         localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, savedId);
+        // Plan effectif immédiat dans l'interface : plan payé choisi > plan admin (fiche client) > gratuit
+        const eff = activePlan !== 'free' ? activePlan : String(profile?.plan || '').toLowerCase();
+        if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
       }
       setSavedDbSuccess(true);
       setTimeout(() => setSavedDbSuccess(false), 3000);
@@ -996,7 +1021,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         });
 
         setScanProgress(100);
-        setScanStage(`Terminé ! ${data.knowledgeNotes?.length || 0} informations trouvées.`);
+        setScanStage(`Terminé ! ${data.knowledgeNotes?.length || 0} informations trouvées.${data.aiNotice ? ' ⚠️ ' + data.aiNotice : ''}`);
         
         if (data.knowledgeNotes && data.knowledgeNotes.length > 0) {
           const scannedNotes: KnowledgeNote[] = data.knowledgeNotes.map((n: any) => ({
@@ -1354,7 +1379,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           {badge}
                         </span>
                       )}
-                      {item.pro && isPlanGated && (
+                      {item.pro && showLockedGates && (
                         <Lock className="w-3 h-3 text-amber-500" />
                       )}
                     </button>
@@ -2092,7 +2117,19 @@ echo "Réponse de l'Assistant : " . $result['message'];
               SECTION 4: SIMULATOR & TEST CHATBOT
               ================================================================= */}
           {currentSection === 'simulator' && (
-            isPlanGated ? (
+            <>
+            {isFreePlan && (
+              <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">🔒 Réponses IA désactivées (plan gratuit)</p>
+                  <p className="text-sm text-amber-800">Tu peux configurer et tester l'apparence — pour que l'assistant RÉPONDE vraiment, active un plan.</p>
+                </div>
+                <button type="button" onClick={() => handleSectionChange('billing')} className="shrink-0 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700">
+                  Activer les réponses IA
+                </button>
+              </div>
+            )}
+            {showLockedGates ? (
               <LockedFeatureGate
                 title="Tester mon assistant"
                 subtitle="Testez l'intelligence conversationnelle de votre assistant en direct, en français, darija ou anglais, avant de le déployer sur votre site public."
@@ -2216,7 +2253,8 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 </div>
               </div>
             </div>
-            )
+            )}
+            </>
           )}
 
           {/* =================================================================
@@ -2385,7 +2423,19 @@ echo "Réponse de l'Assistant : " . $result['message'];
               SECTION: INSTAGRAM INTEGRATION (supabase OAUTH & DM MANAGEMENT)
               ================================================================= */}
           {currentSection === 'instagram' && (
-            isPlanGated ? (
+            <>
+            {isFreePlan && (
+              <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">🔒 Réponses IA désactivées (plan gratuit)</p>
+                  <p className="text-sm text-amber-800">La configuration est ouverte — active un plan pour que l'assistant réponde sur ce canal.</p>
+                </div>
+                <button type="button" onClick={() => handleSectionChange('billing')} className="shrink-0 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700">
+                  Activer les réponses IA
+                </button>
+              </div>
+            )}
+            {showLockedGates ? (
               <LockedFeatureGate
                 title="Instagram DMs & Automatisation IA"
                 subtitle="Connectez votre compte Instagram Professionnel pour répondre automatiquement aux messages privés et commentaires de vos clients 24h/24."
@@ -2407,14 +2457,27 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 knowledgeNotes={knowledgeNotes}
                 onGoToSimulator={() => handleSectionChange('simulator')}
               />
-            )
+            )}
+            </>
           )}
 
           {/* =================================================================
               SECTION 6: LEADS & PROSPECTS CRM
               ================================================================= */}
           {currentSection === 'leads' && (
-            isPlanGated ? (
+            <>
+            {isFreePlan && (
+              <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">🔒 Réponses IA désactivées (plan gratuit)</p>
+                  <p className="text-sm text-amber-800">La configuration est ouverte — active un plan pour que l'assistant réponde sur ce canal.</p>
+                </div>
+                <button type="button" onClick={() => handleSectionChange('billing')} className="shrink-0 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700">
+                  Activer les réponses IA
+                </button>
+              </div>
+            )}
+            {showLockedGates ? (
               <LockedFeatureGate
                 title="Clients & statistiques"
                 subtitle="Accédez à la liste complète des coordonnées capturées par votre assistant (téléphone, email), filtres de qualification et tags silencieux."
@@ -3065,7 +3128,9 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 )}
               </div>
             );
-          })())}
+          })()}
+            </>
+          )}
 
           {/* =================================================================
               SECTION: BILLING & PLAN (Professional SaaS Billing Dashboard)

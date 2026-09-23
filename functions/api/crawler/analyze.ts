@@ -15,6 +15,7 @@ import {
   verifySupabaseIdToken,
   supabasePatchAssistant,
   supabaseAssistantRowToConfig,
+  supabaseRequest,
 } from "../../_shared/supabase.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -516,6 +517,21 @@ export async function onRequestPost(context: {
     // ── FIX #2 — AUTH EN PREMIER avant tout traitement coûteux ──────────────
     const authHeader = context.request.headers.get("Authorization");
     const caller = await verifySupabaseIdToken(context.env, authHeader);
+
+    // PLAN GRATUIT = ZÉRO APPEL D'API PAYANTE (page Tarifs : « zéro crédit IA »).
+    // On détermine le plan du client ICI, avant tout traitement coûteux :
+    // seuls les plans PAYÉS déclenchent Gemini (synthèse, vision, PDF).
+    let ownerPlanFree = false;
+    try {
+      if (supabaseConfigured(context.env)) {
+        const pRes = await supabaseRequest(context.env, `users?id=eq.${encodeURIComponent(caller.uid)}&select=plan`);
+        if (pRes.ok) {
+          const rows = await pRes.json();
+          const plan = String(rows?.[0]?.plan || '').toLowerCase();
+          ownerPlanFree = plan === 'free'; // plan absent = non-gratuit (fail-safe existant)
+        }
+      }
+    } catch { ownerPlanFree = false; }
     if (!caller) {
       log.warn("Auth échouée", { ip: context.request.headers.get("cf-connecting-ip") ?? "unknown" });
       return json({ error: "Authentification requise." }, 401);
@@ -575,12 +591,16 @@ export async function onRequestPost(context: {
           const arrayBuffer = await file.arrayBuffer();
           const base64 = arrayBufferToBase64(arrayBuffer);
           rawText += `\n\n[FICHIER PDF: ${file.name}]\n`;
-          const pdfContent = await extractPdfWithGemini(
-            base64,
-            file.name,
-            context.env.GEMINI_API_KEY
-          );
-          rawText += pdfContent;
+          if (!ownerPlanFree) {
+            const pdfContent = await extractPdfWithGemini(
+              base64,
+              file.name,
+              context.env.GEMINI_API_KEY
+            );
+            rawText += pdfContent;
+          } else {
+            rawText += "(Extraction IA du PDF indisponible avec le plan gratuit.)";
+          }
           filesProcessed++;
         } else if (
           fileType.includes("text") ||
@@ -690,7 +710,7 @@ export async function onRequestPost(context: {
 
     // ── Organisation des informations ─────────────────────────────────────────
     let result: GeminiResult;
-    if (!context.env.GEMINI_API_KEY) {
+    if (!context.env.GEMINI_API_KEY || ownerPlanFree) {
       result = {
         businessName: pages[0]?.title || "",
         businessDescription: pages[0]?.description || pages[0]?.rawText?.slice(0, 500) || "",
@@ -825,6 +845,7 @@ export async function onRequestPost(context: {
       ...result,
       saved,
       savedNoteCount,
+      ...(ownerPlanFree ? { aiNotice: "Analyse IA non incluse dans le plan gratuit : extraction mécanique de base effectuée. Passe un plan payant pour l'extraction intelligente." } : {}),
       meta: {
         contentLength: content.length,
         filesProcessed,

@@ -360,6 +360,14 @@ export function AdminPage() {
   const [pwError, setPwError] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
 
+  // Campagne email (news / annonces aux clients)
+  const [campSubject, setCampSubject] = useState('');
+  const [campHtml, setCampHtml] = useState('');
+  const [campAudience, setCampAudience] = useState('all');
+  const [campBusy, setCampBusy] = useState<'preview' | 'prepareTest' | 'prepareReal' | 'cancel' | null>(null);
+  const [campMsg, setCampMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [campCount, setCampCount] = useState<number | null>(null);
+
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
     setStatusNotification({ type, message });
     setTimeout(() => setStatusNotification(null), 4500);
@@ -510,6 +518,44 @@ export function AdminPage() {
       await fetchAllPlatformData();
     } catch (err: any) {
       notify('Changement de plan refusé : ' + (err.message || 'erreur — exécute le SQL à jour (onglet Système)'), 'error');
+    }
+  };
+
+  const handleCampaign = async (action: 'preview' | 'prepareTest' | 'prepareReal' | 'cancel') => {
+    setCampBusy(action);
+    setCampMsg(null);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const response = await fetch('/api/email/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(
+          action === 'cancel'
+            ? { action: 'cancel' }
+            : action === 'prepareTest'
+              ? { action: 'prepare', subject: campSubject, html: campHtml, audience: 'test' }
+              : { action, subject: campSubject, html: campHtml, audience: campAudience },
+        ),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!data?.ok) {
+        setCampMsg({ type: 'error', text: data?.error || 'Action impossible.' });
+        return;
+      }
+      if (action === 'preview') {
+        setCampCount(data.count);
+        setCampMsg({ type: 'success', text: `${data.count} destinataire(s) — exemple : ${(data.sample || []).slice(0, 3).join(', ') || '—'}` });
+      } else if (action === 'prepareTest') {
+        setCampMsg({ type: 'success', text: '✅ Test armé sur TON email. Ouvre ViaSocket → flux « Campagne » → clique Test : il part de ton Gmail. Vérifie ta boîte (et les spams).' });
+      } else if (action === 'prepareReal') {
+        setCampMsg({ type: 'success', text: `✅ Campagne armée pour ${data.count} client(s). Lance ton flux ViaSocket « Campagne » : les emails partent de TON Gmail, puis la campagne se désarme (jamais envoyée 2 fois).` });
+      } else {
+        setCampMsg({ type: 'success', text: 'Campagne armée annulée (désarmée).' });
+      }
+    } catch {
+      setCampMsg({ type: 'error', text: 'Erreur réseau — réessaie.' });
+    } finally {
+      setCampBusy(null);
     }
   };
 
@@ -1668,6 +1714,60 @@ export function AdminPage() {
                 <pre className="bg-slate-900 text-slate-100 rounded-xl p-4 text-[11px] leading-relaxed overflow-x-auto max-h-72 overflow-y-auto whitespace-pre">
                   {CONSOLE_SQL}
                 </pre>
+              </div>
+
+              {/* CAMPAGNE EMAIL (news / annonces) */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="mb-3">
+                  <div className="font-semibold text-slate-800 text-sm">📣 Campagne email (news, annonces, promos)</div>
+                  <div className="text-xs text-slate-500">100 % ViaSocket : l'envoi part de TON Gmail — aucune clé Brevo. Uniquement tes clients (comptes existants, jamais les prospects), désabonnement « STOP » auto, envoi unique (la campagne se désarme après).</div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Sujet</label>
+                    <input value={campSubject} onChange={(e) => setCampSubject(e.target.value)} maxLength={150} placeholder="🎉 Nouveauté JawebFlow : vos bots comprennent les photos !" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Message (HTML simple accepté : &lt;b&gt;, &lt;br&gt;, &lt;a href&gt;...)</label>
+                    <textarea value={campHtml} onChange={(e) => setCampHtml(e.target.value)} rows={6} placeholder="Bonjour,<br><br>Nous sommes ravis de vous annoncer que...<br><br>L'équipe JawebFlow" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono text-xs focus:outline-none focus:border-purple-500 focus:bg-white" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select value={campAudience} onChange={(e) => { setCampAudience(e.target.value); setCampCount(null); }} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                      <option value="all">Tous les clients</option>
+                      <option value="paid">Clients payés (Basic, Pro, Enterprise)</option>
+                    </select>
+                    <button onClick={() => handleCampaign('preview')} disabled={campBusy !== null || !campSubject || !campHtml} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                      {campBusy === 'preview' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Compter les destinataires'}
+                    </button>
+                    <button onClick={() => handleCampaign('prepareTest')} disabled={campBusy !== null || !campSubject || !campHtml} className="px-3 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 text-sm font-semibold hover:bg-purple-100 disabled:opacity-50 cursor-pointer">
+                      {campBusy === 'prepareTest' ? <Loader2 className="w-4 h-4 animate-spin" /> : '1. Tester sur moi'}
+                    </button>
+                    <button
+                      onClick={() => { if (window.confirm(`Armer la campagne pour ${campCount ?? '?'} client(s) ?\n\nElle partira de TON Gmail via ton flux ViaSocket « Campagne » (envoi unique).\n\nRappel anti-spam : max 1 à 2 campagnes par mois.`)) handleCampaign('prepareReal'); }}
+                      disabled={campBusy !== null || !campSubject || !campHtml || !campCount}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                      title={campCount === null ? "Compte d'abord les destinataires" : ''}
+                    >
+                      {campBusy === 'prepareReal' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} 2. Armer la campagne{campCount !== null ? ` (${campCount})` : ''}
+                    </button>
+                    <button onClick={() => handleCampaign('cancel')} disabled={campBusy !== null} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                      {campBusy === 'cancel' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Annuler la campagne armée'}
+                    </button>
+                  </div>
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 space-y-1">
+                    <p className="font-semibold">📤 L'envoi se fait dans VIASOCKET (ton Gmail) — comme le résumé de 21h :</p>
+                    <p>1. Dans ton flux ViaSocket « Campagne », colle l'URL : <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 break-all">https://jawebflow.pages.dev/api/email/campaign?token=jwb-Telya-2026-K7mQ9xR2vB8nW4pZ&amp;mode=json</code></p>
+                    <p>2. Boucle sur <code className="bg-white px-1 rounded border border-sky-200">recipients</code> → Gmail : <code className="bg-white px-1 rounded border border-sky-200">{'to={{email}}  subject={{subject}}  body(html)={{html}}'}</code> (ou « Ask AI to Build »)</p>
+                    <p>3. Clique <b>Test</b> dans ViaSocket au moment voulu : les emails partent, la campagne se désarme toute seule (jamais 2 fois).</p>
+                  </div>
+                  {campMsg && (
+                    <div className={`rounded-xl p-3 text-xs flex items-start gap-2 ${campMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                      {campMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+                      <span>{campMsg.text}</span>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-400">Bonnes pratiques : 1 à 2 campagnes par mois maximum · teste TOUJOURS sur toi d'abord · Gmail gratuit ≈ 500 envois/jour (plafond de sécurité : 400 par campagne).</p>
+                </div>
               </div>
             </div>
           )}
