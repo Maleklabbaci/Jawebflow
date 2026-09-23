@@ -70,21 +70,40 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       code: code
     });
 
-    const tokenResponse = await fetch("https://api.instagram.com/oauth/access_token", {
+    // Échange du code : DEUX endpoints selon le TYPE d'app Meta.
+    //  - api.instagram.com            → apps « Instagram API with Instagram Login »
+    //  - graph.instagram.com/v21.0    → apps « ...with Facebook Login » (Business)
+    // Certaines apps ne répondent que sur l'un des deux (erreur « Unsupported
+    // request » sur l'autre) : on tente les DEUX avant d'échouer.
+    const tokenError = (data: any) => data?.error_message || data?.error?.message || "";
+    let tokenResponse = await fetch("https://api.instagram.com/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form
     });
-
-    const tokenData = await tokenResponse.json().catch(() => ({})) as any;
+    let tokenData = await tokenResponse.json().catch(() => ({})) as any;
 
     if (!tokenResponse.ok || !tokenData.access_token) {
+      console.warn("[instagram][exchange] endpoint 1 (api.instagram.com) refusé :", tokenError(tokenData) || `HTTP ${tokenResponse.status}`);
+      const form2 = new URLSearchParams(form);
+      tokenResponse = await fetch("https://graph.instagram.com/v21.0/oauth/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form2
+      });
+      tokenData = await tokenResponse.json().catch(() => ({})) as any;
+    }
+
+    if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error("[instagram][exchange] ÉCHEC étape token :", JSON.stringify(tokenData).slice(0, 400));
       return json({
-        error: tokenData.error_message || tokenData.error?.message || `Meta a refusé l'échange du code (HTTP ${tokenResponse.status}).`,
+        error: `Meta a refusé l'échange du code [étape token] : ${tokenError(tokenData) || `HTTP ${tokenResponse.status}`}`,
+        step: "token",
         details: tokenData
       }, 400);
     }
 
+    console.log("[instagram][exchange] token obtenu via", tokenResponse.url.includes("api.instagram.com") ? "api.instagram.com (Instagram Login)" : "graph.instagram.com v21.0 (Facebook Login)");
     let accessToken = String(tokenData.access_token);
 
     // 4. Échange contre un jeton d'accès LONGUE DURÉE (Valide 60 jours)
@@ -112,8 +131,11 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     const profile = await profileResponse.json().catch(() => ({})) as any;
 
     if (!profileResponse.ok || !profile.id) {
+      const pErr = profile.error?.message || `HTTP ${profileResponse.status}`;
+      console.error("[instagram][exchange] ÉCHEC étape profil :", JSON.stringify(profile).slice(0, 400));
       return json({ 
-        error: profile.error?.message || "Token généré mais impossible de récupérer le profil Instagram.",
+        error: `Meta a refusé la récupération du profil [étape profil] : ${pErr}`,
+        step: "profile",
         details: profile 
       }, 400);
     }
