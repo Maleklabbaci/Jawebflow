@@ -11,7 +11,7 @@
  */
 
 import { verifySupabaseIdToken, supabaseRequest, supabaseConfigured } from '../_shared/supabase.ts';
-import { supabaseGetPlanLimits, monthStartIso, DEFAULT_PLAN_LIMITS } from '../_shared/limits.ts';
+import { supabaseGetPlanLimits, monthStartIso, DEFAULT_PLAN_LIMITS, COST_CAP_USD_PER_PLAN, costUsdFromTokens } from '../_shared/limits.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -122,11 +122,29 @@ export async function onRequestGet(context: any) {
       }
     }
 
+    // 💸 Coût IA RÉEL du mois (Vrais tokens × tarif officiel Gemini)
+    let costUsd = 0;
+    if (ids.length) {
+      const filter = ids.map(i => `assistant_id.eq.${encodeURIComponent(i)}`).join(',');
+      const tRes = await supabaseRequest(
+        env,
+        `conversation_contexts?or=(${filter})&created_at=gte.${monthStartIso()}&select=tokens_in,tokens_out&limit=5000`
+      );
+      if (tRes.ok) {
+        for (const r of (await tRes.json().catch(() => [])) as any[]) {
+          costUsd += costUsdFromTokens(Number(r.tokens_in || 0), Number(r.tokens_out || 0));
+        }
+      }
+    }
+    const costCap = COST_CAP_USD_PER_PLAN[plan] ?? 0;
+
     return json({
       ok: true,
       plan,
       limit,
       used: conversationsThisMonth,
+      costUsd: Math.round(costUsd * 10000) / 10000,
+      costCap,
       prospects,
       openQuestions,
       daysLeft,

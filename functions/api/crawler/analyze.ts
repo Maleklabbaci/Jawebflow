@@ -17,6 +17,7 @@ import {
   supabaseAssistantRowToConfig,
   supabaseRequest,
 } from "../../_shared/supabase.ts";
+import { scanStorePlatform, storeScanToText } from "../../_shared/store-adapters";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -281,7 +282,15 @@ async function readPublicSite(siteUrl: string): Promise<PageData[]> {
     if (seen.has(pageUrl)) continue;
     seen.add(pageUrl);
     try {
-      const response = await fetch(pageUrl, { headers: { "User-Agent": "JawebFlow/1.0 (+site-reader)" }, signal: AbortSignal.timeout(12000) });
+      // 🎭 navigateur réel : les protections anti-robot bloquaient notre ancien UA
+      const response = await fetch(pageUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "fr-FR,fr;q=0.9,ar;q=0.8,en;q=0.7",
+        },
+        signal: AbortSignal.timeout(12000),
+      });
       const type = response.headers.get("content-type") || "";
       if (!response.ok || !type.includes("text/html")) continue;
       const html = await response.text();
@@ -430,8 +439,8 @@ RETOURNE UNIQUEMENT un JSON valide sans markdown :
   "knowledgeNotes": [
     {
       "title": "titre précis",
-      "category": "services|tarifs|livraison|garanties|contact|faq|general",
-      "content": "contenu détaillé 3-6 phrases"
+      "category": "services|tarifs|livraison|garanties|contact|faq|produits|liens|general",
+      "content": "contenu détaillé (pour les produits : liste ligne par ligne au format \"Nom du produit — prix — URL\")"
     }
   ]
 }
@@ -443,6 +452,16 @@ RÈGLES :
 - Crée une fiche par thème trouvé (services, prix, livraison, contact, FAQ, etc.)
 - Plusieurs fiches peuvent avoir la même catégorie si les thèmes sont distincts
 - Si tu trouves des produits avec prix → fiche tarifs détaillée
+- 🔗 LIENS PRODUITS = VITAL : recopie chaque URL de produit EXACTEMENT telle
+  quelle (https://... complète, jamais abrégée ni reformulée) dans la fiche,
+  au format \"Nom — prix — URL\". Le bot doit pouvoir envoyer le lien au client
+  directement depuis ces fiches, SANS re-scanner le site.
+- 💵 Recopie les prix et promos EXACTEMENT (« 1900 DA (au lieu de 2500) »).
+- 🔖 CRÉE TOUJOURS une fiche « Liens » (catégorie liens) listant TOUS les liens
+  utiles trouvés, ligne par ligne au format "[type] Titre — URL" avec l'URL
+  EXACTE : liens produits, collections/catégories, réseaux sociaux (Facebook,
+  Instagram, TikTok…), formulaires (devis, commande), pages utiles (livraison,
+  retours, contact, à propos). Le bot pêche ses liens DANS CETTE FICHE.
 - Si tu trouves des contacts → fiche contact avec tous les liens
 - confidence élevé car données fournies directement par l'utilisateur
 - faqText/suggestedTone/welcomeMessage : déduits du contenu et du secteur — jamais inventés hors du contenu
@@ -741,8 +760,26 @@ export async function onRequestPost(context: {
     }
 
     if (pages.length === 0 && !rawText.trim() && siteUrl !== "https://monsite.com") {
-      pages = await readPublicSite(siteUrl);
-      if (pages.length === 0) return json({ error: "Aucune page publique lisible n’a été trouvée sur cette adresse." }, 422);
+      // 🏪 1) Boutique sur une plateforme connue (Hanotify, Shopify, WooCommerce,
+      // YouCan) ? -> API officielle = PACK DE VENTE : produits avec prix et
+      // promos réels, livraison, paiement à la livraison, retours, contacts.
+      const store = await scanStorePlatform(siteUrl).catch(() => null);
+      if (store) {
+        pages = [{
+          url: siteUrl,
+          title: store.title,
+          description: store.description,
+          phones: store.phones,
+          emails: store.emails,
+          rawText: storeScanToText(store),
+          products: store.products,
+          links: store.products.map((p) => p.link || "").filter(Boolean),
+        }];
+        log.info("Boutique détectée", { plateforme: store.platform, produits: store.products.length });
+      }
+      // 2) Sinon : lecture HTML classique
+      if (pages.length === 0) pages = await readPublicSite(siteUrl);
+      if (pages.length === 0) return json({ error: "Impossible de lire ce site automatiquement. Vérifie l’adresse du site, ou complète ton assistant avec des photos ou un PDF de ton catalogue — il les lit parfaitement (Connaissances → Importer)." }, 422);
     }
 
     // ── Validation contenu ────────────────────────────────────────────────────
@@ -795,6 +832,12 @@ export async function onRequestPost(context: {
     }
 
     log.info("Contenu prêt", { chars: content.length, pages: pages.length });
+
+    // ⚠️ Site en JavaScript / protégé : très peu de texte extrait -> on prévient
+    // le client AVEC la parade (import photos/PDF) au lieu d'un succès silencieux.
+    const siteWarning = content.length < 1200
+      ? "⚠️ Ce site a livré très peu d’informations. Ton assistant a appris l’essentiel — pour un résultat parfait, ajoute des photos ou un PDF de ton catalogue (Connaissances → Importer)."
+      : undefined;
 
     // ── Organisation des informations ─────────────────────────────────────────
     let result: GeminiResult;
@@ -948,6 +991,7 @@ export async function onRequestPost(context: {
       ...result,
       saved,
       savedNoteCount,
+      ...(siteWarning ? { siteWarning } : {}),
       ...(ownerPlanFree ? { aiNotice: "Analyse IA non incluse dans le plan gratuit : extraction mécanique de base effectuée. Passe un plan payant pour l'extraction intelligente." } : {}),
       meta: {
         contentLength: content.length,

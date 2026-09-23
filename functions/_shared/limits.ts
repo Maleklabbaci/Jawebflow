@@ -31,12 +31,67 @@ export const SCAN_LIMITS_PER_MONTH: Record<string, number> = {
   enterprise: 12,
 };
 
+// 💸 PLAFOND DE COÛT RÉEL (décision du propriétaire) : quand le coût Gemini
+// du mois — calculé sur les VRAIS tokens renvoyés par l'API (tokens × tarif
+// officiel), pas une estimation — atteint le plafond du plan, l'IA se met en
+// pause proprement (même UX que le quota conversations).
+export const COST_CAP_USD_PER_PLAN: Record<string, number> = {
+  free: 0,      // 0 crédit IA
+  basic: 3,     // 3 $ / mois max
+  pro: 9,       // 9 $ / mois max
+  enterprise: 30, // 30 $ / mois max
+};
+export const GEMINI_PRICE_IN_PER_MTOK = 0.25;  // $ / million tokens entrée
+export const GEMINI_PRICE_OUT_PER_MTOK = 1.5;  // $ / million tokens sortie
+
+export function costUsdFromTokens(tokensIn: number, tokensOut: number): number {
+  return (Number(tokensIn || 0) * GEMINI_PRICE_IN_PER_MTOK + Number(tokensOut || 0) * GEMINI_PRICE_OUT_PER_MTOK) / 1_000_000;
+}
+
+export function costCapReachedMsg(plan: string, cost: number, cap: number) {
+  // Message 100 % humain : ni $, ni modèle, ni technique — le marchand ET ses
+  // clients doivent comprendre d'un coup d'œil (le forfait est fini, ça reprend).
+  return `Cet assistant a terminé son forfait pour ce mois-ci. 😊 Il reprend automatiquement le 1er du mois prochain — le propriétaire peut aussi l'activer davantage à tout moment depuis son tableau de bord JawebFlow.`;
+}
+
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 0,        // Plan Gratuit = zéro crédit IA (page Tarifs)
   basic: 1000,    // « Jusqu’à 1 000 conversations par mois »
   pro: 5000,      // « Jusqu’à 5 000 conversations par mois »
   enterprise: null, // illimité
 };
+
+/** Coût RÉEL du mois d'un assistant : somme des tokens (vue) × tarif officiel. */
+export async function supabaseGetMonthlyCostUsd(env: SupabaseEnv, assistantId: string): Promise<number> {
+  if (!supabaseConfigured(env) || !assistantId) return 0;
+  try {
+    const monthStart = new Date();
+    monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
+    const res = await supabaseRequest(
+      env,
+      `assistant_monthly_usage?assistant_id=eq.${encodeURIComponent(assistantId)}&month=gte.${monthStart.toISOString()}&select=tokens_in,tokens_out`
+    );
+    const rows = res.ok ? (await res.json().catch(() => [])) as any[] : [];
+    return costUsdFromTokens(Number(rows?.[0]?.tokens_in || 0), Number(rows?.[0]?.tokens_out || 0));
+  } catch {
+    return 0; // fail-open : ne jamais bloquer un client pour un pépin réseau
+  }
+}
+
+/** Vérifie le plafond de coût réel du plan. exceeded=true => l'IA se met en pause. */
+export async function monthlyCostBlock(
+  env: SupabaseEnv,
+  assistantId: string,
+  plan: string
+): Promise<{ exceeded: boolean; cost: number; cap: number; msg?: string }> {
+  const cap = COST_CAP_USD_PER_PLAN[plan] ?? COST_CAP_USD_PER_PLAN.free;
+  if (!cap) return { exceeded: false, cost: 0, cap };
+  const cost = await supabaseGetMonthlyCostUsd(env, assistantId);
+  if (cost >= cap) {
+    return { exceeded: true, cost, cap, msg: costCapReachedMsg(plan, cost, cap) };
+  }
+  return { exceeded: false, cost, cap };
+}
 
 export async function supabaseGetPlanLimits(env: SupabaseEnv): Promise<PlanLimits> {
   if (!supabaseConfigured(env)) return DEFAULT_PLAN_LIMITS;

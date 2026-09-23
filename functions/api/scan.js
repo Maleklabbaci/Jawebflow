@@ -87,7 +87,7 @@ async function saveToFirestore(env, path, data) {
 
 async function analyzeWithVision(imageUrl, apiKey) {
   try {
-    const imgRes = await fetch(imageUrl, { headers: { 'User-Agent': 'JawebFlowBot/1.0' } });
+    const imgRes = await fetch(imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' } });
     if (!imgRes.ok) return [];
     const buffer = await imgRes.arrayBuffer();
     const bytes = new Uint8Array(buffer);
@@ -161,7 +161,7 @@ export async function onRequestPost(context) {
       return new Response(JSON.stringify({ error: `URL refusée: ${siteCheck.reason}` }), { status: 400, headers: cors });
     }
 
-    const sitemapRes = await fetch(`${siteUrl}/sitemap.xml`, { headers: { 'User-Agent': 'JawebFlowBot/1.0' } }).catch(() => null);
+    const sitemapRes = await fetch(`${siteUrl}/sitemap.xml`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' } }).catch(() => null);
     let urls = [];
     if (sitemapRes && sitemapRes.ok) {
       const xml = await sitemapRes.text();
@@ -175,7 +175,7 @@ export async function onRequestPost(context) {
     for (const pageUrl of urls.slice(0, 100)) {
       try {
         if (!isPublicHttpUrl(pageUrl).ok) continue;
-        const pageRes = await fetch(pageUrl, { headers: { 'User-Agent': 'JawebFlowBot/1.0' } });
+        const pageRes = await fetch(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' } });
         if (!pageRes.ok) continue;
         const html = await pageRes.text();
 

@@ -38,9 +38,11 @@ import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, local
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
 import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
+import { handleNotifyAccountMessage, notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from "../../_shared/merchant-notify";
 import {
   supabaseGetPlanLimits,
   supabaseCountMonthlyConversations,
+  monthlyCostBlock,
   supabaseLogConversation,
   LIMIT_BLOCK_FREE,
   limitBlockReached,
@@ -742,7 +744,12 @@ async function handleDirectMessage(env: Env, event: any) {
   if (!text && !hasAttachment) return;
 
   const integration = await findIntegration(env, instagramAccountId);
-  if (!integration?.igToken || !integration.accessToken) return;
+  if (!integration?.igToken || !integration.accessToken) {
+    // 🏢 Message adressé au compte JawebFlow (notificateur / guide) ?
+    // -> code d'activation JF-XXXXX ou aide. JAMAIS traité comme un bot marchand.
+    try { if (await handleNotifyAccountMessage(env, event)) return; } catch { /* continue */ }
+    return;
+  }
 
   // Le jeton approche l'expiration Meta ? Renouvelle-le en silence.
   await maybeRefreshInstagramToken(env, integration);
@@ -882,6 +889,10 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
       if (known?.id) {
         await supabaseUpsertProspect(env, known.id, integration.assistantId, { igUserId: customerId, ...factsPatch, ...(leadMessages.length ? { messages: leadMessages } : {}) });
         if (Object.keys(factsPatch).length) console.log("[instagram] fiche client enrichie/corrigée :", JSON.stringify(factsPatch));
+        // 🔔 Un téléphone vient d'être capté -> alerte lead au marchand
+        if (factsPatch.phone && !known?.data?.phone) {
+          try { await notifyLead(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
+        }
       } else if (phoneInMsg) {
         const linkedId = `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200);
         await supabaseUpsertProspect(env, linkedId, integration.assistantId, {
@@ -893,6 +904,8 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
           ...(leadMessages.length ? { messages: leadMessages } : {}),
         });
         console.log("[instagram] nouvelle identité liée (téléphone) :", linkedId);
+        // 🔔 Lead Instagram -> le marchand reçoit les détails en DM (compte JawebFlow)
+        try { await notifyLead(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
       }
     } catch (memErr: any) {
       console.warn("[instagram] mémoire client indisponible:", memErr?.message || memErr);
@@ -914,6 +927,14 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
       const blockMsg = limit === 0 ? LIMIT_BLOCK_FREE : limitBlockReached(plan, limit);
       console.log(`[instagram] plan ${plan} : quota ${used}/${limit} — réponse IA bloquée`);
       await sendInstagramMessage(integration.igToken, customerId, blockMsg);
+      return;
+    }
+    // 💸 Plafond de COÛT RÉEL (Vrais tokens × tarif officiel) :
+    // Basic 3 $ · Pro 9 $ · Enterprise 30 $ / mois. Au plafond => pause propre.
+    const costCheck = await monthlyCostBlock(env, integration.assistantId, plan);
+    if (costCheck.exceeded) {
+      console.log(`[instagram] plan ${plan} : plafond coût ${costCheck.cost.toFixed(2)}/${costCheck.cap} $ — réponse IA bloquée`);
+      await sendInstagramMessage(integration.igToken, customerId, costCheck.msg!);
       return;
     }
   }
@@ -981,6 +1002,18 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
     }
   }
   extraBlocks += webMemory;
+
+  // 🙋 TRANSFERT HUMAIN : réponse immédiate (0 IA, 0 quota) + le marchand est
+  // prévenu en DM par le compte JawebFlow (1 fois / 2 h par client).
+  if (groupedText && isHumanTransfer(groupedText)) {
+    await sendInstagramMessage(integration.igToken, customerId, HUMAN_TRANSFER_REPLY);
+    try { await notifyHumanTransfer(env, integration.assistantId, `Client Instagram (${customerId})`, groupedText); } catch { /* best-effort */ }
+    try {
+      const msgs = [...stored.filter((m: any) => m?.role === "user" || m?.role === "model"), { role: "user", text: groupedText.slice(0, 500), ts: new Date().toISOString() }, { role: "model", text: HUMAN_TRANSFER_REPLY, ts: new Date().toISOString() }].slice(-HISTORY_LIMIT);
+      await saveThread(env, integration.integrationId, customerId, { messages: msgs, handledMids: newMids });
+    } catch { /* historique non bloquant */ }
+    return;
+  }
 
   // 🆓 politesse pure -> réponse locale gratuite (pas d'IA, pas de quota).
   // Le bot muet (le client a dit stop) reste muet.

@@ -15,10 +15,11 @@ import { extractLeadFacts } from '../_shared/lead-facts.ts';
 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
 const geminiVisionUrl = (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/${'gemini-3.1-flash-lite'}:generateContent?key=${apiKey}`;
-import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached } from '../_shared/limits.ts';
+import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached, monthlyCostBlock } from '../_shared/limits.ts';
 import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, localGreeting, compactKnowledgeNotes } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite, siteShoppingPromptBlock } from '../_shared/site-search.ts';
+import { notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from '../_shared/merchant-notify.ts';
 
 // Modèle Gemini : surchargeable par variable d'environnement (Pages → Settings →
 // Environment variables) sans redéploiement de code. Les identifiants « 2.5 »
@@ -180,7 +181,28 @@ export async function onRequestPost(context) {
             }), { status: 200, headers: cors });
           }
         }
+        // 💸 Plafond de COÛT RÉEL (Vrais tokens × tarif officiel) :
+        // Basic 3 $ · Pro 9 $ · Enterprise 30 $ / mois. Au plafond => pause propre.
+        const costCheck = await monthlyCostBlock(env, assistantId, plan);
+        if (costCheck.exceeded) {
+          diagnostics.push(`plan ${plan} : plafond coût ${costCheck.cost.toFixed(2)}/${costCheck.cap} $ atteint, envoi bloqué`);
+          const msg = String(costCheck.msg);
+          return new Response(JSON.stringify({
+            text: msg, message: msg, response: msg,
+            limitReached: true, costReached: true, costUsd: costCheck.cost, costCap: costCheck.cap, plan, diagnostics,
+          }), { status: 200, headers: cors });
+        }
       }
+    }
+
+    // 🙋 TRANSFERT HUMAIN : réponse immédiate SANS appel IA, le marchand est
+    // prévenu en DM par le compte JawebFlow (1 fois / 2 h par session).
+    if (assistantId && !isDemoAssistant && isHumanTransfer(message)) {
+      try { await notifyHumanTransfer(env, assistantId, `Visiteur du site (${sessionId || 'web'})`, message); } catch { /* best-effort */ }
+      return new Response(JSON.stringify({
+        text: HUMAN_TRANSFER_REPLY, response: HUMAN_TRANSFER_REPLY, message: HUMAN_TRANSFER_REPLY,
+        humanTransfer: true, diagnostics,
+      }), { status: 200, headers: cors });
     }
 
     // 2. Construction du prompt : l'identité passe en premier (voir buildIdentityBlock),
@@ -345,6 +367,8 @@ Ce client revient : salue-le comme une connaissance (« ah oui kho, tu m'avais d
               messages: [{ sender: 'user', text: String(message).slice(0, 500), timestamp: new Date().toISOString() }],
             });
             diagnostics.push('fiche prospect enrichie');
+            // 🔔 Le marchand reçoit le lead sur Instagram (compte JawebFlow, si activé)
+            try { await notifyLead(env, assistantId, { ...wf, need: exists ? undefined : String(message).slice(0, 200), source: 'site web' }); } catch { /* notif best-effort */ }
           }
         }
       } catch (leadErr) {
