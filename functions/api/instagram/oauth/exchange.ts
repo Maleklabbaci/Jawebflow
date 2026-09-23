@@ -98,8 +98,13 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     }
 
     // 5. Récupération des informations du profil (Sans /v21.0/ pour graph.instagram.com)
+    // IMPORTANT : Meta expose DEUX identifiants pour le même compte :
+    //  - « id »      : ID applicatif renvoyé par le flux de connexion
+    //  - « user_id » : l'ID PROFESSIONNEL utilisé par la messagerie/webhooks
+    // (les DM entrants arrivent avec recipient = user_id). Sans ce champ,
+    // le webhook ne retrouve jamais la connexion (IDs différents).
     const profileResponse = await fetch(
-      `https://graph.instagram.com/me?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`
+      `https://graph.instagram.com/me?fields=id,user_id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`
     );
     const profile = await profileResponse.json().catch(() => ({})) as any;
 
@@ -142,7 +147,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
             body: JSON.stringify({
               user_id: uid,
               connected: true,
-              instagram_user_id: String(profile.id),
+              instagram_user_id: String(profile.user_id || profile.id),
               instagram_username: profile.username || null,
               page_name: profile.name || profile.username || null,
               profile_picture_url: profile.profile_picture_url || null,
