@@ -19,7 +19,7 @@ export async function onRequestGet(context: any) {
     const me = await verifySupabaseIdToken(context.env, context.request.headers.get('Authorization'));
     if (!me?.uid) return json({ ok: false, error: 'non authentifié' }, 401);
     const [cfg, linked] = await Promise.all([getNotifyConfig(context.env), isMerchantLinked(context.env, me.uid)]);
-    return json({ ok: true, enabled: linked, handle: cfg.handle || null });
+    return json({ ok: true, enabled: linked, handle: cfg.handle || null, igUserId: cfg.igUserId || null });
   } catch {
     return json({ ok: false, error: 'erreur serveur' }, 500);
   }
