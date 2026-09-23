@@ -514,6 +514,7 @@ async function findIntegration(env: Env, instagramAccountId: string) {
             igToken: metaToken,
             assistantId: row.assistant_id ? String(row.assistant_id) : undefined,
             autoReplyEnabled: row.auto_reply_enabled !== false,
+            lastConnectedAt: row.last_connected_at ? String(row.last_connected_at) : undefined,
           };
         }
       }
@@ -591,6 +592,52 @@ async function findIntegration(env: Env, instagramAccountId: string) {
 
   console.error(`[instagram] aucune connexion trouvée pour le compte ${instagramAccountId}`);
   return null;
+}
+
+/**
+ * Meta limite la validité des jetons à ~60 jours (sécurité chez EUX, personne
+ * n'y échappe). Règle d'or chez Meta : TANT QUE le jeton est encore valide,
+ * on peut le RENOUVELER sans le client (badge -> nouveau badge de 60 jours).
+ * => Dès qu'un DM arrive et que le jeton a plus de ~50 jours, on le renouvelle
+ * automatiquement et on met à jour la base. Un bot utilisé régulièrement ne
+ * meurt JAMAIS : le client ne se reconnecte jamais, le bot tourne seul.
+ * (Un compte laissé SANS AUCUN message pendant 2 mois reste un cas mortel :
+ * c'est couvert par l'alerte du rapport quotidien, pas par le code.) */
+const TOKEN_REFRESH_AGE_MS = 50 * 24 * 60 * 60 * 1000; // ~50 jours
+
+async function maybeRefreshInstagramToken(env: Env, integration: any): Promise<void> {
+  try {
+    if (!supabaseConfigured(env)) return;
+    const last = integration.lastConnectedAt ? Date.parse(integration.lastConnectedAt) : NaN;
+    if (Number.isFinite(last) && Date.now() - last < TOKEN_REFRESH_AGE_MS) return; // encore frais
+
+    const res = await fetchWithTimeout(
+      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(integration.igToken)}`,
+      { method: "GET" },
+      8000
+    );
+    if (!res.ok) {
+      console.warn(`[instagram] renouvellement du jeton refusé (HTTP ${res.status}) — le jeton actuel reste utilisé tant qu'il est valide.`);
+      return;
+    }
+    const data: any = await res.json().catch(() => ({}));
+    if (!data?.access_token) return;
+
+    integration.igToken = String(data.access_token);
+    integration.accessToken = String(data.access_token);
+    await supabaseRequest(env, `instagram_integrations?user_id=eq.${encodeURIComponent(integration.integrationId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        access_token: integration.igToken,
+        last_connected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    console.log("[instagram] jeton Meta renouvelé automatiquement (validité ~60 jours relancée, sans action du client).");
+  } catch (e: any) {
+    console.warn("[instagram] renouvellement du jeton impossible:", e?.message || e);
+  }
 }
 
 async function sendTypingOn(igToken: string, customerId: string) {
@@ -671,6 +718,9 @@ async function handleDirectMessage(env: Env, event: any) {
 
   const integration = await findIntegration(env, instagramAccountId);
   if (!integration?.igToken || !integration.accessToken) return;
+
+  // Le jeton approche l'expiration Meta ? Renouvelle-le en silence.
+  await maybeRefreshInstagramToken(env, integration);
 
   if (!integration.autoReplyEnabled) {
     console.log("[instagram] réponses automatiques en pause pour", integration.integrationId);
