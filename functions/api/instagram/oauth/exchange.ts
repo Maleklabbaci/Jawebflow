@@ -106,37 +106,61 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     console.log("[instagram][exchange] token obtenu via", tokenResponse.url.includes("api.instagram.com") ? "api.instagram.com (Instagram Login)" : "graph.instagram.com v21.0 (Facebook Login)");
     let accessToken = String(tokenData.access_token);
 
-    // 4. Échange contre un jeton d'accès LONGUE DURÉE (Valide 60 jours)
+    // 4. Échange contre un jeton d'accès LONGUE DURÉE (valide 60 jours).
+    // Deux chemins selon le type d'app — non versionné et versionné.
+    let longLivedOk = false;
     try {
-      const longLivedUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(appSecret)}&access_token=${encodeURIComponent(accessToken)}`;
-      const longLivedResponse = await fetch(longLivedUrl);
-      const longLivedData = await longLivedResponse.json().catch(() => ({})) as any;
-
-      if (longLivedResponse.ok && longLivedData.access_token) {
-        accessToken = String(longLivedData.access_token);
+      const llCandidates = [
+        `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(appSecret)}&access_token=${encodeURIComponent(accessToken)}`,
+        `https://graph.instagram.com/v21.0/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(appSecret)}&access_token=${encodeURIComponent(accessToken)}`,
+      ];
+      for (const llUrl of llCandidates) {
+        const longLivedResponse = await fetch(llUrl);
+        const longLivedData = await longLivedResponse.json().catch(() => ({})) as any;
+        if (longLivedResponse.ok && longLivedData.access_token) {
+          accessToken = String(longLivedData.access_token);
+          longLivedOk = true;
+          break;
+        }
+        console.warn("[instagram][exchange] jeton longue durée refusé :", JSON.stringify(longLivedData).slice(0, 200));
       }
-    } catch (_) {
-      // Si l'échange échoue, on conserve le token court
+    } catch (_) { /* on conserve le token court */ }
+    console.log("[instagram][exchange] jeton :", longLivedOk ? "LONGUE DURÉE (60 jours)" : "COURTE DURÉE (à relier sous 1 h)");
+
+    // 5. Récupération des informations du profil.
+    // ⚠️ /v21.0/ OBLIGATOIRE pour les apps « Instagram Login » : sans version,
+    // graph.instagram.com répond « Unsupported request - method type: get ».
+    // Les apps plus anciennes passent encore sans version : on tente les deux.
+    // IMPORTANT : Meta expose DEUX identifiants pour le même compte :
+    //  - « id »      : ID applicatif (apps Facebook Login)
+    //  - « user_id » : l'ID PROFESSIONNEL utilisé par la messagerie/webhooks
+    // (les DM entrants arrivent avec recipient = user_id).
+    const profileFields = "user_id,username,name,profile_picture_url";
+    const profileCandidates = [
+      `https://graph.instagram.com/v21.0/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`,
+      `https://graph.instagram.com/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`,
+      `https://graph.instagram.com/v21.0/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`,
+    ];
+    let profile: any = null;
+    const profileErrors: string[] = [];
+    for (const pUrl of profileCandidates) {
+      const profileResponse = await fetch(pUrl);
+      const pData = await profileResponse.json().catch(() => ({})) as any;
+      if (profileResponse.ok && (pData.id || pData.user_id)) {
+        profile = pData;
+        break;
+      }
+      const pErr = pData?.error?.message || `HTTP ${profileResponse.status}`;
+      profileErrors.push(pErr);
+      console.warn("[instagram][exchange] profil refusé :", pErr);
     }
 
-    // 5. Récupération des informations du profil (Sans /v21.0/ pour graph.instagram.com)
-    // IMPORTANT : Meta expose DEUX identifiants pour le même compte :
-    //  - « id »      : ID applicatif renvoyé par le flux de connexion
-    //  - « user_id » : l'ID PROFESSIONNEL utilisé par la messagerie/webhooks
-    // (les DM entrants arrivent avec recipient = user_id). Sans ce champ,
-    // le webhook ne retrouve jamais la connexion (IDs différents).
-    const profileResponse = await fetch(
-      `https://graph.instagram.com/me?fields=id,user_id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`
-    );
-    const profile = await profileResponse.json().catch(() => ({})) as any;
-
-    if (!profileResponse.ok || !profile.id) {
-      const pErr = profile.error?.message || `HTTP ${profileResponse.status}`;
-      console.error("[instagram][exchange] ÉCHEC étape profil :", JSON.stringify(profile).slice(0, 400));
+    if (!profile || (!profile.id && !profile.user_id)) {
+      console.error("[instagram][exchange] ÉCHEC étape profil :", profileErrors.join(" | "));
       return json({ 
-        error: `Meta a refusé la récupération du profil [étape profil] : ${pErr}`,
+        error: `Meta a refusé la récupération du profil [étape profil] : ${profileErrors[0] || "réponse vide"}`,
         step: "profile",
-        details: profile 
+        details: { attempts: profileErrors }
       }, 400);
     }
 
