@@ -216,6 +216,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           body: JSON.stringify({ 
             code: cleanCode, 
             userId: user?.uid,
+            assistantId,
             redirectUri: `${window.location.origin}/`
           })
         });
@@ -278,11 +279,14 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       };
 
       // La connexion est-elle VRAIMENT mémorisée côté serveur ?
-      // (l'échange serveur la sauvegarde lui-même ; sinon on le fait ici)
+      // L'échange serveur sauvegarde déjà le lien Meta ; on complète TOUJOURS
+      // avec les données du tableau de bord (assistant, ton, accueil...) :
+      // c'est CE rattachement qui donne accès à la base de connaissances.
       let serverSaved = serverResult.serverSaved === true;
-      if (!serverSaved && user?.uid) {
+      if (user?.uid) {
         saveLocalCache(user.uid, updatedPayload);
-        serverSaved = await saveRemoteIntegration(updatedPayload);
+        const dashboardSaved = await saveRemoteIntegration(updatedPayload);
+        serverSaved = serverSaved || dashboardSaved;
       }
 
       setIntegrationData(updatedPayload);
