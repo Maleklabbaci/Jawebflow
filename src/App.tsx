@@ -77,6 +77,18 @@ export default function App() {
     const searchParams = new URLSearchParams(window.location.search);
     const authCode = searchParams.get('code');
     const authError = searchParams.get('error') || searchParams.get('error_description');
+    // 🏢 Retour OAuth du NOTIFICATEUR (compte officiel JawebFlow) : ne PAS
+    // traiter comme une connexion marchand — relayer à /admin qui a ouvert le popup.
+    if (authCode && searchParams.get('state') === 'notificator') {
+      const sanitized = authCode.split('#')[0].replace(/_$/, '').trim();
+      if (window.opener && window.opener !== window) {
+        try { window.opener.postMessage({ type: 'JAWEBFLOW_NOTIFICATOR_AUTH', code: sanitized }, window.location.origin); } catch { /* ignore */ }
+        setTimeout(() => window.close(), 300);
+      } else {
+        window.location.replace(`/admin?notif_code=${encodeURIComponent(sanitized)}`);
+      }
+      return;
+    }
     if (authCode) {
       const sanitizedCode = authCode.split('#')[0].replace(/_$/, '').trim();
       try { localStorage.setItem('jawebflow_last_ig_auth_code', sanitizedCode); } catch { /* storage may be unavailable */ }
