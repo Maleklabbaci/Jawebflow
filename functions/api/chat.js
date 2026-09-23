@@ -12,6 +12,9 @@
 import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
+
+/** Endpoint Gemini Vision (même modèle pas cher que le chat). */
+const geminiVisionUrl = (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/${'gemini-3.1-flash-lite'}:generateContent?key=${apiKey}`;
 import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached } from '../_shared/limits.ts';
 import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, localGreeting, compactKnowledgeNotes } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
@@ -222,9 +225,32 @@ export async function onRequestPost(context) {
 
     // "Tout passe par mon site" : recherche de produits EN DIRECT sur le site
     // du client et envoi des liens 🔗 au visiteur.
+    // 📸 FIX : une PHOTO jointe est d'abord DÉCRITE par Gemini Vision (même
+    // sans texte du client) -> la description sert de recherche, puis l'IA
+    // finale reçoit AUSSI l'image pour comparer avec la base de connaissance.
+    let searchQuery = message;
+    if (image && image.data && config.siteShopping && config.websiteUrl) {
+      try {
+        const visionRes = await fetch(geminiVisionUrl(apiKey), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [
+              { inline_data: { mime_type: String(image.mime || 'image/jpeg'), data: String(image.data).replace(/^data:[^;]+;base64,/, '') } },
+              { text: "Identifie cet article pour une recherche boutique : catégorie exacte (ex : coque téléphone, t-shirt, jean...), couleur, personnage/texte/logo visible. 6 à 12 mots, sans phrase." },
+            ]}],
+            generationConfig: { temperature: 0, maxOutputTokens: 60, thinkingConfig: { thinkingBudget: 0 } },
+          }),
+        });
+        if (visionRes.ok) {
+          const vDesc = (await visionRes.json().catch(() => null))?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (vDesc) { diagnostics.push('photo décrite: ' + vDesc); searchQuery = [vDesc, message].filter(Boolean).join(' '); }
+        }
+      } catch { /* recherche sans description si pépin */ }
+    }
     if (config.siteShopping && config.websiteUrl && config.behavior?.websiteMentions !== 'never') {
       shoppingRan = true;
-      const found = await searchClientSite(config, message);
+      const found = await searchClientSite(config, searchQuery);
       systemPrompt += siteShoppingPromptBlock(found, config) ||
         `\n\n### 🛒 COMMANDES VIA LE SITE : toutes les commandes se font sur le site ${config.websiteUrl}. Guide systématiquement le client vers le site pour commander.`;
     }
