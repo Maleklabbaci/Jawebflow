@@ -180,7 +180,21 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       const cfgNow = await getNotifyConfig(context.env as any);
       const handle = igUsername || String(body.handle || "") || cfgNow.handle || "jawebflow";
       await registerNotifyAccount(context.env as any, handle, accessToken, igProfessionalId);
-      return json({ ok: true, mode: "notificator", handle, profileWarn: profile ? undefined : "Profil Meta illisible (non bloquant) — compte enregistré via l'identifiant du jeton." });
+      // 🔴 CRITIQUE : abonner le compte JawebFlow aux événements "messages".
+      // SANS CET ABONNEMENT, Meta ne nous envoie JAMAIS les DM reçus par ce
+      // compte : les codes d'activation et les réponses aux marchands
+      // n'arrivent jamais au webhook (bug du premier déploiement).
+      let subscribed = false;
+      let subscribeError: string | undefined;
+      try {
+        const subResult = await subscribeToInstagramMessages(accessToken);
+        subscribed = subResult.success;
+        if (!subscribed) subscribeError = subResult.data?.error?.message || `HTTP ${subResult.status}`;
+      } catch (e: any) {
+        subscribeError = e?.message || String(e);
+      }
+      console.log("[instagram][exchange] notificateur abonné au webhook :", subscribed, subscribeError ? `(${subscribeError})` : "");
+      return json({ ok: true, mode: "notificator", handle, subscribed, subscribeError, profileWarn: profile ? undefined : "Profil Meta illisible (non bloquant) — compte enregistré via l'identifiant du jeton." });
     }
 
     // ── FLUX MARCHAND : le profil reste requis (nom de page, photo…) ──
