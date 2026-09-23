@@ -737,7 +737,18 @@ async function handleDirectMessage(env: Env, event: any) {
   const instagramAccountId: string | undefined = event?.recipient?.id;
   const message = event?.message;
 
-  if (!customerId || !instagramAccountId || message?.is_echo) return;
+  // 🔁 ÉCHO = copie d'un message envoyé par un compte ABONNÉ (le marchand).
+  // Si ce message est un code d'activation JF-… adressé au compte JawebFlow,
+  // on le traite ICI : l'abonnement du MARHAND suffit — on ne dépend plus de
+  // celui du compte JawebFlow pour capter les codes.
+  if (message?.is_echo) {
+    const echoText = typeof message?.text === "string" ? message.text.trim() : "";
+    if (/^JF[-\s]?[A-Z2-9]{4,10}$/i.test(echoText)) {
+      try { if (await handleNotifyAccountMessage(env, event, true)) return; } catch { /* continue */ }
+    }
+    return;
+  }
+  if (!customerId || !instagramAccountId) return;
 
   const text: string = typeof message?.text === "string" ? message.text.trim() : "";
   const hasAttachment = Array.isArray(message?.attachments) && message.attachments.length > 0;
