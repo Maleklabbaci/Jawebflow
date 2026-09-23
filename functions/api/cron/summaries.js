@@ -28,6 +28,24 @@ async function handle(context) {
     return json({ ok: false, error: 'token invalide' }, 401);
   }
   if (!supabaseConfigured(env)) return json({ ok: false, error: 'service non configuré' }, 500);
+  // TOUS les clients, page par page (500 par page — scale jusqu'à plusieurs
+  // milliers sans changer une ligne ; garde-fou à 5000 par passage).
+  const users = [];
+  {
+    const PAGE = 500;
+    let offset = 0;
+    let firstPageFailed = false;
+    while (true) {
+      const uRes = await supabaseRequest(env, `users?select=id,email,display_name&order=created_at.desc&limit=${PAGE}&offset=${offset}`);
+      if (!uRes.ok) { if (offset === 0) firstPageFailed = true; break; }
+      const rows = await uRes.json();
+      users.push(...(rows || []));
+      if (!rows || rows.length < PAGE || offset + PAGE >= 5000) break;
+      offset += PAGE;
+    }
+    if (firstPageFailed) return json({ ok: false, error: 'lecture users impossible' }, 500);
+  }
+
   // MODE JSON (pour ViaSocket, Make, n8n...) : ?mode=json
   // => on ne fait qu'iterator : l'outil d'automatisation envoie les emails
   //    lui-même avec sa propre boîte (Gmail, SMTP...). Aucun Brevo requis.
@@ -57,10 +75,6 @@ async function handle(context) {
   }
   if (!emailConfigured(env)) return json({ ok: false, error: 'email non configuré (BREVO_API_KEY / EMAIL_SENDER)' }, 500);
 
-  // Tous les clients (max 500 par passage — largement assez au début)
-  const uRes = await supabaseRequest(env, 'users?select=id,email,display_name&order=created_at.desc&limit=500');
-  if (!uRes.ok) return json({ ok: false, error: 'lecture users impossible' }, 500);
-  const users = await uRes.json();
 
   let sent = 0, skipped = 0, failed = 0;
   for (const user of users || []) {
