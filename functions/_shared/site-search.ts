@@ -117,5 +117,6 @@ export function siteShoppingPromptBlock(results: SiteSearchResult[], config: any
   let block = `\n\n### 🛒 PRODUITS TROUVÉS EN DIRECT SUR LE SITE (le client commande via le site — envoie-lui ces liens 🔗) :\n`;
   for (const r of results) block += `- ${r.title} : ${r.url}\n`;
   if (config?.businessInfo?.phone) block += `- Contact commande : ${config.businessInfo.phone}\n`;
+  block += `COMPARE la demande du client (et sa photo s'il en a envoyé une) avec ces produits ET avec ta base de connaissance : propose le produit le PLUS PROCHE (couleur, personnage, texte, catégorie). Si aucun ne correspond vraiment, dis-le honnêtement et propose l'article le plus similaire.`;
   return block;
 }
