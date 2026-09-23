@@ -3,7 +3,7 @@ import {
   Plus, Search, Trash2, Copy, Sparkles, Check,
   FileText, Globe, HelpCircle, Truck, DollarSign,
   ShieldCheck, Phone, Layers, ChevronDown, ChevronUp,
-  Upload, X, AlertCircle, FileUp, Image, File
+  Upload, X, AlertCircle, FileUp, Image, File, Mic, Send, Link2, Zap
 } from 'lucide-react';
 import { KnowledgeNote } from '../types';
 import { supabase } from '../lib/supabase';
@@ -25,6 +25,8 @@ const CATEGORY_CONFIG: Record<string, { label: string; bg: string; text: string;
   garanties: { label: 'Garanties', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: <ShieldCheck className="w-3 h-3 text-rose-600" /> },
   politiques: { label: 'Garanties', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: <ShieldCheck className="w-3 h-3 text-rose-600" /> },
   contact: { label: 'Contact', bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', icon: <Phone className="w-3 h-3 text-teal-600" /> },
+  produits: { label: 'Produits', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: <Layers className="w-3 h-3 text-orange-600" /> },
+  liens: { label: 'Liens', bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', icon: <Link2 className="w-3 h-3 text-cyan-600" /> },
   learned: { label: 'Appris', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: <Sparkles className="w-3 h-3 text-purple-600" /> },
   custom: { label: 'Autre', bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', icon: <FileText className="w-3 h-3 text-slate-600" /> },
 };
@@ -295,6 +297,68 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   const [newCategory, setNewCategory] = useState<KnowledgeNote['category']>('services');
   // Toutes les notes repliées par défaut
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  // 💬 AJOUT ÉCLAIR : on parle au bot comme à un commercial (« j'ai ajouté le
+  // produit spiderman case iphone 13-16 ») -> fiche enregistrée direct (0,07 DA).
+  const [quickMsg, setQuickMsg] = useState('');
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickLog, setQuickLog] = useState<{ role: 'user' | 'bot'; text: string }[]>([]);
+  const [listening, setListening] = useState(false);
+  const quickLogRef = useRef<HTMLDivElement | null>(null);
+
+  const sendQuickAdd = async () => {
+    const msg = quickMsg.trim();
+    if (!msg || quickBusy) return;
+    setQuickLog((l) => [...l, { role: 'user', text: msg }]);
+    setQuickMsg('');
+    setQuickBusy(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token || null;
+      const res = await fetch('/api/knowledge/quick-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, message: msg }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setQuickLog((l) => [...l, { role: 'bot', text: '❌ ' + (data.error || 'Échec — réessaie.') }]);
+      } else {
+        if (Array.isArray(data.notes)) {
+          onUpdateNotes(data.notes.map((n: any) => ({
+            ...n,
+            id: n.id || 'qa_' + Math.random().toString(36).slice(2, 9),
+            updatedAt: n.updatedAt || new Date().toISOString(),
+          })));
+        }
+        const icon = data.action === 'delete' ? '🗑️ Supprimé' : data.action === 'update' ? '🔄 Mis à jour' : '✅ Enregistré';
+        setQuickLog((l) => [...l, { role: 'bot', text: `${icon} : ${data.note?.title || ''}` }]);
+      }
+    } catch {
+      setQuickLog((l) => [...l, { role: 'bot', text: '❌ Réseau indisponible.' }]);
+    }
+    setQuickBusy(false);
+    setTimeout(() => quickLogRef.current?.scrollTo({ top: 999999, behavior: 'smooth' }), 80);
+  };
+
+  const toggleMic = () => {
+    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setQuickLog((l) => [...l, { role: 'bot', text: '🎙️ La voix n\'est pas supportée par ce navigateur — tape le texte.' }]);
+      return;
+    }
+    if (listening) { (toggleMic as any)._rec?.stop(); setListening(false); return; }
+    const rec = new SR();
+    (toggleMic as any)._rec = rec;
+    rec.lang = 'fr-FR';
+    rec.interimResults = false;
+    rec.onresult = (e: any) => {
+      const t = e.results?.[0]?.[0]?.transcript;
+      if (t) setQuickMsg((m) => (m ? m + ' ' : '') + t);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    rec.start();
+    setListening(true);
+  };
 
   const handleToggleNote = (id: string) => {
     onUpdateNotes(notes.map(n => n.id === id ? { ...n, enabled: !n.enabled } : n));
@@ -416,6 +480,57 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             Ajouter
           </button>
         </div>
+      </div>
+
+      {/* 💬 AJOUT ÉCLAIR — discussion qui enregistre directement */}
+      <div className="bg-white p-4 rounded-xl border-2 border-emerald-400/40 shadow-sm space-y-2">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-emerald-600" />
+          <span className="font-bold text-sm text-slate-900">Ajout éclair — dites-le, c'est enregistré</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Enregistrement direct</span>
+        </div>
+        {quickLog.length > 0 && (
+          <div ref={quickLogRef} className="max-h-44 overflow-y-auto space-y-1.5 p-1">
+            {quickLog.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <span className={`max-w-[85%] px-3 py-1.5 rounded-2xl text-xs ${m.role === 'user' ? 'bg-purple-600 text-white rounded-br-md' : 'bg-slate-100 text-slate-800 rounded-bl-md border border-slate-200'}`}>
+                  {m.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={quickMsg}
+            onChange={(e) => setQuickMsg(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendQuickAdd(); } }}
+            placeholder="Ex : j'ai ajouté le produit spiderman case iphone 13 14 15 16 à 1900 DA"
+            className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+            disabled={quickBusy}
+          />
+          <button
+            type="button"
+            onClick={toggleMic}
+            title="Dicter"
+            className={`p-2 rounded-lg border transition-colors ${listening ? 'bg-rose-100 border-rose-300 animate-pulse' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
+          >
+            <Mic className={`w-3.5 h-3.5 ${listening ? 'text-rose-600' : 'text-slate-600'}`} />
+          </button>
+          <button
+            type="button"
+            onClick={sendQuickAdd}
+            disabled={quickBusy || !quickMsg.trim()}
+            className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <Send className="w-3 h-3" />
+            {quickBusy ? '...' : 'Enregistrer'}
+          </button>
+        </div>
+        <p className="text-[10px] text-slate-400">
+          Produit, prix, promo, lien, livraison, contact… une phrase = une fiche dans la base. Pour supprimer : « supprime la fiche … ».
+        </p>
       </div>
 
       {/* New Note Form */}

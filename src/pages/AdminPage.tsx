@@ -371,6 +371,29 @@ export function AdminPage() {
   const [aiUsage, setAiUsage] = useState<{ rows: any[]; totals: any } | null>(null);
   const [aiUsageBusy, setAiUsageBusy] = useState(false);
 
+  // 🏢 NOTIFICATEUR INSTAGRAM : enregistrer le compte officiel JawebFlow qui
+  // envoie les alertes (leads, transferts humains) aux marchands en DM.
+  const [nfyHandle, setNfyHandle] = useState('');
+  const [nfyToken, setNfyToken] = useState('');
+  const [nfyIgUserId, setNfyIgUserId] = useState('');
+  const [nfyBusy, setNfyBusy] = useState(false);
+  const [nfyMsg, setNfyMsg] = useState<string | null>(null);
+  const handleNfyRegister = async () => {
+    if (!nfyHandle.trim() || !nfyToken.trim() || !nfyIgUserId.trim()) { setNfyMsg('Remplis les 3 champs.'); return; }
+    setNfyBusy(true); setNfyMsg(null);
+    try {
+      const sessionToken = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/instagram/notify-setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}) },
+        body: JSON.stringify({ action: 'register', handle: nfyHandle.trim().replace(/^@/, ''), token: nfyToken.trim(), igUserId: nfyIgUserId.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setNfyMsg(res.ok ? '✅ Compte JawebFlow enregistré — les marchands peuvent activer leurs alertes !' : ('❌ ' + (data.error || 'Échec.')));
+    } catch { setNfyMsg('❌ Réseau indisponible.'); }
+    setNfyBusy(false);
+  };
+
   const loadAiUsage = async () => {
     setAiUsageBusy(true);
     try {
@@ -1773,6 +1796,34 @@ export function AdminPage() {
                     )}
                   </>
                 )}
+              </div>
+
+              {/* 🏢 NOTIFICATEUR INSTAGRAM (compte officiel JawebFlow) */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="mb-3">
+                  <div className="font-semibold text-slate-800 text-sm">🏢 Notificateur Instagram (compte officiel JawebFlow)</div>
+                  <div className="text-xs text-slate-500">C'est CE compte qui envoie aux marchands leurs alertes en DM : 🔥 nouveaux leads, 🙋 demandes d'aide humaine. Étapes : (1) connecte le compte JawebFlow dans TON dashboard comme un client normal, (2) copie ici son jeton d'accès + son identifiant Instagram (visible dans la connexion), (3) enregistre. Ensuite chaque marchand active ses alertes en 10 s depuis son onglet Instagram.</div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Compte (@ sans @)</label>
+                    <input value={nfyHandle} onChange={(e) => setNfyHandle(e.target.value)} placeholder="jawebflow" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Jeton d'accès du compte</label>
+                    <input value={nfyToken} onChange={(e) => setNfyToken(e.target.value)} type="password" placeholder="IGQV..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Identifiant Instagram du compte</label>
+                    <input value={nfyIgUserId} onChange={(e) => setNfyIgUserId(e.target.value)} placeholder="17841..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 mt-3">
+                  <button onClick={handleNfyRegister} disabled={nfyBusy} className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer">
+                    {nfyBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />} Enregistrer le compte notificateur
+                  </button>
+                  {nfyMsg && <span className={`text-xs font-medium ${nfyMsg.startsWith('✅') ? 'text-emerald-600' : 'text-rose-600'}`}>{nfyMsg}</span>}
+                </div>
               </div>
 
               {/* CAMPAGNE EMAIL (news / annonces) */}

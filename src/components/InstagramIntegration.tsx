@@ -66,6 +66,33 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  // 🔔 Alertes Instagram : le compte officiel JawebFlow envoie les leads et
+  // les demandes d'aide humaine en DM au marchand (10 s d'activation, une fois).
+  const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
+  const [notifBusy, setNotifBusy] = useState<boolean>(false);
+
+  const activateNotifs = async () => {
+    setNotifBusy(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token || null;
+      const res = await fetch('/api/instagram/notify-setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.link) {
+        window.open(data.link, '_blank');
+        setNotifEnabled(true);
+        setNotification({ type: 'success', message: `Instagram s'ouvre : envoie le code ${data.code} au compte JawebFlow — c'est activé pour toujours.` });
+      } else {
+        setNotification({ type: 'error', message: data.error || "Activation impossible pour le moment." });
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Réseau indisponible.' });
+    }
+    setNotifBusy(false);
+  };
 
   // Integration Configuration State
   const [integrationData, setIntegrationData] = useState<InstagramIntegrationData>({
@@ -724,7 +751,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     } catch (err: any) {
       setNotification({
         type: 'error',
-        message: 'Erreur lors de la sauvegarde du token.'
+        message: 'Erreur lors de la sauvegarde de la connexion Instagram. Réessaie dans un instant.'
       });
     } finally {
       setSaveLoading(false);
@@ -733,6 +760,22 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto animate-in fade-in duration-200">
+
+      {/* 🔔 Alertes Instagram — le compte JawebFlow prévient le marchand en DM */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-bold text-sm text-slate-900">🔔 Recevoir les alertes dans Instagram</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Nouveau client intéressé, demande d'aide humaine — tu reçois tout en DM depuis le compte officiel JawebFlow, dans l'app que tu as déjà ouverte toute la journée.</p>
+        </div>
+        <button
+          type="button"
+          onClick={activateNotifs}
+          disabled={notifBusy || notifEnabled}
+          className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors ${notifEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50'}`}
+        >
+          {notifEnabled ? '✅ Activé' : notifBusy ? '…' : 'Activer'}
+        </button>
+      </div>
       
       {/* Notification Toast */}
       {notification && (

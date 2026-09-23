@@ -318,6 +318,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   // Usage & stats du client (jauge de quota, prospects, renouvellement) — /api/usage
   const [usageInfo, setUsageInfo] = useState<{
     used: number; limit: number | null; prospects: number; openQuestions: number; daysLeft: number | null;
+    costUsd?: number; costCap?: number;
   } | null>(null);
   const [emailTestBusy, setEmailTestBusy] = useState(false);
   const [emailTestMsg, setEmailTestMsg] = useState('');
@@ -1059,9 +1060,25 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           });
           setScanSuccessMessage(`${scannedNotes.length} informations enregistrées avec leurs liens sources.`);
         }
+        // ⚠️ Site partiellement lisible (JavaScript/anti-robot) : avertissement
+        // renvoyé par le serveur, affiché en plus du succès.
+        if (data.siteWarning) {
+          setScanSuccessMessage((prev: string | null) => (prev ? `${data.siteWarning} ${prev}` : data.siteWarning));
+        }
         setIsScanning(false);
       } else {
-        throw new Error("Crawler API returned non-ok");
+        // Message d'erreur PRÉCIS du serveur (site protégé, JS, limite atteinte…)
+        let serverMsg = "";
+        try {
+          const errData = await response.json();
+          if (errData?.error) serverMsg = errData.error;
+        } catch { /* pas de JSON */ }
+        setScanProgress(0);
+        setScanStage("Le site n’a pas pu être lu. Aucune donnée inventée n’a été ajoutée.");
+        setScannedPages(prev => prev.map(p => ({ ...p, status: "failed" })));
+        setScanResultNotes(null);
+        setScanSuccessMessage(serverMsg || "Scan impossible : vérifiez l’URL et rendez le site accessible publiquement.");
+        setIsScanning(false);
       }
     } catch (e: any) {
       console.error("Crawler réel échoué", e);
@@ -1627,12 +1644,17 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     </p>
                     {(() => {
                       if (usageInfo.limit === null) return null;
-                      const pct = usageInfo.limit > 0 ? Math.min(100, Math.round((usageInfo.used / usageInfo.limit) * 100)) : 100;
+                      const unitsPct = usageInfo.limit > 0 ? Math.min(100, Math.round((usageInfo.used / usageInfo.limit) * 100)) : 100;
+                      // L'activité RÉELLE de l'assistant (plafond interne) peut dépasser
+                      // le compteur de conversations : on affiche toujours le plus juste.
+                      const costPct = (usageInfo.costCap ?? 0) > 0 ? Math.min(100, Math.round(((usageInfo.costUsd || 0) / usageInfo.costCap!) * 100)) : 0;
+                      const pct = Math.max(unitsPct, costPct);
                       return (
                         <>
                           <div className="mt-3 h-2 w-full rounded-full bg-slate-100">
-                            <div className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                            <div className={`h-full rounded-full transition-all duration-500 ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
                           </div>
+                          <p className="mt-1.5 text-[11px] text-slate-400">Forfait utilisé à {pct} % ce mois-ci</p>
                           {pct >= 80 && pct < 100 && (
                             <p className="mt-2 text-xs font-medium text-amber-600">Vous approchez de la limite — pensez au plan supérieur.</p>
                           )}
