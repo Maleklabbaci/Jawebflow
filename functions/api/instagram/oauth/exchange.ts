@@ -1,6 +1,6 @@
 import { subscribeToInstagramMessages } from "../subscribe";
 import { supabaseConfigured, supabaseRequest, verifySupabaseIdToken } from "../../../_shared/supabase.ts";
-import { registerNotifyAccount } from "../../../_shared/merchant-notify.ts";
+import { registerNotifyAccount, getNotifyConfig } from "../../../_shared/merchant-notify.ts";
 
 interface Env {
   INSTAGRAM_APP_ID?: string;
@@ -38,6 +38,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       userId?: string;
       assistantId?: string;
       mode?: string;
+      handle?: string;
     };
 
     // 1. Nettoyage du code OAuth
@@ -104,6 +105,10 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     }
 
     console.log("[instagram][exchange] token obtenu via", tokenResponse.url.includes("api.instagram.com") ? "api.instagram.com (Instagram Login)" : "graph.instagram.com v21.0 (Facebook Login)");
+    // 💡 Les apps « Instagram Login » renvoient le user_id PROFESSIONNEL
+    // DANS la réponse du token : pas besoin de /me pour identifier le compte.
+    const tokenUserId = String(tokenData.user_id || "").trim();
+    if (tokenUserId) console.log("[instagram][exchange] user_id reçu dans le token :", tokenUserId.slice(0, 12) + "…");
     let accessToken = String(tokenData.access_token);
 
     // 4. Échange contre un jeton d'accès LONGUE DURÉE (valide 60 jours).
@@ -155,26 +160,37 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       console.warn("[instagram][exchange] profil refusé :", pErr);
     }
 
-    if (!profile || (!profile.id && !profile.user_id)) {
-      console.error("[instagram][exchange] ÉCHEC étape profil :", profileErrors.join(" | "));
-      return json({ 
-        error: `Meta a refusé la récupération du profil [étape profil] : ${profileErrors[0] || "réponse vide"}`,
-        step: "profile",
-        details: { attempts: profileErrors }
-      }, 400);
-    }
+    // 💡 Profil best-effort : même si Meta le refuse, on continue avec le
+    // user_id du token (les apps « Instagram Login » le renvoient toujours).
+    const igProfessionalId = String(profile?.user_id || profile?.id || tokenUserId || "").trim();
+    const igUsername = String(profile?.username || "").trim();
+    console.log("[instagram][exchange] identité :", igProfessionalId ? "OK (" + igProfessionalId.slice(0, 12) + "…)" : "ABSENT", "· @" + (igUsername || "?"));
 
     // 🏢 MODE NOTIFICATEUR : ce code OAuth concerne le compte officiel
     // JawebFlow (celui qui envoie les alertes aux marchands). Réservé à
     // l'équipe (role admin) — un clic suffit, zéro copier-coller.
+    // Ne dépend JAMAIS du profil : l'identifiant du jeton suffit.
     if (String(body.mode || "") === "notificator") {
       const me = await verifySupabaseIdToken(context.env as any, context.request.headers.get("Authorization"));
       if (!me?.uid) return json({ error: "Non authentifié." }, 401);
       const rRes = await supabaseRequest(context.env as any, `users?id=eq.${encodeURIComponent(me.uid)}&select=role`);
       const role = rRes.ok ? ((await rRes.json().catch(() => [])) || [])[0]?.role : null;
       if (role !== "admin" && role !== "superadmin") return json({ error: "Réservé à l'équipe JawebFlow." }, 403);
-      await registerNotifyAccount(context.env as any, String(profile.username || ""), accessToken, String(profile.user_id || profile.id));
-      return json({ ok: true, mode: "notificator", handle: profile.username || null });
+      if (!igProfessionalId) return json({ error: "Identifiant du compte introuvable dans la réponse Meta [étape identité].", step: "identity", details: { attempts: profileErrors } }, 400);
+      const cfgNow = await getNotifyConfig(context.env as any);
+      const handle = igUsername || String(body.handle || "") || cfgNow.handle || "jawebflow";
+      await registerNotifyAccount(context.env as any, handle, accessToken, igProfessionalId);
+      return json({ ok: true, mode: "notificator", handle, profileWarn: profile ? undefined : "Profil Meta illisible (non bloquant) — compte enregistré via l'identifiant du jeton." });
+    }
+
+    // ── FLUX MARCHAND : le profil reste requis (nom de page, photo…) ──
+    if (!profile || (!profile.id && !profile.user_id)) {
+      console.error("[instagram][exchange] ÉCHEC étape profil (marchand) :", profileErrors.join(" | "));
+      return json({ 
+        error: `Meta a refusé la récupération du profil [étape profil] : ${profileErrors[0] || "réponse vide"}`,
+        step: "profile",
+        details: { attempts: profileErrors }
+      }, 400);
     }
 
     // 6. Abonnement obligatoire aux événements "messages" du webhook.
@@ -215,7 +231,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
               ...(String(body.assistantId || "").trim()
                 ? { assistant_id: String(body.assistantId).trim().slice(0, 120) }
                 : {}),
-              instagram_user_id: String(profile.user_id || profile.id),
+              instagram_user_id: igProfessionalId || String(profile.user_id || profile.id),
               instagram_username: profile.username || null,
               page_name: profile.name || profile.username || null,
               profile_picture_url: profile.profile_picture_url || null,
