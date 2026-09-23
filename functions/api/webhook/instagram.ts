@@ -961,11 +961,15 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
   // 🧮 POIDS DE QUOTA (même règle que le web) : photo = 4 · recherche produits = +2 · message = 1
   let shoppingRan = false;
   if (config?.siteShopping && config?.websiteUrl && config?.behavior?.websiteMentions !== "never") {
-    if (!groupedText && hasAttachment && message?.mid && env.GEMINI_API_KEY) {
+    // 📸 FIX : la photo est décrite DÈS QU'IL Y EN A UNE — photo seule OU
+    // photo + texte (« c'est quoi ça ? »). Avant, un texte accompagnant la
+    // photo rendait le bot AVEUGLE (jamais de vision).
+    if (hasAttachment && message?.mid && env.GEMINI_API_KEY) {
       imageDescription = (await describeAttachmentImage(env, integration.igToken, message.mid)) || "";
       if (imageDescription) console.log("[instagram] photo décrite :", imageDescription);
     }
-    const shoppingQuery = groupedText || imageDescription;
+    // la requête de recherche combine CE QUE LE CLIENT A ÉCRIT + CE QU'ON VOIT
+    const shoppingQuery = [groupedText, imageDescription].filter(Boolean).join(" ").trim();
     if (shoppingQuery) {
       shoppingRan = true;
       const found = await searchClientSite(config, shoppingQuery);
@@ -995,12 +999,16 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
 
   if (!incoming) incoming = imageDescription || "Le client a envoyé une image que tu ne peux pas lire.";
 
-  // 🧮 photo en 1 SEUL appel quand ce n'est pas une recherche produit : l'image
-  // part directement dans l'appel principal (au lieu d'une description séparée).
+  // 📸 FIX : l'IA voit la VRAIE photo dans tous les cas (shopping inclus) :
+  // elle compare l'article visible avec la BASE DE CONNAISSANCE + les produits
+  // trouvés sur le site, et choisit le plus proche (ex : t-shirt blanc « l'amour »
+  // -> le t-shirt amor blanc du site ; coque Spider-Man rouge -> le lien exact).
   let inlineImage: { mime: string; base64: string } | null = null;
-  if (!config?.siteShopping && !groupedText && hasAttachment && message?.mid) {
+  if (hasAttachment && message?.mid) {
     inlineImage = await fetchAttachmentImage(env, integration.igToken, message.mid);
-    if (inlineImage) incoming = "Le client a envoyé cette photo — identifie précisément l'article (catégorie exacte, matière, couleur) et aide-le avec notre base de connaissances.";
+    if (inlineImage && !incoming) {
+      incoming = "Le client a envoyé cette photo. Identifie PRÉCISÉMENT l'article (catégorie exacte, couleur, personnage/texte visible), compare-le avec notre base de connaissance et les produits trouvés ci-dessous, puis propose le produit le plus proche avec son lien.";
+    }
   }
 
   console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
