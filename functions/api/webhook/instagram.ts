@@ -203,6 +203,48 @@ async function readFromTarget(accessToken: string, path: string, t: Target) {
   }
 }
 
+/** Thread Supabase : historique + buffer anti-doublons (table instagram_threads). */
+async function readThread(env: Env, integrationId: string, customerId: string): Promise<any> {
+  if (!supabaseConfigured(env)) return {};
+  try {
+    const res = await supabaseRequest(env, `instagram_threads?integration_id=eq.${encodeURIComponent(integrationId)}&customer_id=eq.${encodeURIComponent(customerId)}&select=*`);
+    if (!res.ok) return {};
+    const rows: any[] = await res.json();
+    const row = rows?.[0];
+    if (!row) return {};
+    return {
+      messages: Array.isArray(row.messages) ? row.messages : [],
+      handledMids: Array.isArray(row.handled_mids) ? row.handled_mids : [],
+      pendingMessages: Array.isArray(row.pending_messages) ? row.pending_messages : [],
+      pendingToken: row.pending_token || null,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function saveThread(env: Env, integrationId: string, customerId: string, data: any): Promise<void> {
+  if (!supabaseConfigured(env)) return;
+  try {
+    const row: any = {
+      integration_id: integrationId,
+      customer_id: customerId,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.messages !== undefined) row.messages = data.messages;
+    if (data.handledMids !== undefined) row.handled_mids = data.handledMids;
+    if (data.pendingMessages !== undefined) row.pending_messages = data.pendingMessages;
+    if (data.pendingToken !== undefined) row.pending_token = data.pendingToken;
+    await supabaseRequest(env, 'instagram_threads?on_conflict=integration_id,customer_id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify(row),
+    });
+  } catch (e: any) {
+    console.warn('[instagram] écriture thread Supabase impossible:', e?.message || e);
+  }
+}
+
 async function readDocument(env: Env, accessToken: string, path: string, target?: Target) {
   if (target) return readFromTarget(accessToken, path, target);
 
@@ -452,7 +494,37 @@ async function hasValidMetaSignature(request: Request, rawBody: string, appSecre
 }
 
 async function findIntegration(env: Env, instagramAccountId: string) {
-  if (!env.FIREBASE_SERVICE_ACCOUNT) return null;
+  // SUPABASE = source de vérité depuis la migration : le tableau de bord
+  // sauvegarde la connexion dans la table instagram_integrations. Firestore
+  // n'est plus qu'un repli pour les très anciens comptes jamais migrés.
+  // (BUG corrigé : le webhook cherchait UNIQUEMENT dans Firestore — absent
+  // de la configuration — donc aucun compte n'était jamais trouvé et le bot
+  // restait silencieux malgré une connexion réussie côté dashboard.)
+  if (supabaseConfigured(env)) {
+    try {
+      const res = await supabaseRequest(env, `instagram_integrations?instagram_user_id=eq.${encodeURIComponent(instagramAccountId)}&select=*`);
+      if (res.ok) {
+        const rows: any[] = await res.json();
+        const row = rows?.[0];
+        const metaToken = String(row?.access_token || '');
+        if (row && metaToken) {
+          return {
+            integrationId: String(row.user_id || row.instagram_user_id || instagramAccountId),
+            accessToken: metaToken,
+            igToken: metaToken,
+            assistantId: row.assistant_id ? String(row.assistant_id) : undefined,
+            autoReplyEnabled: row.auto_reply_enabled !== false,
+          };
+        }
+      }
+    } catch (e: any) {
+      console.error('[instagram] recherche Supabase échouée:', e?.message || e);
+    }
+  }
+  if (!env.FIREBASE_SERVICE_ACCOUNT) {
+    console.error(`[instagram] aucune connexion trouvée pour le compte ${instagramAccountId} (ni Supabase, ni Firestore)`);
+    return null;
+  }
 
   let accessToken: string;
   let saProjectId = "";
@@ -567,8 +639,7 @@ function sleep(ms: number) {
 async function pushPendingMessage(
   env: Env,
   integration: any,
-  threadPath: string,
-  target: Target | undefined,
+  customerId: string,
   existingPending: Array<{ text: string; mid: string | null }>,
   text: string,
   hasAttachment: boolean,
@@ -580,13 +651,7 @@ async function pushPendingMessage(
     { text: text || (hasAttachment ? "[image envoyée]" : ""), mid: message?.mid || null },
   ];
 
-  await writeDocument(
-    env,
-    integration.accessToken,
-    threadPath,
-    { pendingMessages, pendingToken: token },
-    target
-  );
+  await saveThread(env, integration.integrationId, customerId, { pendingMessages, pendingToken: token });
 
   return token;
 }
@@ -612,13 +677,13 @@ async function handleDirectMessage(env: Env, event: any) {
     return;
   }
 
-  const threadPath = `instagram_integrations/${integration.integrationId}/threads/${customerId}`;
-  const thread = await readDocument(env, integration.accessToken, threadPath, integration.target);
-  const threadTarget = thread.ok ? thread.target : integration.target;
-  const stored = thread.ok && Array.isArray(thread.data?.messages) ? thread.data.messages : [];
-  const handledMids: string[] = thread.ok && Array.isArray(thread.data?.handledMids) ? thread.data.handledMids : [];
+  // Historique + buffer : table Supabase instagram_threads
+  // (avant : document Firestore instagram_integrations/{uid}/threads/{customerId}).
+  const thread = await readThread(env, integration.integrationId, customerId);
+  const stored = Array.isArray(thread.messages) ? thread.messages : [];
+  const handledMids: string[] = Array.isArray(thread.handledMids) ? thread.handledMids : [];
   const existingPending: Array<{ text: string; mid: string | null }> =
-    thread.ok && Array.isArray(thread.data?.pendingMessages) ? thread.data.pendingMessages : [];
+    Array.isArray(thread.pendingMessages) ? thread.pendingMessages : [];
 
   if (message?.mid && handledMids.includes(message.mid)) {
     console.log("[instagram] message déjà traité, doublon ignoré:", message.mid);
@@ -629,8 +694,7 @@ async function handleDirectMessage(env: Env, event: any) {
   const myToken = await pushPendingMessage(
     env,
     integration,
-    threadPath,
-    threadTarget,
+    customerId,
     existingPending,
     text,
     hasAttachment,
@@ -641,8 +705,8 @@ async function handleDirectMessage(env: Env, event: any) {
   // 2) Attente pour regrouper les messages suivants
   await sleep(DEBOUNCE_MS);
 
-  const recheck = await readDocument(env, integration.accessToken, threadPath, threadTarget);
-  const currentToken = recheck.data?.pendingToken;
+  const recheck = await readThread(env, integration.integrationId, customerId);
+  const currentToken = recheck.pendingToken;
 
   if (currentToken !== myToken) {
     console.log(`[instagram] un message plus récent est arrivé (jeton ${myToken.slice(0, 8)} cédé).`);
@@ -650,8 +714,8 @@ async function handleDirectMessage(env: Env, event: any) {
   }
 
   // 3) Traitement groupé
-  const pendingMessages: Array<{ text: string; mid: string | null }> = Array.isArray(recheck.data?.pendingMessages)
-    ? recheck.data.pendingMessages
+  const pendingMessages: Array<{ text: string; mid: string | null }> = Array.isArray(recheck.pendingMessages)
+    ? recheck.pendingMessages
     : [];
 
   if (pendingMessages.length === 0) {
@@ -666,7 +730,7 @@ async function handleDirectMessage(env: Env, event: any) {
     groupedText
   );
 
-  const freshStored = Array.isArray(recheck.data?.messages) ? recheck.data.messages : stored;
+  const freshStored = Array.isArray(recheck.messages) ? recheck.messages : stored;
   const history = freshStored
     .filter((m: any) => (m?.role === "user" || m?.role === "model") && typeof m.text === "string")
     .slice(-HISTORY_LIMIT)
@@ -833,18 +897,11 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
     ...(sent ? [{ role: "model", text: replyText }] : []),
   ].slice(-THREAD_KEEP);
 
-  await writeDocument(
-    env,
-    integration.accessToken,
-    threadPath,
-    {
-      messages,
-      pendingMessages: [],
-      handledMids: [...handledMids, ...newMids].slice(-30),
-      updatedAt: new Date().toISOString(),
-    },
-    threadTarget
-  );
+  await saveThread(env, integration.integrationId, customerId, {
+    messages,
+    pendingMessages: [],
+    handledMids: [...handledMids, ...newMids].slice(-30),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -909,6 +966,13 @@ export async function onRequestPost(context: {
     }
 
     console.log(`[instagram] webhook reçu : ${events.length} événement(s)`);
+    for (const ev of events) {
+      const m = ev?.message;
+      const kind = m
+        ? (m.is_echo ? "écho (message envoyé par la page)" : (m.text ? `texte: "${String(m.text).slice(0, 60)}"` : "pièce jointe"))
+        : (ev?.read ? "accusé de lecture" : ev?.reaction ? "réaction" : ev?.postback ? "postback" : "autre (non-message)");
+      console.log(`[instagram] événement: ${kind} — sender=${ev?.sender?.id} recipient=${ev?.recipient?.id}`);
+    }
 
     const work = (async () => {
       for (const event of events) {
