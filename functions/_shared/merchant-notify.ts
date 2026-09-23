@@ -95,6 +95,7 @@ export async function handleNotifyAccountMessage(env: any, event: any): Promise<
   if (!isNotifyAccount(cfg, event?.recipient?.id) || !cfg.token) return false;
   const senderId: string | undefined = event?.sender?.id;
   const text: string = typeof event?.message?.text === "string" ? event.message.text.trim() : "";
+  console.log(`[notificateur] DM reçu de ${String(senderId || "?").slice(0, 10)}… : "${text.slice(0, 24)}" · compte enregistré : ${cfg.igUserId}`);
   if (!senderId) return true;
 
   const codeMatch = text.match(/^JF[-\s]?([A-Z2-9]{4,10})$/i);
