@@ -378,6 +378,66 @@ export function AdminPage() {
   const [nfyIgUserId, setNfyIgUserId] = useState('');
   const [nfyBusy, setNfyBusy] = useState(false);
   const [nfyMsg, setNfyMsg] = useState<string | null>(null);
+  const [nfyConnected, setNfyConnected] = useState<string | null>(null);
+
+  // État actuel du compte notificateur (handle enregistré ?)
+  const refreshNfyStatus = async () => {
+    try {
+      const sessionToken = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/instagram/notify-setup', { headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {} });
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok && data.handle) setNfyConnected(String(data.handle));
+    } catch { /* silencieux */ }
+  };
+
+  // Échange du code OAuth retourné par le popup (1 clic, zéro copier-coller)
+  const registerNotificatorFromCode = async (code: string) => {
+    setNfyBusy(true); setNfyMsg(null);
+    try {
+      const sessionToken = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/instagram/oauth/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}) },
+        body: JSON.stringify({ code, redirectUri: window.location.origin + '/', mode: 'notificator' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        setNfyConnected(String(data.handle || 'jawebflow'));
+        setNfyMsg('✅ Compte Instagram JawebFlow connecté — les marchands peuvent activer leurs alertes !');
+      } else {
+        setNfyMsg('❌ ' + (data.error || 'Connexion refusée.'));
+      }
+    } catch { setNfyMsg('❌ Réseau indisponible.'); }
+    setNfyBusy(false);
+  };
+
+  // Popup OAuth (le MÊME flux que les clients, marqué state=notificator)
+  const connectNfyAccount = () => {
+    const oauthUrl = new URL('https://www.instagram.com/oauth/authorize');
+    oauthUrl.searchParams.set('client_id', '1376023754506953');
+    oauthUrl.searchParams.set('redirect_uri', window.location.origin + '/');
+    oauthUrl.searchParams.set('response_type', 'code');
+    oauthUrl.searchParams.set('scope', 'instagram_business_basic,instagram_business_manage_messages');
+    oauthUrl.searchParams.set('state', 'notificator');
+    const popup = window.open(oauthUrl.toString(), 'notificator-oauth', 'width=560,height=760,menubar=no,toolbar=no');
+    if (!popup) setNfyMsg('❌ Fenêtre bloquée : autorise les pop-up puis réessaie.');
+  };
+
+  // Écoute du retour du popup + retour direct (?notif_code= sur /admin)
+  useEffect(() => {
+    refreshNfyStatus();
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'JAWEBFLOW_NOTIFICATOR_AUTH' && e.data.code) registerNotificatorFromCode(String(e.data.code));
+    };
+    window.addEventListener('message', onMsg);
+    const urlCode = new URLSearchParams(window.location.search).get('notif_code');
+    if (urlCode) {
+      window.history.replaceState({}, '', '/admin');
+      registerNotificatorFromCode(urlCode);
+    }
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
   const handleNfyRegister = async () => {
     if (!nfyHandle.trim() || !nfyToken.trim() || !nfyIgUserId.trim()) { setNfyMsg('Remplis les 3 champs.'); return; }
     setNfyBusy(true); setNfyMsg(null);
@@ -1804,26 +1864,41 @@ export function AdminPage() {
                   <div className="font-semibold text-slate-800 text-sm">🏢 Notificateur Instagram (compte officiel JawebFlow)</div>
                   <div className="text-xs text-slate-500">C'est CE compte qui envoie aux marchands leurs alertes en DM : 🔥 nouveaux leads, 🙋 demandes d'aide humaine. Étapes : (1) connecte le compte JawebFlow dans TON dashboard comme un client normal, (2) copie ici son jeton d'accès + son identifiant Instagram (visible dans la connexion), (3) enregistre. Ensuite chaque marchand active ses alertes en 10 s depuis son onglet Instagram.</div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Compte (@ sans @)</label>
-                    <input value={nfyHandle} onChange={(e) => setNfyHandle(e.target.value)} placeholder="jawebflow" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                {nfyConnected ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-semibold">✅ Connecté : @{nfyConnected}</span>
+                    <button onClick={connectNfyAccount} disabled={nfyBusy} className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                      {nfyBusy ? '…' : 'Reconnecter (changer de compte)'}
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Jeton d'accès du compte</label>
-                    <input value={nfyToken} onChange={(e) => setNfyToken(e.target.value)} type="password" placeholder="IGQV..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Identifiant Instagram du compte</label>
-                    <input value={nfyIgUserId} onChange={(e) => setNfyIgUserId(e.target.value)} placeholder="17841..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 mt-3">
-                  <button onClick={handleNfyRegister} disabled={nfyBusy} className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer">
-                    {nfyBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />} Enregistrer le compte notificateur
+                ) : (
+                  <button onClick={connectNfyAccount} disabled={nfyBusy} className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer">
+                    {nfyBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />} 🔗 Connecter le compte Instagram JawebFlow
                   </button>
-                  {nfyMsg && <span className={`text-xs font-medium ${nfyMsg.startsWith('✅') ? 'text-emerald-600' : 'text-rose-600'}`}>{nfyMsg}</span>}
-                </div>
+                )}
+                {nfyMsg && <div className={`text-xs font-medium mt-2 ${nfyMsg.startsWith('✅') ? 'text-emerald-600' : 'text-rose-600'}`}>{nfyMsg}</div>}
+                <details className="mt-3">
+                  <summary className="text-[11px] text-slate-400 cursor-pointer hover:text-slate-600">Configuration manuelle (si le bouton ne marche pas)</summary>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Compte (@ sans @)</label>
+                      <input value={nfyHandle} onChange={(e) => setNfyHandle(e.target.value)} placeholder="jawebflow" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Jeton d'accès du compte</label>
+                      <input value={nfyToken} onChange={(e) => setNfyToken(e.target.value)} type="password" placeholder="IGQV..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Identifiant Instagram du compte</label>
+                      <input value={nfyIgUserId} onChange={(e) => setNfyIgUserId(e.target.value)} placeholder="17841..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 mt-3">
+                    <button onClick={handleNfyRegister} disabled={nfyBusy} className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer">
+                      {nfyBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />} Enregistrer manuellement
+                    </button>
+                  </div>
+                </details>
               </div>
 
               {/* CAMPAGNE EMAIL (news / annonces) */}
