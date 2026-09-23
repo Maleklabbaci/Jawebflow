@@ -85,6 +85,15 @@ export async function registerNotifyAccount(env: any, handle: string, token: str
   await saveNotifyConfig(env, { ...cfg, handle: handle.replace(/^@/, ""), token, igUserId: String(igUserId) });
 }
 
+/** L'ID pro vu dans les webhooks (recipient) est la source de vérité :
+ *  il corrige l'ID applicatif parfois renvoyé par le flux de connexion. */
+export async function fixNotifyAccountId(env: any, webhookIgUserId: string): Promise<void> {
+  const cfg = await getNotifyConfig(env);
+  if (!cfg.igUserId || String(cfg.igUserId) === String(webhookIgUserId)) return;
+  console.log(`[notificateur] correction d'identifiant : ${String(cfg.igUserId).slice(0, 12)}… -> ${String(webhookIgUserId).slice(0, 12)}…`);
+  await saveNotifyConfig(env, { ...cfg, igUserId: String(webhookIgUserId) });
+}
+
 export function isNotifyAccount(cfg: NotifyConfig, instagramAccountId?: string): boolean {
   return Boolean(cfg.igUserId && instagramAccountId && String(instagramAccountId) === String(cfg.igUserId));
 }
@@ -92,13 +101,19 @@ export function isNotifyAccount(cfg: NotifyConfig, instagramAccountId?: string):
 /** Le message arrive sur le compte JawebFlow : code d'activation ou aide. Renvoie true si géré. */
 export async function handleNotifyAccountMessage(env: any, event: any, isEcho = false): Promise<boolean> {
   const cfg = await getNotifyConfig(env);
-  if (!isNotifyAccount(cfg, event?.recipient?.id) || !cfg.token) {
-    // diagnostic : un code JF est passé mais le compte destinataire ne matche pas
+  if (!cfg.token) return false;
+  const recipient = String(event?.recipient?.id || "");
+  // L'ID des webhooks (recipient) est l'identifiant PROFESSIONNEL : s'il ne
+  // matche pas l'ID enregistré, on fait CONFIANCE au webhook et on se corrige.
+  if (!isNotifyAccount(cfg, recipient)) {
     const t0 = String(event?.message?.text || "");
     if (/^JF[-\s]?[A-Z2-9]{4,10}$/i.test(t0.trim())) {
-      console.log(`[notificateur] MISMATCH : recipient=${String(event?.recipient?.id || "?")} ≠ enregistré=${cfg.igUserId || "(aucun)"}`);
+      console.log(`[notificateur] MISMATCH : recipient=${recipient.slice(0, 12)}… ≠ enregistré=${String(cfg.igUserId || "?").slice(0, 12)}… -> auto-correction`);
+      await fixNotifyAccountId(env, recipient);
+      cfg.igUserId = recipient;
+    } else {
+      return false; // pas un code : pas notre affaire
     }
-    return false;
   }
   const senderId: string | undefined = event?.sender?.id;
   const text: string = typeof event?.message?.text === "string" ? event.message.text.trim() : "";
