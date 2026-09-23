@@ -228,9 +228,14 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
       if (!serverResult?.success || !serverResult?.accessToken || !serverResult?.instagramUserId) {
         setIsConnecting(false);
-        setNotification({
+        const rawOauthError = String(serverResult?.error || '');
+        const alreadyUsed = /authorization code has been used/i.test(rawOauthError);
+        setNotification(alreadyUsed ? {
+          type: 'success',
+          message: '✅ Meta indique que ce code a déjà été utilisé : la connexion a DÉJÀ été enregistrée (aucun problème). Si « Compte connecté » s’affiche ci-dessous, tout est en ordre — envoie simplement un message privé à ton compte pour tester la réponse.'
+        } : {
           type: 'error',
-          message: `Connexion Instagram refusée : ${serverResult?.error || 'Meta n’a pas renvoyé de jeton valide.'}`
+          message: `Connexion Instagram refusée : ${rawOauthError || 'Meta n’a pas renvoyé de jeton valide.'}`
         });
         return;
       }
@@ -294,16 +299,18 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       setNotification({ type: 'error', message: `Meta a refusé l’autorisation : ${oauthError}` });
     }
     let authCode = urlParams.get('code');
-    if (!authCode) {
-      try {
-        const storedCode = localStorage.getItem('jawebflow_last_ig_auth_code');
-        if (storedCode) {
-          authCode = storedCode;
-          localStorage.removeItem('jawebflow_last_ig_auth_code');
-        }
-      } catch (e) {
-        // Safe fallback
-      }
+    // FIX « This authorization code has been used » : le code de connexion Meta
+    // est à USAGE UNIQUE. Il était retiré du stockage uniquement quand il
+    // provenait du stockage — quand il venait de l'URL, il Y RESTAIT et un
+    // simple retour sur cette page le renvoyait à Meta (déjà consommé) →
+    // erreur affichée ALORS QUE la connexion avait réussi. On le consomme
+    // maintenant une seule fois, quel que soit son origine.
+    try {
+      const storedCode = localStorage.getItem('jawebflow_last_ig_auth_code');
+      if (!authCode && storedCode) authCode = storedCode;
+      if (storedCode) localStorage.removeItem('jawebflow_last_ig_auth_code');
+    } catch (e) {
+      // Safe fallback
     }
 
     if (authCode && user && !oauthError) {
