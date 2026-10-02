@@ -53,7 +53,8 @@ import {
   Shield,
   BrainCircuit,
   SlidersHorizontal,
-  Activity
+  Activity,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -69,7 +70,7 @@ import type { CopilotSection } from './CopilotChat';
 import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
-import { WebhookTestingUtility } from './WebhookTestingUtility';
+import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
@@ -109,13 +110,6 @@ const NAV_GROUPS: Array<{
       { id: 'integration', label: 'Mettre sur mon site', icon: Code2 },
       { id: 'instagram', label: 'Instagram', icon: Instagram, pro: true },
       { id: 'automations', label: 'Automatisations', icon: Zap },
-    ],
-  },
-  {
-    title: 'Mon compte',
-    items: [
-      { id: 'billing', label: 'Abonnement & factures', icon: CreditCard },
-      { id: 'settings', label: 'Mon profil', icon: User },
     ],
   },
 ];
@@ -171,6 +165,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Mobile sidebar drawer state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Menu du profil (en haut à droite) : Mon profil, Se déconnecter
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Sync when initialSection prop changes
   useEffect(() => {
@@ -184,9 +181,29 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
   }, [currentSection]);
 
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) setAccountMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAccountMenuOpen(false);
+        document.getElementById('account-menu-button')?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [accountMenuOpen]);
+
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
     setMobileMenuOpen(false);
+    setAccountMenuOpen(false);
     if (onNavigate) {
       onNavigate('create-assistant', section);
     } else {
@@ -264,12 +281,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     setWidgetConfig(prev => ({ ...prev, ...updated }));
   };
 
-  // Integration Code & Format
-  const [integrationTab, setIntegrationTab] = useState<'react' | 'nextjs' | 'html' | 'wordpress' | 'php'>('react');
-  // Les détails techniques (code multi-frameworks, test de webhook) sont masqués
-  // par défaut : l'espace client s'adresse à des commerçants, pas à des devs.
-  const [showAdvancedIntegration, setShowAdvancedIntegration] = useState(false);
-  const [showAdvancedWebhook, setShowAdvancedWebhook] = useState(false);
   const [showLeadTech, setShowLeadTech] = useState(false);
   const [assistantTone, setAssistantTone] = useState<string>('professionnel');
   const [languages, setLanguages] = useState<{ fr: boolean; darija: boolean; en: boolean; ar: boolean }>({
@@ -542,9 +553,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
   const [savedDbSuccess, setSavedDbSuccess] = useState<boolean>(false);
   const [saveDbError, setSaveDbError] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
-  const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
-  const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string; details?: string } | null>(null);
 
   // Crawler & Scanner state
   const [crawlerUrl, setCrawlerUrl] = useState<string>('');
@@ -826,61 +834,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       return savedId || undefined;
     } catch (err) {
       console.error('Error saving assistant:', err);
-      // Plus d'échec silencieux : le bouton le dit (sinon le marchand croit avoir enregistré).
+      // Plus d'échec silencieux : le témoin d'enregistrement (en haut à droite) le dit et le garde affiché
+      // jusqu'au prochain succès (sinon le marchand croit avoir enregistré).
       setSaveDbError(true);
-      setTimeout(() => setSaveDbError(false), 6000);
       return undefined;
-    } finally {
-      setIsSavingDb(false);
-    }
-  };
-
-  const handleSaveWebhookSetting = async (newUrl: string) => {
-    setWebhookUrl(newUrl);
-    if (!user) return;
-    try {
-      setIsSavingDb(true);
-      const effectiveWidgetId = widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`;
-      const savedId = await saveAssistantToDatabase({
-        id: assistantId || undefined,
-        userId: user.uid,
-        plan: activePlan !== 'free' ? activePlan : (profile?.plan || activePlan), // plan payé > plan admin (fiche client) > gratuit
-        businessName: businessName.trim() || 'Mon Entreprise',
-        websiteUrl: websiteUrl.trim(),
-        siteType,
-        siteTypeConfidence,
-        scrapingStrategy,
-        businessCategory: businessCategory || 'Services',
-        businessDescription: businessDescription.trim(),
-        knowledgeNotes,
-        faqText: faqText.trim(),
-        pricingServicesText: pricingServicesText.trim(),
-        specialRulesText: specialRulesText.trim(),
-        behavior,
-        assistantTone,
-        languages,
-        autoLeadCapture,
-        whatsappEscalation: whatsappEscalation.trim(),
-        businessInfo,
-        siteShopping,
-        webhookUrl: newUrl.trim(),
-        widgetId: effectiveWidgetId,
-        widgetConfig: {
-          ...widgetConfig,
-          headerTitle: widgetConfig.headerTitle || businessName.trim() || 'Assistant IA'
-        }
-      });
-      if (savedId) {
-        setAssistantId(savedId);
-        localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, savedId);
-        // Plan effectif immédiat dans l'interface : plan payé choisi > plan admin (fiche client) > gratuit
-        const eff = activePlan !== 'free' ? activePlan : String(profile?.plan || '').toLowerCase();
-        if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
-      }
-      setSavedDbSuccess(true);
-      setTimeout(() => setSavedDbSuccess(false), 3000);
-    } catch (err) {
-      console.error('Error saving webhook setting:', err);
     } finally {
       setIsSavingDb(false);
     }
@@ -1303,128 +1260,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   defer>
 </script>`;
 
-  // React Component Code
-  const widgetReactComponentCode = `import React from 'react';
-import { JawebChatWidget } from './components/JawebChatWidget';
-
-export function App() {
-  return (
-    <div className="min-h-screen">
-      {/* Le contenu de votre site web */}
-      
-      {/* Bulle Assistant IA JawebFlow personnalisée */}
-      <JawebChatWidget 
-        businessName="${businessName || 'Mon Entreprise'}"
-        whatsappNumber="${whatsappEscalation || ''}"
-        config={{
-          primaryColor: "${widgetConfig.primaryColor}",
-          gradientSecondary: "${widgetConfig.gradientSecondary || '#6366f1'}",
-          useGradient: ${widgetConfig.useGradient !== false},
-          position: "${widgetConfig.position}",
-          shape: "${widgetConfig.shape}",
-          iconType: "${widgetConfig.iconType}",
-          customLogoUrl: "${widgetConfig.customLogoUrl || ''}",
-          themeMode: "${widgetConfig.themeMode}",
-          showTeaser: ${widgetConfig.showTeaser !== false},
-          teaserText: "${(widgetConfig.teaserText || 'Une question ? Discutons en direct 👋').replace(/"/g, '\\"')}",
-          welcomeMessage: "${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '\\"')}",
-          onlineBadge: ${widgetConfig.onlineBadge !== false},
-          showBranding: ${widgetConfig.showBranding !== false}
-        }}
-      />
-    </div>
-  );
-}`;
-
-  // Next.js Code
-  const widgetNextJsCode = `// Dans votre fichier app/layout.tsx (App Router)
-import Script from 'next/script';
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="fr">
-      <body>
-        {children}
-        
-        {/* Widget Assistant IA JawebFlow personnalisé */}
-        <Script
-          src="${liveScriptCdnUrl}"
-          strategy="lazyOnload"
-          data-assistant-id="${currentWidgetId}"
-          data-business-name="${(businessName || 'Mon Entreprise').replace(/"/g, '&quot;')}"
-          data-position="${widgetConfig.position}"
-          data-theme="${widgetConfig.themeMode}"
-          data-primary-color="${widgetConfig.primaryColor}"
-          data-secondary-color="${widgetConfig.gradientSecondary || '#6366f1'}"
-          data-shape="${widgetConfig.shape}"
-          data-icon="${widgetConfig.iconType}"
-          data-teaser="${(widgetConfig.teaserText || 'Une question ? Discutons en direct 👋').replace(/"/g, '&quot;')}"
-          data-welcome="${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '&quot;')}"
-        />
-      </body>
-    </html>
-  );
-}`;
-
-  // PHP cURL API Code
-  const widgetPhpCurlCode = `<?php
-// Exemple: Appel API cURL PHP pour JawebFlow Assistant IA
-$API_URL = "https://jawebflow.com/api/v1/chat";
-$PUBLIC_KEY = "${currentWidgetId}"; // Votre clé/ID d'Assistant unique
-
-$payload = json_encode(array(
-    "assistantId" => $PUBLIC_KEY,
-    "message" => "Bonjour, quels sont vos tarifs et disponibilités ?"
-));
-
-$cURL = curl_init();
-curl_setopt($cURL, CURLOPT_URL, $API_URL);
-curl_setopt($cURL, CURLOPT_HTTPHEADER, array(
-    "Accept: application/json",
-    "Content-Type: application/json",
-    "Authorization: Bearer " . $PUBLIC_KEY
-));
-curl_setopt($cURL, CURLOPT_POST, true);
-curl_setopt($cURL, CURLOPT_POSTFIELDS, $payload);
-curl_setopt($cURL, CURLOPT_SSL_VERIFYHOST, false);
-curl_setopt($cURL, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($cURL, CURLOPT_CONNECTTIMEOUT, 3);
-curl_setopt($cURL, CURLOPT_TIMEOUT, 20);
-
-$response = curl_exec($cURL);
-
-if (curl_errno($cURL)) {
-    $error_msg = curl_error($cURL);
-    curl_close($cURL);
-    die("Erreur cURL: " . $error_msg);
-}
-
-curl_close($cURL);
-
-$result = json_decode($response, true);
-
-// Exploitation du résultat JSON retourné
-echo "Réponse de l'Assistant : " . $result['message'];
-?>`;
-
-  const getActiveIntegrationCode = () => {
-    switch (integrationTab) {
-      case 'react': return widgetReactComponentCode;
-      case 'nextjs': return widgetNextJsCode;
-      case 'wordpress': return widgetScriptHtml;
-      case 'php': return widgetPhpCurlCode;
-      case 'html':
-      default:
-        return widgetScriptHtml;
-    }
-  };
-
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(getActiveIntegrationCode());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   // Completion calculation
   const hasIdentity = Boolean(businessName.trim());
   const hasKnowledge = knowledgeNotes.some(n => n.enabled);
@@ -1465,26 +1300,26 @@ echo "Réponse de l'Assistant : " . $result['message'];
         =======================================================================
       */}
       <aside className={`
-        fixed top-0 bottom-0 left-0 w-72 bg-white z-30 flex flex-col justify-between
+        fixed top-0 bottom-0 left-0 w-64 bg-white z-30 flex flex-col
         transition-transform duration-200 ease-in-out
         ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="overflow-y-auto flex-1">
+        <div className="flex-1 overflow-y-auto">
           {/* Logo */}
-          <div className="flex items-start justify-between px-6 pb-3 pt-7">
+          <div className="flex items-start justify-between px-5 pb-2 pt-5">
             <div>
-              <span className="block bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-[27px] font-extrabold leading-none tracking-tight text-transparent">JawebFlow</span>
-              <span className="mt-1.5 block text-[11px] font-medium text-slate-400">Espace client</span>
+              <span className="block bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-[21px] font-extrabold leading-none tracking-tight text-transparent">JawebFlow</span>
+              <span className="mt-1 block text-[10px] font-medium text-slate-400">Espace client</span>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               {onNavigate && (
                 <button
                   onClick={() => onNavigate('home')}
                   className="text-xs text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                   title="Retour au site public"
                 >
-                  <ExternalLink className="w-4 h-4" />
+                  <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               )}
               <button
@@ -1497,37 +1332,24 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </div>
           </div>
 
-          {/* Encart assistant : nom + état, en clair */}
-          <div className="mx-4 mb-3 flex items-center gap-3 rounded-2xl bg-[#f5f3ff] px-4 py-3">
-            <div className={`h-2.5 w-2.5 shrink-0 rounded-full ${isReadyToDeploy ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></div>
-            <div className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-bold text-[#1b1647]">
-                {businessName || 'Assistant en configuration'}
-              </span>
-              <span className="block truncate text-[11px] text-slate-500">
-                {isReadyToDeploy ? 'En ligne · répond à vos visiteurs' : 'À compléter pour être en ligne'}
-              </span>
-            </div>
-          </div>
-
           {/* Parler à mon IA : l'entrée la plus visible du menu */}
-          <div className="px-4">
+          <div className="px-3 pt-1">
             <button
               type="button"
               id="nav-copilot"
               onClick={openCopilot}
-              className="flex w-full items-center gap-3 rounded-full bg-[#efe9ff] px-4 py-3 text-[15px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#e5dcff] focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-200 cursor-pointer"
+              className="flex h-9 w-full items-center gap-2.5 rounded-full bg-[#efe9ff] px-3 text-[13px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#e5dcff] focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-200 cursor-pointer"
             >
-              <Sparkles className="h-5 w-5" />
+              <Sparkles className="h-[18px] w-[18px]" />
               <span className="flex-1 text-left">Parler à mon IA</span>
             </button>
           </div>
 
           {/* Navigation : libellés simples, pensés pour un commerçant, pas pour un développeur */}
-          <nav className="px-4 pb-4" aria-label="Menu principal">
+          <nav className="px-3 pb-4" aria-label="Menu principal">
             {NAV_GROUPS.map((group) => (
-              <div key={group.title} className="pb-1">
-                <div className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <div key={group.title}>
+                <div className="px-3 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   {group.title}
                 </div>
                 <div className="space-y-0.5">
@@ -1546,16 +1368,16 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         title={item.label}
                         aria-current={isActive ? 'page' : undefined}
                         onClick={() => handleSectionChange(item.id)}
-                        className={`group flex h-11 w-full items-center gap-3 rounded-full px-3.5 text-sm transition-all cursor-pointer ${
+                        className={`group flex h-9 w-full items-center gap-2.5 rounded-full px-3 text-[13px] transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_12px_24px_-10px_rgba(110,50,255,0.65)]'
+                            ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
                             : 'font-medium text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
                         }`}
                       >
                         <span className="relative shrink-0">
-                          <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                          <Icon className={`h-[18px] w-[18px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
                           {badge && badge !== '0' && (
-                            <span className={`absolute -right-2.5 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
+                            <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
                               {badge}
                             </span>
                           )}
@@ -1564,7 +1386,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         {item.pro && showLockedGates && (
                           <Lock className="w-3 h-3 text-amber-500" />
                         )}
-                        {!isActive && <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-purple-400" />}
+                        {!isActive && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-purple-400" />}
                       </button>
                     );
                   })}
@@ -1572,37 +1394,6 @@ echo "Réponse de l'Assistant : " . $result['message'];
               </div>
             ))}
           </nav>
-        </div>
-
-        {/* Profil */}
-        <div className="p-4">
-          <div className="flex items-center justify-between rounded-2xl bg-[#f6f5fb] p-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-sm font-bold text-purple-700">
-                {profile?.photoURL || user?.photoURL ? (
-                  <img src={profile?.photoURL || user?.photoURL || ''} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  (profile?.displayName || user?.displayName || user?.email || 'U')[0].toUpperCase()
-                )}
-              </div>
-              <div className="min-w-0">
-                <span className="block truncate text-[13px] font-bold text-slate-800">
-                  {profile?.displayName || user?.displayName || 'Mon Compte'}
-                </span>
-                <span className="block truncate text-[11px] text-slate-500">
-                  {user?.email || 'Connecté'}
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => logout()}
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
-              title="Déconnexion"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -1619,7 +1410,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
         MAIN CONTENT WORKSPACE (Clean, Responsive, High Contrast)
         =======================================================================
       */}
-      <div className={`flex-1 min-w-0 lg:ml-72 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
+      <div className={`flex-1 min-w-0 lg:ml-64 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
         
         {/* Sticky Top Header Bar */}
         <header className="sticky top-0 z-20 flex h-[72px] shrink-0 items-center justify-between gap-4 bg-white/95 px-4 backdrop-blur sm:px-8">
@@ -1655,34 +1446,105 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Quick Save Database Button */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Enregistrement automatique : un simple témoin (plus de bouton). L'échec reste affiché et réessayable. */}
+            {saveDbError ? (
+              <button
+                type="button"
+                onClick={() => { void handleSaveToDatabase(); }}
+                title="L’enregistrement a échoué : vérifie ta connexion internet puis clique pour réessayer."
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-100 cursor-pointer"
+              >
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Échec — réessayer</span>
+              </button>
+            ) : (isSavingDb || savedDbSuccess) ? (
+              <span
+                role="status"
+                className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${savedDbSuccess && !isSavingDb ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}
+              >
+                {isSavingDb ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">{isSavingDb ? 'Enregistrement…' : 'Enregistré'}</span>
+              </span>
+            ) : null}
+
+            {/* Abonnement & factures */}
             <button
               type="button"
-              onClick={handleSaveToDatabase}
-              disabled={isSavingDb}
-              className={`px-5 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
-                savedDbSuccess
-                  ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                  : saveDbError
-                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20'
-                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
+              id="nav-billing"
+              title="Abonnement & factures"
+              aria-label="Abonnement & factures"
+              aria-current={currentSection === 'billing' ? 'page' : undefined}
+              onClick={() => handleSectionChange('billing')}
+              className={`inline-flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium transition-all cursor-pointer xl:px-4 ${
+                currentSection === 'billing'
+                  ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                  : 'bg-slate-100 text-slate-600 hover:bg-[#efe9ff] hover:text-[#6d28d9]'
               }`}
-              title={saveDbError ? 'L’enregistrement a échoué : vérifie ta connexion internet puis clique à nouveau.' : undefined}
             >
-              {isSavingDb ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : savedDbSuccess ? (
-                <Check className="w-3.5 h-3.5" />
-              ) : saveDbError ? (
-                <AlertCircle className="w-3.5 h-3.5" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">
-                {isSavingDb ? 'Sauvegarde...' : savedDbSuccess ? 'Enregistré !' : saveDbError ? 'Échec — réessayer' : 'Enregistrer'}
-              </span>
+              <CreditCard className="h-4 w-4" />
+              <span className="hidden xl:inline">Abonnement & factures</span>
             </button>
+
+            {/* Mon profil */}
+            <div className="relative" ref={accountMenuRef}>
+              <button
+                type="button"
+                id="account-menu-button"
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
+                aria-current={currentSection === 'settings' ? 'page' : undefined}
+                title="Mon compte"
+                onClick={() => setAccountMenuOpen((o) => !o)}
+                className={`inline-flex h-10 items-center gap-2 rounded-full pl-1 pr-3 text-sm font-medium transition-all cursor-pointer ${
+                  currentSection === 'settings'
+                    ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                    : 'bg-slate-100 text-slate-700 hover:bg-[#efe9ff]'
+                }`}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-sm font-bold text-purple-700">
+                  {profile?.photoURL || user?.photoURL ? (
+                    <img src={profile?.photoURL || user?.photoURL || ''} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    (profile?.displayName || user?.displayName || user?.email || 'U')[0].toUpperCase()
+                  )}
+                </span>
+                <span className="hidden max-w-[110px] truncate sm:inline">{homeFirstName || 'Mon compte'}</span>
+                <ChevronDown className={`h-4 w-4 opacity-60 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {accountMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Mon compte"
+                  className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_20px_50px_-12px_rgba(27,22,71,0.35)] ring-1 ring-slate-100"
+                >
+                  <div className="px-3 py-2.5">
+                    <p className="truncate text-sm font-bold text-[#1b1647]">{profile?.displayName || user?.displayName || 'Mon compte'}</p>
+                    <p className="truncate text-xs text-slate-500">{user?.email || 'Connecté'}</p>
+                    {businessName && <p className="mt-0.5 truncate text-xs text-slate-400">{businessName}</p>}
+                  </div>
+                  <div className="my-1 h-px bg-slate-100" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    id="nav-settings"
+                    onClick={() => handleSectionChange('settings')}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-[#f4f2ff] cursor-pointer"
+                  >
+                    <User className="h-4 w-4 text-slate-400" /> Mon profil
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setAccountMenuOpen(false); logout(); }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 cursor-pointer"
+                  >
+                    <LogOut className="h-4 w-4" /> Se déconnecter
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -2471,161 +2333,14 @@ echo "Réponse de l'Assistant : " . $result['message'];
               SECTION 5: INTEGRATION CODE (REACT, NEXT.JS, HTML, WORDPRESS)
               ================================================================= */}
           {currentSection === 'integration' && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Environ 3 minutes</span>
-                    </div>
-                    <h2 className="text-xl font-semibold text-slate-900 tracking-tight">
-                      Mettre la bulle sur mon site
-                    </h2>
-                    <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
-                      Copiez le code ci-dessous et envoyez-le à la personne qui gère votre site
-                      (webmaster, agence, ou votre prestataire Shopify / WordPress). C'est tout :
-                      la bulle apparaîtra automatiquement sur vos pages.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleCopyCode}
-                      className="px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span>{copied ? 'Code copié' : 'Copier le code'}</span>
-                    </button>
-                    <a
-                      href={`mailto:?subject=${encodeURIComponent('Installation de la bulle de discussion sur mon site')}&body=${encodeURIComponent(`Bonjour,\n\nMerci d'installer notre assistant de discussion sur le site.\nCollez ce code juste avant la balise </body> de chaque page :\n\n${widgetScriptHtml}\n\nMerci !`)}`}
-                      className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      <span>Envoyer par e-mail</span>
-                    </a>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedIntegration((v) => !v)}
-                  className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 cursor-pointer"
-                >
-                  <ChevronRight className={`w-4 h-4 transition-transform ${showAdvancedIntegration ? 'rotate-90' : ''}`} />
-                  <span>Je gère moi-même l'installation (version pour développeur)</span>
-                </button>
-
-                {showAdvancedIntegration && (
-                <>
-                {/* Framework Tabs */}
-                <div className="flex items-center gap-2 border-b border-slate-200 pt-2 overflow-x-auto">
-                  {[
-                    { id: 'react', label: 'React / Vite (JSX Component)' },
-                    { id: 'nextjs', label: 'Next.js (App Router)' },
-                    { id: 'html', label: 'HTML Standard / Script' },
-                    { id: 'wordpress', label: 'WordPress / Shopify' },
-                    { id: 'php', label: 'PHP / cURL Backend API' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setIntegrationTab(tab.id as any)}
-                      className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 whitespace-nowrap cursor-pointer ${
-                        integrationTab === tab.id
-                          ? 'border-purple-600 text-purple-700'
-                          : 'border-transparent text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Code Block Window */}
-                <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-md">
-                  <div className="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
-                      <span className="text-[11px] font-mono text-slate-400 ml-2">
-                        {integrationTab === 'react' && 'App.tsx'}
-                        {integrationTab === 'nextjs' && 'app/layout.tsx'}
-                        {integrationTab === 'html' && 'index.html'}
-                        {integrationTab === 'wordpress' && 'header.php / Theme Customizer'}
-                        {integrationTab === 'php' && 'api_chat.php'}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyCode}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copied ? 'Copié' : 'Copier'}</span>
-                    </button>
-                  </div>
-
-                  <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
-                    <code>{getActiveIntegrationCode()}</code>
-                  </pre>
-                </div>
-                </>
-                )}
-              </div>
-
-              {/* Outil technique : replié, il n'intéresse que les développeurs */}
-              <div className="rounded-xl border border-slate-200 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedWebhook((v) => !v)}
-                  className="flex w-full items-center justify-between px-5 py-4 text-left cursor-pointer"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Options avancées</p>
-                    <p className="text-xs text-slate-400">
-                      Connexion à un autre logiciel (CRM, Google Sheets…) — utile uniquement si vous avez un développeur.
-                    </p>
-                  </div>
-                  <ChevronRight className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${showAdvancedWebhook ? 'rotate-90' : ''}`} />
-                </button>
-                {showAdvancedWebhook && (
-                  <div className="border-t border-slate-200 p-4">
-                    <WebhookTestingUtility
-                      initialWebhookUrl={webhookUrl}
-                      assistantId={assistantId || currentWidgetId}
-                      businessName={businessName}
-                      onSaveWebhookUrl={handleSaveWebhookSetting}
-                      isSavingGlobal={isSavingDb}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Instagram Quick Connect Banner */}
-              <div className="p-6 rounded-2xl bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 text-white flex items-center justify-center shadow-md">
-                    <Instagram className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">Vous souhaitez aussi connecter votre compte Instagram ?</h4>
-                    <p className="text-xs text-slate-600">Recevez vos messages privés directement dans votre espace et laissez l'assistant répondre.</p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleSectionChange('instagram')}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shrink-0 cursor-pointer"
-                >
-                  <span>Connecter Instagram</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            <div className="animate-in fade-in duration-200">
+              <SiteInstallWizard
+                scriptHtml={widgetScriptHtml}
+                websiteUrl={websiteUrl}
+                userId={user?.uid || ''}
+                onGoTest={() => handleSectionChange('simulator')}
+                onGoInstagram={() => handleSectionChange('instagram')}
+              />
             </div>
           )}
 

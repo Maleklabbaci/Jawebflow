@@ -74,6 +74,8 @@ describe('tableau de bord — navigation', () => {
     render(<DashboardPlatform initialSection="overview" />);
     await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
     for (const s of SECTIONS) {
+      // « Abonnement & factures » est un bouton en haut à droite ; « Mon profil » est dans le menu du profil (même endroit)
+      if (s.id === 'settings') await act(async () => { fireEvent.click(document.getElementById('account-menu-button')!); });
       const btn = document.getElementById(`nav-${s.id}`);
       expect(btn, `bouton de menu « ${s.nav} »`).toBeTruthy();
       expect(btn!.textContent).toContain(s.nav);

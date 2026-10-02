@@ -258,7 +258,7 @@ describe('sauvegarde automatique : en pause pendant que l’IA travaille', () =>
     let release!: () => void;
     gemini.next(() => new Promise((resolve) => { release = () => resolve(modelReply(textPart('Voilà.'))); }));
     await say('salut');
-    await screen.findByRole('status');
+    await screen.findByText(/Mon IA s’en occupe/); // l'indicateur de la discussion (le témoin d'enregistrement en haut a aussi un role=status)
     await waitFor(() => expect(release).toBeTypeOf('function'));
 
     // pendant l'attente, le marchand met une fiche de côté dans « Mes informations » (derrière le chat)

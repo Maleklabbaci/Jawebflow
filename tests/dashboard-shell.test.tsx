@@ -33,7 +33,7 @@ const AUTH = vi.hoisted(() => ({
   user: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz', displayName: 'Nour' },
   profile: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz', displayName: 'Nour', companyName: 'Boutique Nour', role: 'user', plan: 'basic' },
   loading: false,
-  logout: async () => undefined,
+  logout: vi.fn(async () => undefined),
 }));
 vi.mock('../src/context/AuthContext', () => ({ useAuth: () => AUTH }));
 
@@ -52,6 +52,7 @@ let errors: string[];
 
 beforeEach(() => {
   localStorage.clear();
+  AUTH.logout.mockClear();
   resetCopilotMemory();
   hoisted.saves.length = 0;
   hoisted.order.length = 0;
@@ -129,15 +130,24 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(root.querySelector('main')).toBeTruthy();
   });
 
-  it('une seule entrée du menu est « active », elle suit la navigation, et chaque page a son titre (y compris Comportement)', async () => {
+  it('une seule entrée est « active », elle suit la navigation, et chaque page a son titre (y compris Comportement)', async () => {
     render(<DashboardPlatform initialSection="overview" />);
     await settle();
     for (const s of TITLES) {
+      // « Abonnement & factures » et « Mon profil » sont en haut à droite, plus dans la barre latérale
+      if (s.id === 'settings') fireEvent.click(document.getElementById('account-menu-button')!);
       fireEvent.click(document.getElementById(`nav-${s.id}`)!);
       await settle(40);
-      const active = document.querySelectorAll('aside nav [aria-current="page"]');
-      expect(active.length, `entrée active pour « ${s.nav} »`).toBe(1);
-      expect(active[0].id).toBe(`nav-${s.id}`);
+      const inMenu = document.querySelectorAll('aside nav [aria-current="page"]');
+      const inHeader = document.querySelectorAll('header [aria-current="page"]');
+      if (s.id === 'billing' || s.id === 'settings') {
+        expect(inMenu.length, `rien d'actif dans la barre latérale pour « ${s.nav} »`).toBe(0);
+        expect(inHeader.length, `bouton actif en haut pour « ${s.nav} »`).toBe(1);
+      } else {
+        expect(inMenu.length, `entrée active pour « ${s.nav} »`).toBe(1);
+        expect(inMenu[0].id).toBe(`nav-${s.id}`);
+        expect(inHeader.length).toBe(0);
+      }
       expect(document.querySelector('header h1')!.textContent, `titre de « ${s.nav} »`).toBe(s.title);
     }
     expect(errors, errors.join('\n')).toEqual([]);
@@ -170,6 +180,74 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(within(cards[1]).getByText('2')).toBeTruthy();
     expect(within(cards[2]).getByText('Informations utilisées')).toBeTruthy();
     expect(within(cards[2]).getByText('1')).toBeTruthy();
+  });
+});
+
+describe('barre latérale épurée, abonnement et profil en haut à droite', () => {
+  it('la barre latérale ne montre ni le profil, ni le nom de l’entreprise, ni « Mon compte » (ni abonnement / profil)', async () => {
+    render(<DashboardPlatform initialSection="summary" />);
+    await settle(300);
+    const side = document.querySelector('aside')!;
+    for (const gone of ['nour@test.dz', 'Boutique Nour', 'Mon compte', 'Mon profil', 'Abonnement', 'Déconnexion', 'Espace client']) {
+      if (gone === 'Espace client') continue; // la légende du logo reste
+      expect(side.textContent, `« ${gone} » ne doit plus être dans la barre latérale`).not.toContain(gone);
+    }
+    expect(side.textContent).toContain('JawebFlow');
+    expect(side.querySelectorAll('nav button').length).toBe(12); // 14 écrans − abonnement − profil
+  });
+
+  it('plus de bouton « Enregistrer » en haut : à la place, « Abonnement & factures » et le profil', async () => {
+    render(<DashboardPlatform initialSection="summary" />);
+    await settle(300);
+    const header = document.querySelector('header')!;
+    expect(Array.from(header.querySelectorAll('button')).some((b) => /^\s*Enregistrer\s*$/.test(b.textContent || ''))).toBe(false);
+    expect(within(header as HTMLElement).getByRole('button', { name: 'Abonnement & factures' })).toBeTruthy();
+    const profile = document.getElementById('account-menu-button')!;
+    expect(header.contains(profile)).toBe(true);
+    expect(profile.textContent).toContain('Nour');
+  });
+
+  it('le menu du profil : s’ouvre, « Mon profil » mène à l’écran, Échap et le clic ailleurs le ferment, « Se déconnecter » déconnecte', async () => {
+    render(<DashboardPlatform initialSection="summary" />);
+    await settle(300);
+    const button = document.getElementById('account-menu-button')!;
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    fireEvent.click(button);
+    const menu = screen.getByRole('menu', { name: 'Mon compte' });
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.textContent).toContain('nour@test.dz');
+    expect(menu.textContent).toContain('Boutique Nour');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.click(button);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.mouseDown(document.body); // un clic ailleurs
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    fireEvent.click(button);
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Mon profil/ }));
+    await settle(60);
+    expect(document.querySelector('header h1')!.textContent).toBe('Mon profil');
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    fireEvent.click(button);
+    expect(AUTH.logout).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Se déconnecter/ }));
+    expect(AUTH.logout).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('« Abonnement & factures » ouvre l’écran de l’abonnement', async () => {
+    render(<DashboardPlatform initialSection="summary" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Abonnement & factures' }));
+    await settle(60);
+    expect(document.querySelector('header h1')!.textContent).toBe('Abonnement & factures');
+    expect(document.getElementById('nav-billing')!.getAttribute('aria-current')).toBe('page');
   });
 });
 
