@@ -18,6 +18,11 @@ La clé publishable fournie par l’utilisateur peut servir au frontend plus tar
 ## Déploiement
 
 1. Exécuter `supabase/schema.sql` dans Supabase SQL Editor.
+   Puis, pour les **automatisations Instagram** (commentaires → message privé, mots-clés, stories) :
+   exécuter `supabase/migration_ig_automations.sql` (une fois, sans danger si répété) et suivre `docs/AUTOMATISATIONS.md`
+   (champs `comments` et `messaging_postbacks` à cocher dans l'application Meta).
+   Le même fichier crée aussi, à titre facultatif, le compteur de messages du chat « Parler à mon IA »
+   (`copilot_usage`) — voir `docs/COPILOT.md`.
 2. Ajouter les variables ci-dessus à Cloudflare Pages, Preview et Production.
 3. Déployer avec `npm run deploy:cloudflare`.
 4. Vérifier `GET /api/health`, puis lancer un scan sur un assistant de test.
