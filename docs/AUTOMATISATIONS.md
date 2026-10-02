@@ -106,7 +106,7 @@ Pour tester en vrai : **commente une publication depuis un AUTRE compte Instagra
 
 Points techniques à connaître :
 
-- API « Instagram Login » (`graph.instagram.com`, version centralisée dans `IG_GRAPH_VERSION`).
+- API « Instagram Login » (`graph.instagram.com`, version centralisée dans `IG_GRAPH_VERSION` = v25.0). Les anciens appels de connexion/notifications utilisent encore v21.0 (valable jusqu'au 21 janvier 2027) : à passer sur `IG_GRAPH_VERSION` à l'occasion.
 - Réponse publique : `POST /{comment_id}/replies`. Réponse privée : `POST /{ig_id}/messages` avec `recipient.comment_id`.
 - Événement commentaire : `entry[].changes[]` → `{ field: "comments", value: { id, from:{id,username}, text, media:{id} } }`. Les commentaires du compte lui-même et les réponses à un commentaire (`parent_id`) sont ignorés.
 - Anti-doublon : chaque événement est « réservé » dans `ig_automation_events` (`unique(automation_id, source_id)`) **avant** tout envoi ; si la base est illisible, rien n'est envoyé.
