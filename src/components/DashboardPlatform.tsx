@@ -61,12 +61,16 @@ import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
 import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
+import { InstagramAutomations } from './InstagramAutomations';
+import { CopilotChat, CopilotLauncher } from './CopilotChat';
+import type { CopilotSection } from './CopilotChat';
+import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { WebhookTestingUtility } from './WebhookTestingUtility';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
 
 /**
  * Menu de l'espace client.
@@ -101,6 +105,7 @@ const NAV_GROUPS: Array<{
     items: [
       { id: 'integration', label: 'Mettre sur mon site', icon: Code2 },
       { id: 'instagram', label: 'Instagram', icon: Instagram, pro: true },
+      { id: 'automations', label: 'Automatisations', icon: Zap },
     ],
   },
   {
@@ -158,6 +163,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     (initialSection as DashboardSectionId) || 'overview'
   );
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
+  // Venue des Automatisations : l'onglet Instagram met en avant « Autoriser les commentaires ».
+  const [instagramFocus, setInstagramFocus] = useState<'comments' | null>(null);
 
   // Mobile sidebar drawer state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -186,6 +193,19 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [assistantId, setAssistantId] = useState<string>('');
   const [assistantLoaded, setAssistantLoaded] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // « Parler à mon IA »
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotUnread, setCopilotUnread] = useState(false);
+  const copilotOpenRef = useRef(false);
+  const copilotBusyRef = useRef(false);
+  const autosavePendingRef = useRef(false);
+  const [autosaveNonce, setAutosaveNonce] = useState(0);
+  const handleSaveRef = useRef<(() => Promise<string | undefined>) | null>(null);
+  const assistantIdRef = useRef('');
+  const assistantLoadedRef = useRef(false);
+  // Changent quand l'IA modifie les automatisations / Instagram : l'écran concerné se recharge.
+  const [automationsVersion, setAutomationsVersion] = useState(0);
+  const [instagramVersion, setInstagramVersion] = useState(0);
   const [widgetId, setWidgetId] = useState<string>('');
   const [businessName, setBusinessName] = useState<string>('');
   const [websiteUrl, setWebsiteUrl] = useState<string>('');
@@ -510,6 +530,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   // Persistence status
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
   const [savedDbSuccess, setSavedDbSuccess] = useState<boolean>(false);
+  const [saveDbError, setSaveDbError] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string; details?: string } | null>(null);
@@ -742,8 +763,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return () => { cancelled = true; clearInterval(interval); };
   }, [assistantId]);
 
-  const handleSaveToDatabase = async (notesOverride?: KnowledgeNote[], metadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>) => {
-    if (!user) return;
+  const handleSaveToDatabase = async (rawNotesOverride?: KnowledgeNote[], rawMetadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>): Promise<string | undefined> => {
+    if (!user) return undefined;
+    // 🛡️ Les boutons « Enregistrer » branchés directement (onClick={handleSaveToDatabase}) transmettent
+    // l'ÉVÉNEMENT du clic en premier argument. Il était enregistré À LA PLACE des fiches « Mes informations »
+    // (la base de connaissances se retrouvait vidée). On n'accepte donc que de vrais tableaux / objets de données.
+    const notesOverride = Array.isArray(rawNotesOverride) ? rawNotesOverride : undefined;
+    const metadataOverride = rawMetadataOverride && typeof rawMetadataOverride === 'object' && !('nativeEvent' in (rawMetadataOverride as object)) ? rawMetadataOverride : undefined;
     try {
       setIsSavingDb(true);
       const effectiveWidgetId = widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`;
@@ -783,10 +809,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const eff = activePlan !== 'free' ? activePlan : String(profile?.plan || '').toLowerCase();
         if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
       }
+      setSaveDbError(false);
       setSavedDbSuccess(true);
       setTimeout(() => setSavedDbSuccess(false), 3000);
+      return savedId || undefined;
     } catch (err) {
       console.error('Error saving assistant:', err);
+      // Plus d'échec silencieux : le bouton le dit (sinon le marchand croit avoir enregistré).
+      setSaveDbError(true);
+      setTimeout(() => setSaveDbError(false), 6000);
+      return undefined;
     } finally {
       setIsSavingDb(false);
     }
@@ -844,16 +876,78 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   };
 
   // Autosave : les modifications ne doivent pas disparaître si l’utilisateur recharge ou se déconnecte.
+  // La sauvegarde utilise TOUJOURS l'état le plus récent (handleSaveRef) et se met en attente pendant
+  // que « Mon IA » travaille (sinon elle pourrait écraser ce que l'IA vient d'écrire en base).
+  handleSaveRef.current = handleSaveToDatabase;
   useEffect(() => {
     if (!user || !assistantLoaded || !assistantId) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    autosavePendingRef.current = true;
     saveTimerRef.current = setTimeout(() => {
-      handleSaveToDatabase().catch((error) => console.error('Autosave assistant failed:', error));
+      if (copilotBusyRef.current) return; // reprise automatique dès que l'IA a fini (voir handleCopilotBusy)
+      autosavePendingRef.current = false;
+      handleSaveRef.current?.().catch((error) => console.error('Autosave assistant failed:', error));
     }, 900);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [user?.uid, assistantLoaded, assistantId, businessName, websiteUrl, siteType, siteTypeConfidence, businessCategory, businessDescription, knowledgeNotes, faqText, pricingServicesText, specialRulesText, assistantTone, languages, autoLeadCapture, whatsappEscalation, webhookUrl, widgetConfig]);
+  }, [user?.uid, assistantLoaded, assistantId, businessName, websiteUrl, siteType, siteTypeConfidence, businessCategory, businessDescription, knowledgeNotes, faqText, pricingServicesText, specialRulesText, assistantTone, languages, autoLeadCapture, whatsappEscalation, webhookUrl, widgetConfig, autosaveNonce]);
+
+  // ------------------------------------------------------------------
+  // « PARLER À MON IA » : le serveur écrit directement dans la base ;
+  // on remet donc les écrans à jour avec ce qu'il vient de changer.
+  // ------------------------------------------------------------------
+  assistantIdRef.current = assistantId;
+  assistantLoadedRef.current = assistantLoaded;
+  copilotOpenRef.current = copilotOpen;
+
+  const openCopilot = () => {
+    setCopilotOpen(true);
+    setCopilotUnread(false);
+    setMobileMenuOpen(false);
+  };
+
+  /** Avant chaque demande : on enregistre ce qui est en attente, pour que l'IA lise la même chose que l'écran. */
+  const ensureAssistantReady = async (): Promise<string | { error: string } | null> => {
+    if (!user || !assistantLoadedRef.current) return null;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    autosavePendingRef.current = false;
+    const savedId = await handleSaveRef.current?.();
+    if (!savedId) return { error: 'Je n’arrive pas à enregistrer tes dernières modifications (connexion ?). Réessaie dans un instant.' };
+    assistantIdRef.current = savedId;
+    return savedId;
+  };
+
+  const applyCopilotPatch = (patch: CopilotStatePatch) => {
+    if (patch.knowledgeNotes) setKnowledgeNotes(patch.knowledgeNotes as unknown as KnowledgeNote[]);
+    if (patch.behavior) setBehavior((prev) => ({ ...prev, ...(patch.behavior as any) }));
+    if (patch.businessInfo) setBusinessInfo(patch.businessInfo);
+    if (patch.automationsChanged) setAutomationsVersion((v) => v + 1);
+    if (patch.instagramChanged) setInstagramVersion((v) => v + 1);
+  };
+
+  /** La réponse de l'IA s'est perdue en route : on relit la base pour que les écrans montrent ce qui a vraiment été enregistré. */
+  const resyncFromDatabase = async () => {
+    if (!user) return;
+    try {
+      const list = await getUserAssistants(user.uid); // renvoie [] en cas d'erreur : on ne remplace alors rien
+      const current = list.find((a) => a.id === assistantIdRef.current) || list[0];
+      if (!current) return;
+      if (Array.isArray(current.knowledgeNotes)) setKnowledgeNotes(current.knowledgeNotes);
+      if (current.behavior) setBehavior((prev) => ({ ...prev, ...current.behavior }));
+      if (current.businessInfo) setBusinessInfo(current.businessInfo);
+      setAutomationsVersion((v) => v + 1);
+      setInstagramVersion((v) => v + 1);
+    } catch (e) {
+      console.warn('Resynchronisation impossible:', e);
+    }
+  };
+
+  const handleCopilotBusy = (busy: boolean) => {
+    copilotBusyRef.current = busy;
+    // Une modification faite à l'écran pendant l'attente est enregistrée maintenant.
+    if (!busy && autosavePendingRef.current) setAutosaveNonce((n) => n + 1);
+  };
 
   const handleExportCSV = () => {
     const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];
@@ -1377,6 +1471,19 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </div>
           </div>
 
+          {/* Parler à mon IA : l'entrée la plus visible du menu */}
+          <div className="px-3">
+            <button
+              type="button"
+              id="nav-copilot"
+              onClick={openCopilot}
+              className="flex w-full items-center gap-3 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
+            >
+              <Sparkles className="h-[18px] w-[18px]" />
+              <span className="flex-1 text-left">Parler à mon IA</span>
+            </button>
+          </div>
+
           {/* Navigation : libellés simples, pensés pour un commerçant, pas pour un développeur */}
           <nav className="p-3 space-y-1">
             {NAV_GROUPS.map((group) => (
@@ -1489,6 +1596,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
                 {currentSection === 'instagram' && 'Instagram'}
+                {currentSection === 'automations' && 'Automatisations Instagram'}
               </h1>
               {currentSection !== 'overview' && (
                 <p className="text-xs text-slate-400">{businessName || 'Assistant en configuration'}</p>
@@ -1505,18 +1613,23 @@ echo "Réponse de l'Assistant : " . $result['message'];
               className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
                 savedDbSuccess
                   ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
+                  : saveDbError
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
               }`}
+              title={saveDbError ? 'L’enregistrement a échoué : vérifie ta connexion internet puis clique à nouveau.' : undefined}
             >
               {isSavingDb ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : savedDbSuccess ? (
                 <Check className="w-3.5 h-3.5" />
+              ) : saveDbError ? (
+                <AlertCircle className="w-3.5 h-3.5" />
               ) : (
                 <Save className="w-3.5 h-3.5" />
               )}
               <span className="hidden sm:inline">
-                {isSavingDb ? 'Sauvegarde...' : savedDbSuccess ? 'Enregistré !' : 'Enregistrer'}
+                {isSavingDb ? 'Sauvegarde...' : savedDbSuccess ? 'Enregistré !' : saveDbError ? 'Échec — réessayer' : 'Enregistrer'}
               </span>
             </button>
           </div>
@@ -1569,6 +1682,13 @@ echo "Réponse de l'Assistant : " . $result['message'];
                     className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
                     Tester une conversation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openCopilot}
+                    className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-100"
+                  >
+                    <Sparkles className="h-4 w-4" /> Parler à mon IA
                   </button>
                 </div>
               </div>
@@ -1890,11 +2010,11 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       </div>
                       <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400">Contact / Téléphone</span>
-                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.phone || "Déduit des formulaires"}</p>
+                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.phone || "Non détecté sur le site"}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400">Livraison & Couverture</span>
-                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.deliveryInfo || "Algérie (58 Wilayas)"}</p>
+                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.deliveryInfo || "Non détecté sur le site"}</p>
                       </div>
                     </div>
                   </div>
@@ -1941,7 +2061,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           general: { label: "Général", color: "bg-blue-50 text-blue-700 border-blue-200" },
                           services: { label: "Services & Produits", color: "bg-purple-50 text-purple-700 border-purple-200" },
                           tarifs: { label: "Tarifs & Devis", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-                          livraison: { label: "Livraison 58 Wilayas", color: "bg-amber-50 text-amber-700 border-amber-200" },
+                          livraison: { label: "Livraison", color: "bg-amber-50 text-amber-700 border-amber-200" },
                           faq: { label: "Questions Fréquentes", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
                           contact: { label: "Contact & Horaires", color: "bg-rose-50 text-rose-700 border-rose-200" },
                         };
@@ -2038,10 +2158,13 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 notes={knowledgeNotes}
                 onUpdateNotes={(updated) => {
                   setKnowledgeNotes(updated);
-                  handleSaveToDatabase();
+                  // On enregistre la NOUVELLE liste tout de suite (sinon la sauvegarde partait avec l'ancienne).
+                  handleSaveToDatabase(updated);
                 }}
                 onScanClick={() => handleSectionChange('crawler')}
                 isScanning={isScanning}
+                assistantId={assistantId}
+                onOpenCopilot={openCopilot}
               />
             </div>
           )}
@@ -2482,14 +2605,32 @@ echo "Réponse de l'Assistant : " . $result['message'];
               />
             ) : (
               <InstagramIntegration
+                key={`instagram-${instagramVersion}`}
                 assistantId={assistantId || currentWidgetId}
                 businessName={businessName}
                 websiteUrl={websiteUrl || crawlerUrl}
                 knowledgeNotes={knowledgeNotes}
                 onGoToSimulator={() => handleSectionChange('simulator')}
+                onGoToAutomations={() => handleSectionChange('automations')}
+                highlightCommentsAuth={instagramFocus === 'comments'}
               />
             )}
             </>
+          )}
+
+          {/* =================================================================
+              SECTION: AUTOMATISATIONS INSTAGRAM (commentaires → message privé, mots-clés, stories)
+              ================================================================= */}
+          {currentSection === 'automations' && (
+            <InstagramAutomations
+              key={`automations-${automationsVersion}`}
+              businessName={businessName}
+              isAdmin={isUserAdmin(profile)}
+              onGoToInstagram={(why) => {
+                setInstagramFocus(why === 'comments' ? 'comments' : null);
+                handleSectionChange('instagram');
+              }}
+            />
           )}
 
           {/* =================================================================
@@ -2530,7 +2671,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
             
             const avgTimeSpent = (() => {
               const withTime = leadsList.filter(l => (l as any).timeSpent);
-              if (withTime.length === 0) return '15s';
+              if (withTime.length === 0) return '—'; // pas encore de mesure : on n'invente pas un chiffre
               const avg = Math.round(withTime.reduce((acc, curr) => acc + ((curr as any).timeSpent || 0), 0) / withTime.length);
               if (avg < 60) return avg + 's';
               return Math.floor(avg / 60) + 'm ' + (avg % 60) + 's';
@@ -3893,6 +4034,28 @@ echo "Réponse de l'Assistant : " . $result['message'];
 
         </main>
       </div>
+
+      {/* =================================================================
+          « PARLER À MON IA » : le chat où le marchand donne des ordres à son IA
+          (bouton flottant + fenêtre de discussion, disponibles sur tous les écrans)
+          ================================================================= */}
+      {user && (
+        <>
+          {!copilotOpen && <CopilotLauncher onClick={openCopilot} unread={copilotUnread} />}
+          <CopilotChat
+            open={copilotOpen}
+            onClose={() => setCopilotOpen(false)}
+            userId={user.uid}
+            assistantId={assistantId}
+            ensureReady={ensureAssistantReady}
+            onStatePatch={applyCopilotPatch}
+            onNavigate={(section: CopilotSection) => handleSectionChange(section)}
+            onBusyChange={handleCopilotBusy}
+            onReply={() => { if (!copilotOpenRef.current) setCopilotUnread(true); }}
+            onResync={resyncFromDatabase}
+          />
+        </>
+      )}
 
     </div>
   );

@@ -1,7 +1,17 @@
-// Abonne le compte Instagram Business connecté aux événements webhook "messages".
-// Sans cet appel, Meta ne délivre JAMAIS les messages entrants au callback,
-// même si l'URL du webhook est vérifiée et que le token est valide.
-// Doc Meta : POST https://graph.instagram.com/{version}/me/subscribed_apps?subscribed_fields=messages
+// Abonne le compte Instagram Business connecté aux notifications de Meta :
+//   • messages              → les messages privés reçus
+//   • messaging_postbacks   → les clics sur les boutons (ex. « ✅ C'est fait »)
+//   • comments              → les commentaires sous les publications (automatisations)
+// Sans cet appel, Meta ne délivre JAMAIS rien au webhook, même si l'URL est
+// vérifiée et que le jeton est valide.
+// Doc Meta : POST https://graph.instagram.com/{version}/me/subscribed_apps?subscribed_fields=...
+//
+// Si Meta refuse la liste complète (ex. « commentaires » pas encore activés
+// dans l'application Meta), on retombe sur une liste plus courte : la
+// réception des messages privés n'est jamais cassée par cette évolution.
+
+import { subscribeAccount } from "../../_shared/ig-api.ts";
+import { verifySupabaseIdToken } from "../../_shared/supabase.ts";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -9,33 +19,31 @@ function json(data: unknown, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
-      "Access-Control-Allow-Origin": "*"
-    }
+    },
   });
 }
 
 export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
-    }
-  });
+  return new Response(null, { status: 204 });
 }
 
 export async function subscribeToInstagramMessages(accessToken: string) {
-  const url = `https://graph.instagram.com/v21.0/me/subscribed_apps?subscribed_fields=messages&access_token=${encodeURIComponent(accessToken)}`;
-  const res = await fetch(url, { method: "POST" });
-  const data = await res.json().catch(() => ({} as any)) as any;
-
-  const success = res.ok && data?.success === true;
-  return { success, status: res.status, data };
+  const r = await subscribeAccount(accessToken);
+  return {
+    success: r.success,
+    status: r.status,
+    fields: r.fields,
+    data: r.data && typeof r.data === "object" && r.data.error ? r.data : r.error ? { error: { message: r.error.raw } } : r.data,
+  };
 }
 
-export async function onRequestPost(context: { request: Request }) {
+export async function onRequestPost(context: { request: Request; env?: any }) {
   try {
+    // Réservé aux marchands connectés : ce point d'entrée appelle Meta avec le
+    // jeton fourni, il ne doit pas servir de relais anonyme.
+    const caller = await verifySupabaseIdToken(context.env || {}, context.request.headers.get("Authorization"));
+    if (!caller) return json({ success: false, error: "Connexion requise." }, 401);
+
     const body = await context.request.json().catch(() => ({})) as { accessToken?: string };
     const accessToken = String(body.accessToken || "").trim();
 
@@ -53,7 +61,7 @@ export async function onRequestPost(context: { request: Request }) {
       }, 400);
     }
 
-    return json({ success: true });
+    return json({ success: true, fields: result.fields });
   } catch (error: any) {
     return json({ success: false, error: error?.message || "Erreur interne pendant l'abonnement au webhook." }, 500);
   }

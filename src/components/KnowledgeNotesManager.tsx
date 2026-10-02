@@ -13,7 +13,16 @@ interface KnowledgeNotesManagerProps {
   onUpdateNotes: (notes: KnowledgeNote[]) => void;
   onScanClick: () => void;
   isScanning?: boolean;
+  /** Identifiant de l'assistant : indispensable à l'« Ajout éclair » (le serveur refuse sans). */
   assistantId?: string;
+  /**
+   * Identifiant transmis à l'IMPORT de documents (le serveur compte alors l'import dans le quota de scans
+   * et enregistre lui-même les fiches). Le tableau de bord ne le renseigne pas : l'import garde son
+   * comportement actuel (le navigateur fusionne puis enregistre).
+   */
+  importAssistantId?: string;
+  /** Ouvre le chat « Parler à mon IA » (plus complet que l'ajout éclair). */
+  onOpenCopilot?: () => void;
 }
 
 const CATEGORY_CONFIG: Record<string, { label: string; bg: string; text: string; border: string; icon: React.ReactNode }> = {
@@ -287,6 +296,8 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   onScanClick,
   isScanning = false,
   assistantId,
+  importAssistantId,
+  onOpenCopilot,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -429,7 +440,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
         <ImportModal
           onClose={() => setIsImporting(false)}
           onImport={handleImport}
-          assistantId={assistantId}
+          assistantId={importAssistantId}
         />
       )}
 
@@ -530,6 +541,15 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
         </div>
         <p className="text-[10px] text-slate-400">
           Produit, prix, promo, lien, livraison, contact… une phrase = une fiche dans la base. Pour supprimer : « supprime la fiche … ».
+          {onOpenCopilot && (
+            <>
+              {' '}Besoin de plus (modifier, régler le comportement, répondre aux commentaires…) ?{' '}
+              <button type="button" onClick={onOpenCopilot} className="font-semibold text-purple-600 hover:underline cursor-pointer">
+                Parle à ton IA
+              </button>
+              .
+            </>
+          )}
         </p>
       </div>
 
@@ -655,7 +675,10 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
                   <button
                     type="button"
                     onClick={() => handleToggleNote(note.id)}
-                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${note.enabled ? 'bg-purple-600' : 'bg-slate-300'}`}
+                    aria-pressed={note.enabled}
+                    aria-label={`${note.enabled ? 'Désactiver' : 'Activer'} la fiche ${note.title}`}
+                    title={note.enabled ? 'Lue par l’assistant — cliquer pour la mettre de côté' : 'Mise de côté — cliquer pour la réactiver'}
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors cursor-pointer ${note.enabled ? 'bg-purple-600' : 'bg-slate-300'}`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${note.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
                   </button>

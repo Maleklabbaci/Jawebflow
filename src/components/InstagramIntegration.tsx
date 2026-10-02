@@ -20,11 +20,11 @@ import {
   Send,
   Loader2,
   Lock,
-  Globe,
-  Edit2
+  Globe
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { LEGACY_DEFAULT_GREETING } from '../../functions/_shared/ig-automation-core';
 
 export interface InstagramIntegrationData {
   connected: boolean;
@@ -51,6 +51,10 @@ interface InstagramIntegrationProps {
   websiteUrl?: string;
   knowledgeNotes?: Array<{ id?: string; title: string; content: string; category?: string }>;
   onGoToSimulator?: () => void;
+  /** Ouvre l'onglet « Automatisations » (commentaires, mots-clés, stories). */
+  onGoToAutomations?: () => void;
+  /** Venu des Automatisations : met en avant « Autoriser les commentaires ». */
+  highlightCommentsAuth?: boolean;
 }
 
 export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
@@ -58,7 +62,9 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   businessName,
   websiteUrl = '',
   knowledgeNotes = [],
-  onGoToSimulator
+  onGoToSimulator,
+  onGoToAutomations,
+  highlightCommentsAuth = false
 }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState<boolean>(true);
@@ -120,7 +126,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     respondToStories: true,
     respondToComments: false,
     assistantTone: 'professionnel',
-    customGreeting: 'Salam 👋 Bienvenue sur notre page Instagram ! Comment puis-je vous aider ?',
+    customGreeting: '',
     webhookStatus: 'active',
     totalMessagesHandled: 0,
     unresolvedCount: 0
@@ -145,6 +151,10 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   // /api/instagram/oauth/exchange (les codes OAuth sont à usage unique ;
   // un double envoi déclenche l'erreur "invalid client_secret and code").
   const processedAuthCodesRef = useRef<Set<string>>(new Set());
+  // Pour détecter une connexion ANNULÉE (fenêtre Meta fermée sans valider) et ne pas rester bloqué sur « en cours… ».
+  const exchangeInFlightRef = useRef(false);
+  const popupWatchRef = useRef<number | null>(null);
+  useEffect(() => () => { if (popupWatchRef.current) window.clearInterval(popupWatchRef.current); }, []);
 
   // Local storage cache keys for offline resilience
   const getCacheKey = (uid: string) => `jawebflow_ig_config_${uid}`;
@@ -223,6 +233,8 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         const data = await loadRemoteIntegration();
         if (data && isMounted) {
           const merged = { ...integrationData, ...data, assistantId: (data as any).assistantId || assistantId };
+          // L'ancien texte pré-rempli n'a jamais été un choix du marchand : le serveur l'ignore, donc on ne l'affiche pas.
+          if (merged.customGreeting === LEGACY_DEFAULT_GREETING) merged.customGreeting = '';
           setIntegrationData(merged);
           saveLocalCache(user.uid, merged);
           if (assistantId && (data as any).assistantId !== assistantId) {
@@ -240,6 +252,14 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
     // Process and exchange incoming Instagram Authorization Code with our backend or direct activation
     const processAuthCode = async (rawCode: string) => {
+      exchangeInFlightRef.current = true;
+      try {
+        await processAuthCodeInner(rawCode);
+      } finally {
+        exchangeInFlightRef.current = false;
+      }
+    };
+    const processAuthCodeInner = async (rawCode: string) => {
       if (!rawCode) return;
 
       // Sanitize authorization code (Meta appends #_ at the end)
@@ -295,6 +315,16 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         return;
       }
 
+      // Les commentaires ont-ils été autorisés ? (information confirmée par Meta) : si oui, une
+      // simple « reconnexion » demandera de nouveau cette autorisation (sinon elle serait perdue).
+      if (user?.uid && Array.isArray(serverResult.permissions) && serverResult.permissions.length) {
+        try {
+          const key = `jawebflow_ig_comments_ok_${user.uid}`;
+          if (serverResult.permissions.includes('instagram_business_manage_comments')) localStorage.setItem(key, '1');
+          else localStorage.removeItem(key);
+        } catch { /* stockage indisponible */ }
+      }
+
       // Seules les données confirmées par Meta peuvent activer l’intégration.
       const finalUsername = serverResult.instagramUsername || '@compte_instagram';
       const finalUserId = String(serverResult.instagramUserId);
@@ -313,12 +343,13 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         instagramUsername: finalUsername,
         pageName: finalPageName,
         accessToken: finalAccessToken || integrationData.accessToken || '',
-        autoReplyEnabled: true,
-        respondToStories: true,
+        // Première connexion : tout est activé. Reconnexion : on GARDE les choix du marchand.
+        autoReplyEnabled: integrationData.connected ? integrationData.autoReplyEnabled : true,
+        respondToStories: integrationData.connected ? integrationData.respondToStories : true,
         respondToComments: false,
         lastConnectedAt: new Date().toISOString(),
         webhookStatus: isSubscribed ? 'active' : 'error',
-        totalMessagesHandled: integrationData.totalMessagesHandled || 14,
+        totalMessagesHandled: integrationData.totalMessagesHandled || 0,
         unresolvedCount: 0
       };
 
@@ -405,7 +436,19 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
     // Ouvre le vrai flux Instagram Login de Meta. La connexion n'est validée
   // qu'après retour d'un code OAuth échangé côté serveur contre un token réel.
-  const handleConnectInstagram = async () => {
+  // Venu des Automatisations pour autoriser les commentaires : on amène la carte à l'écran.
+  useEffect(() => {
+    if (highlightCommentsAuth && !loading) {
+      document.getElementById('instagram-comments-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightCommentsAuth, loading]);
+
+  const BASE_SCOPES = ['instagram_business_basic', 'instagram_business_manage_messages'];
+  // Autorisation SUPPLÉMENTAIRE demandée à part : si l'application Meta ne l'a pas
+  // encore activée, seule cette demande échoue — la connexion normale reste intacte.
+  const COMMENT_SCOPES = [...BASE_SCOPES, 'instagram_business_manage_comments'];
+
+  const startOAuth = async (scopes: string[]) => {
     if (!user) {
       setNotification({ type: 'error', message: 'Vous devez être connecté à JawebFlow pour lier Instagram.' });
       return;
@@ -414,7 +457,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     // L’App ID Meta est public ; le secret reste exclusivement côté serveur.
     const appId = '1376023754506953';
     const redirectUri = `${window.location.origin}/`;
-    const scope = ['instagram_business_basic', 'instagram_business_manage_messages'].join(',');
+    const scope = scopes.join(',');
     const oauthUrl = new URL('https://www.instagram.com/oauth/authorize');
     oauthUrl.searchParams.set('client_id', appId);
     oauthUrl.searchParams.set('redirect_uri', redirectUri);
@@ -427,52 +470,30 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     if (!popup) {
       setIsConnecting(false);
       setNotification({ type: 'error', message: 'La fenêtre Meta a été bloquée. Autorisez les fenêtres pop-up puis réessayez.' });
+      return;
     }
+    // Fenêtre fermée sans valider (annulation) : on débloque le bouton au lieu de rester sur « en cours… ».
+    // Le popup se ferme ~0,3 s APRÈS avoir transmis le code : on laisse l'échange démarrer avant de conclure.
+    if (popupWatchRef.current) window.clearInterval(popupWatchRef.current);
+    popupWatchRef.current = window.setInterval(() => {
+      if (!popup.closed) return;
+      if (popupWatchRef.current) window.clearInterval(popupWatchRef.current);
+      popupWatchRef.current = null;
+      window.setTimeout(() => {
+        if (exchangeInFlightRef.current) return;
+        setIsConnecting(false);
+        setNotification((prev) => (prev?.type === 'error' || prev?.type === 'success' ? prev : { type: 'info', message: 'Connexion annulée : rien n’a été modifié.' }));
+      }, 1500);
+    }, 500);
   };
 
-  // Direct Instagram username connection / modification
-  const handleDirectUsernameConnect = async (customHandle?: string) => {
-    const handleToUse = customHandle !== undefined 
-      ? customHandle 
-      : window.prompt('Entrez votre identifiant Instagram (ex: @telyaagency ou votre boutique) :', integrationData.instagramUsername !== '@mon_entreprise' ? integrationData.instagramUsername : (businessName ? `@${businessName.toLowerCase().replace(/\s+/g, '_')}` : '@ma_boutique'));
-    
-    if (!handleToUse || !handleToUse.trim()) return;
-    const formattedUsername = handleToUse.trim().startsWith('@') ? handleToUse.trim() : `@${handleToUse.trim()}`;
-    
-    setIsConnecting(true);
-    
-    const updatedPayload: InstagramIntegrationData = {
-      ...integrationData,
-      connected: true,
-      assistantId,
-      instagramUserId: integrationData.instagramUserId || `ig_${user?.uid ? user.uid.substring(0, 8) : 'dz'}_${Date.now().toString().slice(-4)}`,
-      instagramUsername: formattedUsername,
-      pageName: `${formattedUsername.replace('@', '')} Official Instagram`,
-      autoReplyEnabled: true,
-      respondToStories: true,
-      respondToComments: false,
-      lastConnectedAt: new Date().toISOString(),
-      webhookStatus: 'active',
-      totalMessagesHandled: integrationData.totalMessagesHandled || 18,
-      unresolvedCount: 0
-    };
-
-    if (user?.uid) {
-      saveLocalCache(user.uid, updatedPayload);
-      try {
-        await saveRemoteIntegration(updatedPayload);
-      } catch (e) {
-        console.warn('Supabase direct write notice:', e);
-      }
-    }
-
-    setIntegrationData(updatedPayload);
-    setIsConnecting(false);
-    setNotification({ 
-      type: 'success', 
-      message: `Compte ${formattedUsername} lié et activé avec succès ! L'IA JawebFlow gère désormais vos DMs.` 
-    });
+  /** Connecter / reconnecter (messages privés). */
+  const commentsAlreadyAuthorized = () => {
+    try { return Boolean(user?.uid && localStorage.getItem(`jawebflow_ig_comments_ok_${user.uid}`)); } catch { return false; }
   };
+  const handleConnectInstagram = () => startOAuth(commentsAlreadyAuthorized() ? COMMENT_SCOPES : BASE_SCOPES);
+  /** Autoriser aussi les commentaires (réponses publiques + message privé après commentaire). */
+  const handleAuthorizeComments = () => startOAuth(COMMENT_SCOPES);
 
   // Disconnect Instagram Account
   const handleDisconnect = async () => {
@@ -509,107 +530,77 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     }
   };
 
-  // Save Bot Rules & Toggles to Firestore
+  // Enregistre les réglages (accueil, ton) — et dit la VÉRITÉ si ça a échoué.
+  // On n'envoie QUE ces champs : renvoyer l'ancien jeton Meta gardé par le navigateur
+  // écraserait le jeton renouvelé automatiquement par le serveur.
   const handleSaveSettings = async () => {
     if (!user) return;
-    try {
-      setSaveLoading(true);
-      saveLocalCache(user.uid, integrationData);
-
-      try {
-        await saveRemoteIntegration({
-          ...integrationData,
-          updatedAt: new Date().toISOString()
-        });
-      } catch (fsErr) {
-        // Safe offline fallback
-      }
-
-      setNotification({
-        type: 'success',
-        message: 'Vos paramètres d\'automatisation Instagram ont été enregistrés.'
-      });
+    setSaveLoading(true);
+    saveLocalCache(user.uid, integrationData);
+    const ok = await saveRemoteIntegration({
+      autoReplyEnabled: integrationData.autoReplyEnabled,
+      respondToStories: integrationData.respondToStories,
+      assistantTone: integrationData.assistantTone,
+      customGreeting: (integrationData.customGreeting || '').trim()
+    });
+    setSaveLoading(false);
+    if (ok) {
+      setNotification({ type: 'success', message: 'Tes réglages Instagram sont enregistrés.' });
       setTimeout(() => setNotification(null), 4000);
-    } catch (err) {
-      console.error('Erreur enregistrement:', err);
-      setNotification({
-        type: 'error',
-        message: 'Une erreur est survenue lors de l\'enregistrement.'
-      });
-    } finally {
-      setSaveLoading(false);
+    } else {
+      setNotification({ type: 'error', message: 'L’enregistrement a échoué. Vérifie ta connexion internet puis réessaie.' });
     }
   };
 
-  // Test Simulation DM Chat
+  // Interrupteurs : appliqués TOUT DE SUITE (plus besoin de penser à « Enregistrer »).
+  const toggleSetting = async (key: 'autoReplyEnabled' | 'respondToStories') => {
+    if (!user) return;
+    const next = !integrationData[key];
+    setIntegrationData(prev => ({ ...prev, [key]: next }));
+    const ok = await saveRemoteIntegration({ [key]: next });
+    if (!ok) {
+      setIntegrationData(prev => ({ ...prev, [key]: !next }));
+      setNotification({ type: 'error', message: 'Le changement n’a pas pu être enregistré. Réessaie dans un instant.' });
+      return;
+    }
+    saveLocalCache(user.uid, { ...integrationData, [key]: next });
+    setNotification({
+      type: 'success',
+      message: key === 'autoReplyEnabled'
+        ? (next ? 'Les réponses de l’IA sont activées.' : 'Les réponses de l’IA sont en pause. Tes automatisations par mots-clés continuent de répondre.')
+        : (next ? 'L’IA répondra aux réponses à tes stories.' : 'L’IA ne répondra plus aux réponses à tes stories (tes règles « story » continuent).')
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Simulateur : pose VRAIMENT la question à l'assistant (mêmes informations que sur Instagram).
+  // Aucune réponse inventée : si l'assistant est injoignable, on le dit.
   const handleSendTestDm = async () => {
     if (!testDmInput.trim() || isTestingDm) return;
 
     const userText = testDmInput.trim();
     setTestDmInput('');
-    const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const botSays = (text: string) => setTestDmMessages(prev => [...prev, { sender: 'bot', text, time: now() }]);
 
-    setTestDmMessages(prev => [...prev, { sender: 'user', text: userText, time: timeNow }]);
+    setTestDmMessages(prev => [...prev, { sender: 'user', text: userText, time: now() }]);
     setIsTestingDm(true);
 
     try {
-      // 1. Try dedicated Instagram test endpoint first
-      let botReply = '';
-      try {
-        const directRes = await fetch('/api/instagram/test-live-message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messageText: userText })
-        });
-        if (directRes.ok) {
-          const dData = await directRes.json();
-          if (dData.aiResponse) {
-            botReply = dData.aiResponse;
-          }
-        }
-      } catch (e) {}
-
-      // 2. Fallback to /api/chat if dedicated endpoint didn't reply
-      if (!botReply) {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            assistantId: assistantId || 'asst_instagram',
-            businessName: businessName || 'Telya Agency',
-            website: websiteUrl,
-            knowledgeNotes: knowledgeNotes,
-            message: userText
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          botReply = data.text || data.message;
-        }
+      if (!assistantId) {
+        botSays('Configure d’abord ton assistant (onglets « Mon site web » ou « Mes informations ») pour pouvoir le tester ici.');
+        return;
       }
-
-      if (!botReply) {
-        botReply = `Salam ! Bienvenue chez ${businessName || 'Telya Agency'}. Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h avec paiement à la livraison (BaridiMob & main à main). Comment pouvons-nous vous aider ?`;
-      }
-
-      setTestDmMessages(prev => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: botReply,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-    } catch (error) {
-      setTestDmMessages(prev => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: `Salam ! Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h avec paiement à la livraison (BaridiMob ou main propre). Visitez notre site web ${websiteUrl || ''} pour passer commande directement !`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assistantId, businessName, website: websiteUrl, knowledgeNotes, message: userText })
+      });
+      const data = await response.json().catch(() => ({}));
+      const reply = response.ok ? String(data?.text || data?.message || '').trim() : '';
+      botSays(reply || 'Je n’ai pas pu joindre l’assistant pour le moment. Vérifie ta connexion puis réessaie.');
+    } catch {
+      botSays('Je n’ai pas pu joindre l’assistant pour le moment. Vérifie ta connexion puis réessaie.');
     } finally {
       setIsTestingDm(false);
     }
@@ -631,24 +622,26 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   }
 
   const webhookCallbackUrl = 'https://jawebflow.pages.dev/api/webhook/instagram';
+  // Le serveur peut enregistrer le pseudo avec ou sans « @ » : on l'affiche toujours pareil.
+  const igHandle = integrationData.instagramUsername ? `@${integrationData.instagramUsername.replace(/^@/, '')}` : '';
 
   // Réabonne manuellement le compte connecté aux événements "messages".
   // Nécessaire pour toute connexion établie AVANT ce correctif : le token est
   // valide mais Meta n'a jamais été informé qu'il doit pousser les DM au webhook.
   const handleRepairSubscription = async () => {
-    if (!user?.uid || !integrationData.accessToken) {
-      setNotification({ type: 'error', message: "Aucun jeton d'accès enregistré : reconnectez d'abord votre compte Instagram." });
+    if (!user?.uid || !integrationData.connected) {
+      setNotification({ type: 'error', message: "Connecte d'abord ton compte Instagram." });
       return;
     }
     setRepairingSubscription(true);
     try {
-      const res = await fetch('/api/instagram/subscribe', {
+      const res = await fetch('/api/instagram/diagnostics', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: integrationData.accessToken })
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ action: 'subscribe' })
       });
       const data = await res.json().catch(() => ({}));
-      const success = data?.success === true;
+      const success = res.ok && data?.success === true;
 
       const updatedPayload: InstagramIntegrationData = {
         ...integrationData,
@@ -656,15 +649,12 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       };
       setIntegrationData(updatedPayload);
       saveLocalCache(user.uid, updatedPayload);
-      try {
-        await saveRemoteIntegration({ webhookStatus: updatedPayload.webhookStatus });
-      } catch (e) { /* offline fallback */ }
 
       setNotification({
         type: success ? 'success' : 'error',
         message: success
-          ? "Abonnement réparé ! Meta va désormais transmettre vos DM Instagram au webhook."
-          : `Échec de la réparation : ${data?.error || 'jeton probablement expiré, reconnectez le compte.'}`
+          ? (data?.message || 'Terminé : Instagram transmettra désormais tes messages privés à l’assistant.')
+          : `Échec de la réparation : ${data?.error || 'la connexion a probablement expiré, reconnecte ton compte.'}`
       });
     } catch (e: any) {
       setNotification({ type: 'error', message: e?.message || "Erreur réseau pendant la réparation de l'abonnement." });
@@ -704,7 +694,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       try {
         const subRes = await fetch('/api/instagram/subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
           body: JSON.stringify({ accessToken: cleanToken })
         });
         const subData = await subRes.json().catch(() => ({}));
@@ -744,21 +734,6 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       } catch (e) {
         // Safe fallback
       }
-
-      // Sync with server cache
-      try {
-        await fetch('/api/instagram/sync-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.uid,
-            accessToken: cleanToken,
-            instagramUserId: updatedPayload.instagramUserId,
-            instagramUsername: updatedPayload.instagramUsername,
-            pageName: updatedPayload.pageName
-          })
-        });
-      } catch (sErr) {}
 
       setNotification({
         type: 'success',
@@ -873,28 +848,19 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>Compte Connecté : {integrationData.instagramUsername}</span>
+                  <span>Compte Connecté : {igHandle}</span>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   <button
                     type="button"
                     onClick={handleConnectInstagram}
-                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 cursor-pointer"
-                    title="Modifier le pseudo Instagram connecté"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Modifier @pseudo</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleConnectInstagram}
                     disabled={isConnecting}
-                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 cursor-pointer disabled:opacity-50"
+                    title="Refaire la connexion avec Instagram (renouvelle l'accès, ou permet de changer de compte)"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isConnecting ? 'animate-spin' : ''}`} />
-                    <span>Re-synchroniser</span>
+                    <span>Reconnecter</span>
                   </button>
 
                   <button
@@ -941,6 +907,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       </div>
 
       {/* Real-time Connection Status & Mobile Setup Guide */}
+      {integrationData.connected && (
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 text-white space-y-4 shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
           <div className="flex items-center gap-3">
@@ -964,17 +931,19 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Compte connecté : <span className="text-purple-300 font-semibold">{integrationData.instagramUsername || '@telyaagency'}</span>
+                Compte connecté : <span className="text-purple-300 font-semibold">{igHandle || 'ton compte Instagram'}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-500/30 font-medium flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              Connexion confirmée
-            </span>
-          </div>
+          {integrationData.webhookStatus === 'active' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-500/30 font-medium flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Connexion confirmée
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Essential Mobile Setting & Verified Status */}
@@ -990,7 +959,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                 </h4>
               </div>
               <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</strong> est bien relié : les messages privés que vous recevez arrivent directement à votre assistant.
+Votre compte <strong>{igHandle || 'Instagram'}</strong> est bien relié : les messages privés que vous recevez arrivent directement à votre assistant.
               </p>
             </div>
           </div>
@@ -1009,6 +978,7 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
               </p>
             </div>
             <button
+              type="button"
               onClick={handleRepairSubscription}
               disabled={repairingSubscription}
               className="shrink-0 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
@@ -1022,6 +992,8 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
           </div>
         )}
       </div>
+
+      )}
 
       {/* Main Grid: Settings & Live Preview Simulation */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1037,8 +1009,8 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
                   <Sliders className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">Réponses automatiques</h3>
-                  <p className="text-xs text-slate-500">Configurez sur quels types de messages l'IA intervient.</p>
+                  <h3 className="font-bold text-slate-900 text-base">Réponses de l'IA</h3>
+                  <p className="text-xs text-slate-500">Choisis quand l'IA répond à ta place dans tes messages privés.</p>
                 </div>
               </div>
 
@@ -1047,7 +1019,7 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                   : 'bg-slate-100 text-slate-500'
               }`}>
-                {integrationData.autoReplyEnabled ? 'Activées' : 'En pause'}
+                {integrationData.autoReplyEnabled ? 'IA active' : 'IA en pause'}
               </span>
             </div>
 
@@ -1056,13 +1028,16 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
               {/* Toggle 1: Auto DM Reply */}
               <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
                 <div className="space-y-0.5 max-w-sm">
-                  <span className="text-xs font-bold text-slate-900 block">Répondre aux Messages Privés (DMs)</span>
-                  <p className="text-[11px] text-slate-500">L'IA analyse le besoin du prospect et répond instantanément en exploitant votre Base de Connaissances.</p>
+                  <span className="text-xs font-bold text-slate-900 block">Répondre aux messages privés avec l'IA</span>
+                  <p className="text-[11px] text-slate-500">L'IA comprend la demande du client et répond tout de suite grâce aux informations de ton assistant. En pause : tes automatisations par mots-clés continuent de répondre.</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIntegrationData(prev => ({ ...prev, autoReplyEnabled: !prev.autoReplyEnabled }))}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
+                  role="switch"
+                  aria-checked={integrationData.autoReplyEnabled}
+                  aria-label="Répondre aux messages privés avec l'IA"
+                  onClick={() => toggleSetting('autoReplyEnabled')}
+                  className={`w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
                     integrationData.autoReplyEnabled ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
                   }`}
                 >
@@ -1073,13 +1048,16 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
               {/* Toggle 2: Respond to Story Replies */}
               <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
                 <div className="space-y-0.5 max-w-sm">
-                  <span className="text-xs font-bold text-slate-900 block">Réponses aux Réactions de Stories</span>
-                  <p className="text-[11px] text-slate-500">Quand un abonné répond à une story (prix, taille, dispo), l'IA engage la conversation avec le prospect.</p>
+                  <span className="text-xs font-bold text-slate-900 block">Répondre aux réponses à mes stories</span>
+                  <p className="text-[11px] text-slate-500">Quand un abonné répond à une story (prix, taille, dispo), l'IA lui répond. Désactivé : l'IA ne répond pas à ces messages (tes règles « Réponse à une story » continuent).</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIntegrationData(prev => ({ ...prev, respondToStories: !prev.respondToStories }))}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
+                  role="switch"
+                  aria-checked={integrationData.respondToStories}
+                  aria-label="Répondre aux réponses à mes stories"
+                  onClick={() => toggleSetting('respondToStories')}
+                  className={`w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
                     integrationData.respondToStories ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
                   }`}
                 >
@@ -1087,21 +1065,40 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
                 </button>
               </div>
 
-              {/* Toggle 3: Respond to Post Comments */}
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                <div className="space-y-0.5 max-w-sm">
-                  <span className="text-xs font-bold text-slate-900 block">Auto-DM lors d'un commentaire sous un Post</span>
-                  <p className="text-[11px] text-slate-500">Ex: si quelqu'un commente "Prix" ou "Info", envoyer un message privé avec les détails complets.</p>
+              {/* Commentaires : gérés dans l'onglet « Automatisations » */}
+              <div
+                id="instagram-comments-card"
+                className={`p-4 rounded-2xl border space-y-3 transition-colors ${
+                  highlightCommentsAuth ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-slate-900 block">💬 Commentaires → réponse publique + message privé</span>
+                  <p className="text-[11px] text-slate-500">Quand quelqu'un commente « prix » ou « info » sous ton post, le robot lui répond en public et lui envoie les détails en privé. Ça se règle dans l'onglet Automatisations.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIntegrationData(prev => ({ ...prev, respondToComments: !prev.respondToComments }))}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    integrationData.respondToComments ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow-md transform transition-transform" />
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onGoToAutomations?.()}
+                    disabled={!onGoToAutomations}
+                    className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold cursor-pointer disabled:opacity-40"
+                  >
+                    Ouvrir les automatisations
+                  </button>
+                  {integrationData.connected && (
+                    <button
+                      type="button"
+                      onClick={handleAuthorizeComments}
+                      disabled={isConnecting}
+                      className="px-3.5 py-2 rounded-xl border border-purple-300 bg-white hover:bg-purple-50 text-purple-700 text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      Autoriser les commentaires
+                    </button>
+                  )}
+                </div>
+                {integrationData.connected && (
+                  <p className="text-[11px] text-slate-400">« Autoriser les commentaires » ouvre Instagram une fois pour te demander la permission de gérer les commentaires de ton compte.</p>
+                )}
               </div>
 
             </div>
@@ -1109,16 +1106,18 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
             {/* Greeting Message & Tone Field */}
             <div className="space-y-4 pt-4 border-t border-slate-100">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Message de Premier Contact (Salutation de bienvenue)
+                <label htmlFor="instagram-greeting" className="block text-xs font-bold text-slate-700 mb-1">
+                  Message d'accueil
                 </label>
                 <input
+                  id="instagram-greeting"
                   type="text"
                   value={integrationData.customGreeting || ''}
                   onChange={(e) => setIntegrationData(prev => ({ ...prev, customGreeting: e.target.value }))}
-                  placeholder="Salam 👋 Bienvenue sur notre boutique ! Comment puis-je vous aider ?"
+                  placeholder="Ex. Salam 👋 Bienvenue chez {entreprise} ! Comment puis-je vous aider ?"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-purple-600"
                 />
+                <p className="mt-1 text-[11px] text-slate-400">Envoyé quand quelqu'un te dit simplement « bonjour » ou « salam ». Laisse vide : l'assistant salue tout seul, dans la langue choisie dans « Comportement ». Tu peux écrire {'{entreprise}'} pour afficher le nom de ton entreprise.</p>
               </div>
 
               <div className="flex justify-end">
@@ -1129,7 +1128,7 @@ Votre compte <strong>{integrationData.instagramUsername || '@telyaagency'}</stro
                   className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-purple-600/20 transition-all cursor-pointer disabled:opacity-50"
                 >
                   {saveLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Enregistrer les Règles</span>
+                  <span>Enregistrer</span>
                 </button>
               </div>
             </div>

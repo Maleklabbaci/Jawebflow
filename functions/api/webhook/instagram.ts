@@ -39,6 +39,15 @@ import { extractLeadFacts } from "../../_shared/lead-facts.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
 import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
 import { handleNotifyAccountMessage, notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from "../../_shared/merchant-notify";
+import { refreshInstagramTokenIfNeeded } from "../../_shared/ig-api.ts";
+import { forwardLeadInBackground } from "../../_shared/lead-webhook.ts";
+import { LEGACY_DEFAULT_GREETING, renderTemplate } from "../../_shared/ig-automation-core.ts";
+import {
+  processCommentEvent,
+  runDmAutomations,
+  handleAutomationPostback,
+  type IgAccount,
+} from "../../_shared/ig-automations.ts";
 import {
   supabaseGetPlanLimits,
   supabaseCountMonthlyConversations,
@@ -537,10 +546,14 @@ async function findIntegration(env: Env, instagramAccountId: string) {
         if (row && metaToken) {
           return {
             integrationId: String(row.user_id || row.instagram_user_id || instagramAccountId),
+            // user_id Supabase du marchand : clé des automatisations (absent du repli Firestore)
+            userId: row.user_id ? String(row.user_id) : undefined,
             accessToken: metaToken,
             igToken: metaToken,
             assistantId: row.assistant_id ? String(row.assistant_id) : undefined,
             autoReplyEnabled: row.auto_reply_enabled !== false,
+            respondToStories: row.respond_to_stories,
+            customGreeting: typeof row.custom_greeting === 'string' ? row.custom_greeting : undefined,
             lastConnectedAt: row.last_connected_at ? String(row.last_connected_at) : undefined,
           };
         }
@@ -621,52 +634,6 @@ async function findIntegration(env: Env, instagramAccountId: string) {
   return null;
 }
 
-/**
- * Meta limite la validité des jetons à ~60 jours (sécurité chez EUX, personne
- * n'y échappe). Règle d'or chez Meta : TANT QUE le jeton est encore valide,
- * on peut le RENOUVELER sans le client (badge -> nouveau badge de 60 jours).
- * => Dès qu'un DM arrive et que le jeton a plus de ~50 jours, on le renouvelle
- * automatiquement et on met à jour la base. Un bot utilisé régulièrement ne
- * meurt JAMAIS : le client ne se reconnecte jamais, le bot tourne seul.
- * (Un compte laissé SANS AUCUN message pendant 2 mois reste un cas mortel :
- * c'est couvert par l'alerte du rapport quotidien, pas par le code.) */
-const TOKEN_REFRESH_AGE_MS = 50 * 24 * 60 * 60 * 1000; // ~50 jours
-
-async function maybeRefreshInstagramToken(env: Env, integration: any): Promise<void> {
-  try {
-    if (!supabaseConfigured(env)) return;
-    const last = integration.lastConnectedAt ? Date.parse(integration.lastConnectedAt) : NaN;
-    if (Number.isFinite(last) && Date.now() - last < TOKEN_REFRESH_AGE_MS) return; // encore frais
-
-    const res = await fetchWithTimeout(
-      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(integration.igToken)}`,
-      { method: "GET" },
-      8000
-    );
-    if (!res.ok) {
-      console.warn(`[instagram] renouvellement du jeton refusé (HTTP ${res.status}) — le jeton actuel reste utilisé tant qu'il est valide.`);
-      return;
-    }
-    const data: any = await res.json().catch(() => ({}));
-    if (!data?.access_token) return;
-
-    integration.igToken = String(data.access_token);
-    integration.accessToken = String(data.access_token);
-    await supabaseRequest(env, `instagram_integrations?user_id=eq.${encodeURIComponent(integration.integrationId)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({
-        access_token: integration.igToken,
-        last_connected_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-    });
-    console.log("[instagram] jeton Meta renouvelé automatiquement (validité ~60 jours relancée, sans action du client).");
-  } catch (e: any) {
-    console.warn("[instagram] renouvellement du jeton impossible:", e?.message || e);
-  }
-}
-
 async function sendTypingOn(igToken: string, customerId: string) {
   try {
     await fetchWithTimeout(
@@ -731,6 +698,18 @@ async function pushPendingMessage(
 }
 
 /** Traitement d'un message privé : infos de l'entreprise ➜ IA ➜ réponse. */
+/**
+ * « Message de premier contact » du marchand : utilisé quand la personne dit
+ * simplement bonjour. Vide (ou texte pré-rempli d'origine) → salutation
+ * automatique dans la langue choisie. Un « merci » reste un « avec plaisir ».
+ */
+export function greetingReply(customGreeting: string | undefined, groupedText: string, config: any): string {
+  const custom = String(customGreeting || "").trim();
+  const isThanks = /merci|shukran|choukran|thanks|tslama|saha\b/i.test(groupedText);
+  if (!custom || custom === LEGACY_DEFAULT_GREETING || isThanks) return localGreeting(groupedText, config);
+  return renderTemplate(custom, { businessName: String(config?.businessName || "") }) || localGreeting(groupedText, config);
+}
+
 async function handleDirectMessage(env: Env, event: any) {
   const startedAt = Date.now();
   const customerId: string | undefined = event?.sender?.id;
@@ -763,10 +742,32 @@ async function handleDirectMessage(env: Env, event: any) {
   }
 
   // Le jeton approche l'expiration Meta ? Renouvelle-le en silence.
-  await maybeRefreshInstagramToken(env, integration);
+  await refreshInstagramTokenIfNeeded(env, integration);
+
+  // 🎯 AUTOMATISATIONS (style ManyChat) : mots-clés, réponses et mentions de
+  // stories. Elles passent AVANT l'IA et ne dépendent PAS du réglage « IA »
+  // ci-dessous : un marchand peut couper l'IA et garder ses règles.
+  if (integration.userId) {
+    const account: IgAccount = {
+      userId: integration.userId,
+      igUserId: instagramAccountId,
+      token: integration.igToken,
+      assistantId: integration.assistantId,
+      respondToStories: integration.respondToStories,
+      lastConnectedAt: integration.lastConnectedAt,
+    };
+    const verdict = await runDmAutomations(env, account, event);
+    if (verdict === "handled" || verdict === "ignored") return;
+  }
 
   if (!integration.autoReplyEnabled) {
     console.log("[instagram] réponses automatiques en pause pour", integration.integrationId);
+    return;
+  }
+
+  // 📖 Réponse à une story : réglage « Réponses aux réactions de stories » désactivé → l'IA se tait.
+  if (message?.reply_to?.story && integration.respondToStories === false) {
+    console.log("[instagram] réponse à une story ignorée (réglage désactivé par le marchand)");
     return;
   }
 
@@ -903,6 +904,7 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
         // 🔔 Un téléphone vient d'être capté -> alerte lead au marchand
         if (factsPatch.phone && !known?.data?.phone) {
           try { await notifyLead(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
+          try { await forwardLeadInBackground(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram", contactKey: customerId }); } catch { /* best-effort */ }
         }
       } else if (phoneInMsg) {
         const linkedId = `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200);
@@ -917,6 +919,7 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
         console.log("[instagram] nouvelle identité liée (téléphone) :", linkedId);
         // 🔔 Lead Instagram -> le marchand reçoit les détails en DM (compte JawebFlow)
         try { await notifyLead(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
+        try { await forwardLeadInBackground(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram", contactKey: customerId }); } catch { /* best-effort */ }
       }
     } catch (memErr: any) {
       console.warn("[instagram] mémoire client indisponible:", memErr?.message || memErr);
@@ -1037,7 +1040,7 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
       } catch { /* ignore */ }
     }
     console.log("[instagram] politesse -> réponse locale sans IA");
-    await sendInstagramMessage(integration.igToken, customerId, localGreeting(groupedText, config));
+    await sendInstagramMessage(integration.igToken, customerId, greetingReply(integration.customGreeting, groupedText, config));
     return;
   }
 
@@ -1116,6 +1119,23 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
   });
 }
 
+/** Un bouton d'une automatisation a été touché (ex. « ✅ C'est fait » après « suis mon compte »). */
+async function handlePostbackEvent(env: Env, event: any) {
+  const instagramAccountId: string | undefined = event?.recipient?.id;
+  if (!instagramAccountId || !event?.sender?.id) return;
+  const integration = await findIntegration(env, instagramAccountId);
+  if (!integration?.igToken || !integration.userId) return;
+  await refreshInstagramTokenIfNeeded(env, integration);
+  await handleAutomationPostback(env, {
+    userId: integration.userId,
+    igUserId: instagramAccountId,
+    token: integration.igToken,
+    assistantId: integration.assistantId,
+    respondToStories: integration.respondToStories,
+    lastConnectedAt: integration.lastConnectedAt,
+  }, event);
+}
+
 // ---------------------------------------------------------------------------
 // Handlers Cloudflare Pages
 // ---------------------------------------------------------------------------
@@ -1173,11 +1193,16 @@ export async function onRequestPost(context: {
     }
 
     const events: any[] = [];
+    const comments: Array<{ entryId: string; value: any }> = [];
     for (const entry of body.entry || []) {
       for (const messagingEvent of entry.messaging || []) events.push(messagingEvent);
+      // 💬 Commentaires sous les publications : entry[].changes[] { field: "comments", value }
+      for (const change of entry.changes || []) {
+        if (change?.field === "comments" && change?.value) comments.push({ entryId: String(entry.id || ""), value: change.value });
+      }
     }
 
-    console.log(`[instagram] webhook reçu : ${events.length} événement(s)`);
+    console.log(`[instagram] webhook reçu : ${events.length} événement(s), ${comments.length} commentaire(s)`);
     for (const ev of events) {
       const m = ev?.message;
       const kind = m
@@ -1186,15 +1211,33 @@ export async function onRequestPost(context: {
       console.log(`[instagram] événement: ${kind} — sender=${ev?.sender?.id} recipient=${ev?.recipient?.id}`);
     }
 
-    const work = (async () => {
+    // Messages privés (IA) et commentaires avancent EN PARALLÈLE : un commentaire
+    // ne doit jamais attendre les 4 s de regroupement d'un message privé.
+    const messagesWork = (async () => {
       for (const event of events) {
         try {
+          if (event?.postback) {
+            await handlePostbackEvent(context.env, event);
+            continue;
+          }
           await handleDirectMessage(context.env, event);
         } catch (e: any) {
           console.error("[instagram] traitement d'un message échoué:", e?.message || e);
         }
       }
     })();
+    const commentsWork = (async () => {
+      // 4 commentaires à la fois : assez vite pour un post viral, sans saturer Meta.
+      const queue = [...comments];
+      const worker = async () => {
+        for (let item = queue.shift(); item; item = queue.shift()) {
+          const outcome = await processCommentEvent(context.env, item.entryId, item.value);
+          console.log(`[instagram] commentaire ${item.value?.id || "?"} : ${outcome.status}${outcome.detail ? ` (${outcome.detail})` : ""}`);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+    })();
+    const work = Promise.all([messagesWork, commentsWork]);
 
     if (typeof context.waitUntil === "function") context.waitUntil(work);
     else await work;

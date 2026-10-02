@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowRight, Globe, MessageCircle, Instagram } from 'lucide-react';
+import { HeroChatPreview } from './HeroChatPreview';
 
 interface HeroSectionProps {
   onOpenAssistantModal: () => void;
@@ -85,6 +86,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Aperçu de conversation (grand écran) — remplace temporairement l'ancien robot animé */}
+      <HeroChatPreview />
     </section>
   );
 };
