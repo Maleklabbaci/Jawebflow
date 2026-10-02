@@ -153,5 +153,30 @@ begin
   end if;
 end $$;
 
+-- ----------------------------------------------------------------------------
+-- 6. « Parler à mon IA » : compteur de messages par jour et par marchand
+--    (plafond de sécurité contre les abus + suivi de la consommation de
+--    l'IA). FACULTATIF : sans cette table, le chat fonctionne quand même.
+-- ----------------------------------------------------------------------------
+create table if not exists public.copilot_usage (
+  user_id    uuid        not null references auth.users(id) on delete cascade,
+  day        date        not null,
+  messages   integer     not null default 0,
+  tokens_in  bigint      not null default 0,
+  tokens_out bigint      not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
+
+alter table public.copilot_usage enable row level security;
+
+drop policy if exists "service role copilot_usage" on public.copilot_usage;
+create policy "service role copilot_usage" on public.copilot_usage
+  for all to service_role using (true) with check (true);
+
+drop policy if exists "owner reads copilot_usage" on public.copilot_usage;
+create policy "owner reads copilot_usage" on public.copilot_usage
+  for select to authenticated using (user_id = auth.uid());
+
 -- Demande à Supabase de recharger sa liste de tables (prise en compte immédiate).
 notify pgrst, 'reload schema';

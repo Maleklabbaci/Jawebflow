@@ -4,6 +4,8 @@
  * traversent donc toute la pile : bouton → fetch → fonction serveur → base → moteur.
  */
 import { vi } from 'vitest';
+import * as copilot from '../../functions/api/copilot';
+import * as quickAdd from '../../functions/api/knowledge/quick-add';
 import * as automations from '../../functions/api/instagram/automations';
 import * as diagnostics from '../../functions/api/instagram/diagnostics';
 import * as integration from '../../functions/api/instagram/integration';
@@ -14,6 +16,10 @@ import { ENV, installFakes } from './fakes';
 type Handlers = Partial<Record<'GET' | 'POST' | 'PATCH' | 'DELETE', (ctx: any) => Promise<Response>>>;
 
 const ROUTES: Record<string, Handlers> = {
+  // « Parler à mon IA » : le vrai point d'entrée, avec une clé Gemini factice (le modèle lui-même est simulé dans chaque test).
+  '/api/copilot': { POST: (ctx) => copilot.onRequestPost({ ...ctx, env: { ...ctx.env, GEMINI_API_KEY: 'test-gemini-key' } }) },
+  // « Ajout éclair » de l'écran « Mes informations » (même clé Gemini factice).
+  '/api/knowledge/quick-add': { POST: (ctx) => quickAdd.onRequestPost({ ...ctx, env: { ...ctx.env, GEMINI_API_KEY: 'test-gemini-key' } }) },
   '/api/instagram/automations': { GET: automations.onRequestGet, POST: automations.onRequestPost, PATCH: automations.onRequestPatch, DELETE: automations.onRequestDelete },
   '/api/instagram/media': { GET: media.onRequestGet },
   '/api/instagram/diagnostics': { GET: diagnostics.onRequestGet, POST: diagnostics.onRequestPost },
