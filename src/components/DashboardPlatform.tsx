@@ -65,7 +65,7 @@ import { AccountProfileView } from './AccountProfileView';
 import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
 import { InstagramAutomations } from './InstagramAutomations';
-import { CopilotChat, CopilotLauncher } from './CopilotChat';
+import { CopilotChat } from './CopilotChat';
 import { StatCard } from './dashboard/StatCard';
 import type { CopilotSection } from './CopilotChat';
 import type { CopilotStatePatch } from '../lib/copilot-api';
@@ -1317,7 +1317,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* Logo */}
           <div className="flex items-start justify-between px-5 pb-2 pt-5">
             <div>
-              <span className="block bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-[21px] font-extrabold leading-none tracking-tight text-transparent">JawebFlow</span>
+              <img src="/jawebflow-logo.png" alt="JawebFlow" className="block h-auto w-[126px] object-contain object-left" />
               <span className="mt-1 block text-[10px] font-medium text-slate-400">Espace client</span>
             </div>
 
@@ -1339,19 +1339,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 <X className="w-4 h-4" />
               </button>
             </div>
-          </div>
-
-          {/* Parler à mon IA : l'entrée la plus visible du menu */}
-          <div className="px-3 pt-1">
-            <button
-              type="button"
-              id="nav-copilot"
-              onClick={openCopilot}
-              className="flex h-9 w-full items-center gap-2.5 rounded-full bg-[#efe9ff] px-3 text-[13px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#e5dcff] focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-200 cursor-pointer"
-            >
-              <Sparkles className="h-[18px] w-[18px]" />
-              <span className="flex-1 text-left">Parler à mon IA</span>
-            </button>
           </div>
 
           {/* Navigation : 6 entrées, libellés simples */}
@@ -1603,13 +1590,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
                     Tester une conversation
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openCopilot}
-                    className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-100"
-                  >
-                    <Sparkles className="h-4 w-4" /> Parler à mon IA
                   </button>
                 </div>
               </div>
@@ -3776,7 +3756,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           ================================================================= */}
       {user && (
         <>
-          {!copilotOpen && currentSection !== 'overview' && <CopilotLauncher onClick={openCopilot} unread={copilotUnread} />}
           <CopilotChat
             mode={currentSection === 'overview' ? 'page' : 'drawer'}
             homeHost={copilotHost}
