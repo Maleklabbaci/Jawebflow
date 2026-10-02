@@ -49,6 +49,13 @@ const MODE_LABELS: Record<TriggerType, Array<{ mode: MatchMode; label: string; h
   story_mention: [],
 };
 
+/** Un exemple de texte qui déclenche l'automatisation (le premier mot-clé), pour que l'aperçu soit parlant dès l'ouverture. */
+function suggestTestText(cfg: AutomationConfig, isComment: boolean): string {
+  const first = cfg.match.keywords[0];
+  if (first) return cfg.match.mode === 'exact' ? first : `${first} svp ?`;
+  return isComment ? 'Superbe publication 😍' : 'Bonjour !';
+}
+
 /** Insère `token` à l'endroit du curseur dans le champ `id` (ou à la fin). */
 function insertAtCursor(id: string, current: string, token: string): string {
   const el = document.getElementById(id) as HTMLTextAreaElement | null;
@@ -179,12 +186,12 @@ export function AutomationEditor({
   const patch = (p: Partial<AutomationConfig>) => setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
   // ── Essai en direct ───────────────────────────────────────────────────────
-  const [testText, setTestText] = useState('');
+  const [testText, setTestText] = useState(() => suggestTestText(initial.config, initial.triggerType === 'comment'));
   const [testTouched, setTestTouched] = useState(false);
   const [testUser, setTestUser] = useState('sara_dz');
   const [testFirst, setTestFirst] = useState('Sara');
   useEffect(() => {
-    if (!testTouched) setTestText(cfg.match.keywords[0] ? (cfg.match.mode === 'exact' ? cfg.match.keywords[0] : `${cfg.match.keywords[0]} svp ?`) : isComment ? 'Superbe publication 😍' : 'Bonjour !');
+    if (!testTouched) setTestText(suggestTestText(cfg, isComment));
   }, [cfg.match.keywords, cfg.match.mode, testTouched, isComment]);
 
   const sim = useMemo(

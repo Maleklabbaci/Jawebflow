@@ -9,22 +9,15 @@
  * reste : les règles passent en premier, l'IA prend le relais.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, History, Loader2, Pencil, Plus, Trash2, Zap } from 'lucide-react';
-import {
-  AUTOMATION_TEMPLATES,
-  TRIGGER_LABELS,
-  describeActions,
-  describeTrigger,
-  normalizeConfig,
-  type Automation,
-  type TriggerType,
-} from '../../functions/_shared/ig-automation-core';
+import { History, Loader2, Plus, Zap } from 'lucide-react';
+import { AUTOMATION_TEMPLATES, normalizeConfig, type Automation } from '../../functions/_shared/ig-automation-core';
 import { ApiError, igApi, type Diagnostics } from '../lib/ig-automations-api';
 import { AutomationEditor, type Draft } from './automations/AutomationEditor';
 import { HealthPanel } from './automations/HealthPanel';
+import { AutomationCard } from './automations/AutomationCard';
 import { HistoryPanel } from './automations/HistoryPanel';
 import { SetupBanner } from './automations/SetupBanner';
-import { Card, Notice, Toggle, ghostBtn, primaryBtn, secondaryBtn, timeAgo } from './automations/ui';
+import { Card, Notice, ghostBtn, primaryBtn, secondaryBtn } from './automations/ui';
 
 interface Props {
   businessName?: string;
@@ -36,8 +29,6 @@ interface Props {
 
 type View = 'list' | 'new' | 'edit' | 'history';
 type NoticeState = { kind: 'success' | 'error' | 'info' | 'warn'; text: string } | null;
-
-const TRIGGER_EMOJI: Record<TriggerType, string> = { comment: '💬', dm_keyword: '🔑', story_reply: '📖', story_mention: '📣' };
 
 export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = false, onGoToInstagram }) => {
   const [view, setView] = useState<View>('list');
@@ -330,60 +321,18 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
               <ul className="space-y-3" aria-label="Tes automatisations">
                 {automations.map((a) => (
                   <li key={a.id}>
-                    <Card className={`p-4 sm:p-5 ${a.enabled ? '' : 'bg-slate-50/60'}`}>
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <span className="mt-0.5 text-2xl" aria-hidden>{TRIGGER_EMOJI[a.triggerType]}</span>
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-semibold text-slate-900">{a.name}</h3>
-                            <p className="mt-0.5 text-xs text-slate-500">{TRIGGER_LABELS[a.triggerType].short}</p>
-                            <p className="mt-2 text-sm text-slate-700">{describeTrigger(a)}</p>
-                            <p className="mt-0.5 text-sm text-slate-500">{describeActions(a)}</p>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className={`hidden text-xs font-medium sm:inline ${a.enabled ? 'text-emerald-700' : 'text-slate-400'}`}>{a.enabled ? 'Active' : 'En pause'}</span>
-                          <Toggle checked={a.enabled} busy={busy[a.id]} onChange={(v) => toggle(a, v)} label={`${a.enabled ? 'Mettre en pause' : 'Activer'} « ${a.name} »`} />
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                        <p className="text-xs text-slate-500" data-testid={`stats-${a.id}`}>
-                          {a.stats.triggered === 0 ? (
-                            'Pas encore déclenchée'
-                          ) : (
-                            <>
-                              <strong className="text-slate-800">{a.stats.triggered}</strong> déclenchement{a.stats.triggered > 1 ? 's' : ''}
-                              {a.config.dm.enabled && <> · <strong className="text-slate-800">{a.stats.dms}</strong> message{a.stats.dms > 1 ? 's' : ''} privé{a.stats.dms > 1 ? 's' : ''}</>}
-                              {a.config.publicReply.enabled && <> · <strong className="text-slate-800">{a.stats.publicReplies}</strong> réponse{a.stats.publicReplies > 1 ? 's' : ''} publique{a.stats.publicReplies > 1 ? 's' : ''}</>}
-                              {a.stats.lastTriggeredAt && <> · {timeAgo(a.stats.lastTriggeredAt)}</>}
-                            </>
-                          )}
-                          {a.stats.errors > 0 && (
-                            <button type="button" onClick={() => { setHistoryFor(a.id); setView('history'); }} className="ml-2 rounded-full bg-red-100 px-2 py-0.5 font-semibold text-red-700 hover:bg-red-200">
-                              {a.stats.errors} erreur{a.stats.errors > 1 ? 's' : ''} — voir pourquoi
-                            </button>
-                          )}
-                        </p>
-
-                        {confirmDelete === a.id ? (
-                          <div className="flex items-center gap-2" role="group" aria-label="Confirmer la suppression">
-                            <span className="text-xs font-medium text-red-700">Supprimer pour de bon ?</span>
-                            <button type="button" onClick={() => remove(a)} disabled={busy[a.id]} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
-                              {busy[a.id] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Oui, supprimer'}
-                            </button>
-                            <button type="button" onClick={() => setConfirmDelete(null)} className={ghostBtn}>Annuler</button>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-1">
-                            <button type="button" onClick={() => edit(a)} className={ghostBtn} aria-label={`Modifier « ${a.name} »`}><Pencil className="h-3.5 w-3.5" /> Modifier</button>
-                            <button type="button" onClick={() => { setHistoryFor(a.id); setView('history'); }} className={ghostBtn} aria-label={`Historique de « ${a.name} »`}><History className="h-3.5 w-3.5" /> Historique</button>
-                            <button type="button" onClick={() => duplicate(a)} disabled={busy[a.id]} className={ghostBtn} aria-label={`Dupliquer « ${a.name} »`}><Copy className="h-3.5 w-3.5" /> Dupliquer</button>
-                            <button type="button" onClick={() => setConfirmDelete(a.id)} className={`${ghostBtn} hover:bg-red-50! hover:text-red-700!`} aria-label={`Supprimer « ${a.name} »`}><Trash2 className="h-3.5 w-3.5" /> Supprimer</button>
-                          </div>
-                        )}
-                      </div>
-                    </Card>
+                    <AutomationCard
+                      a={a}
+                      busy={Boolean(busy[a.id])}
+                      confirmingDelete={confirmDelete === a.id}
+                      onToggle={(v) => toggle(a, v)}
+                      onEdit={() => edit(a)}
+                      onHistory={() => { setHistoryFor(a.id); setView('history'); }}
+                      onDuplicate={() => duplicate(a)}
+                      onAskDelete={() => setConfirmDelete(a.id)}
+                      onCancelDelete={() => setConfirmDelete(null)}
+                      onDelete={() => remove(a)}
+                    />
                   </li>
                 ))}
               </ul>

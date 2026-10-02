@@ -92,43 +92,53 @@ export function HistoryPanel({
       <Card className="overflow-hidden">
         {loading && !events ? (
           <p className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</p>
-        ) : events && events.length === 0 ? (
-          <div className="px-6 py-14 text-center">
-            <p className="text-2xl">🕒</p>
-            <p className="mt-2 text-sm font-medium text-slate-700">Rien pour l’instant</p>
-            <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
-              Dès que quelqu’un déclenchera une de tes automatisations, tu verras ici ce qui a été envoyé, et si Instagram l’a bien accepté.
-            </p>
-          </div>
         ) : (
-          <ul className="divide-y divide-slate-100" aria-label="Historique des déclenchements">
-            {(events || []).map((e) => (
-              <li key={e.id} className="space-y-1.5 px-4 py-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-slate-900">
-                    <span className="font-semibold">{e.username ? `@${e.username}` : 'Un contact'}</span>
-                    <span className="text-slate-400"> · </span>
-                    <span className="text-slate-500">{e.automationName || 'Automatisation supprimée'}</span>
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400" title={new Date(e.createdAt).toLocaleString('fr-FR')}>{timeAgo(e.createdAt)}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${OUTCOME[e.outcome]?.cls || OUTCOME.processing.cls}`}>
-                      {OUTCOME[e.outcome]?.label || e.outcome}
-                    </span>
-                  </div>
-                </div>
-                {e.inputText && <p className="text-sm text-slate-600">« {e.inputText} »</p>}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <StatusDot label="Réponse publique" status={e.publicReplyStatus} />
-                  <StatusDot label="Message privé" status={e.dmStatus} />
-                </div>
-                {e.error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800">{e.error}</p>}
-                {!e.error && e.note && <p className="text-xs text-slate-500">{e.note}</p>}
-              </li>
-            ))}
-          </ul>
+          <HistoryList events={events || []} />
         )}
       </Card>
     </div>
+  );
+}
+
+/** La liste elle-même (sans chargement) : réutilisée telle quelle par l'aperçu statique. */
+export function HistoryList({ events }: { events: AutomationEvent[] }) {
+  if (events.length === 0) {
+    return (
+      <div className="px-6 py-14 text-center">
+        <p className="text-2xl">🕒</p>
+        <p className="mt-2 text-sm font-medium text-slate-700">Rien pour l’instant</p>
+        <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
+          Dès que quelqu’un déclenchera une de tes automatisations, tu verras ici ce qui a été envoyé, et si Instagram l’a bien accepté.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ul className="divide-y divide-slate-100" aria-label="Historique des déclenchements">
+      {events.map((e) => (
+        <li key={e.id} className="space-y-1.5 px-4 py-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-900">
+              <span className="font-semibold">{e.username ? `@${e.username}` : 'Un contact'}</span>
+              <span className="text-slate-400"> · </span>
+              <span className="text-slate-500">{e.automationName || 'Automatisation supprimée'}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400" title={new Date(e.createdAt).toLocaleString('fr-FR')}>{timeAgo(e.createdAt)}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${OUTCOME[e.outcome]?.cls || OUTCOME.processing.cls}`}>
+                {OUTCOME[e.outcome]?.label || e.outcome}
+              </span>
+            </div>
+          </div>
+          {e.inputText && <p className="text-sm text-slate-600">« {e.inputText} »</p>}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <StatusDot label="Réponse publique" status={e.publicReplyStatus} />
+            <StatusDot label="Message privé" status={e.dmStatus} />
+          </div>
+          {e.error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800">{e.error}</p>}
+          {!e.error && e.note && <p className="text-xs text-slate-500">{e.note}</p>}
+        </li>
+      ))}
+    </ul>
   );
 }
