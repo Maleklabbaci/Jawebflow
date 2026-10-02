@@ -1,6 +1,7 @@
 import { subscribeToInstagramMessages } from "../subscribe";
 import { supabaseConfigured, supabaseRequest, verifySupabaseIdToken } from "../../../_shared/supabase.ts";
 import { registerNotifyAccount, getNotifyConfig } from "../../../_shared/merchant-notify.ts";
+import { IG_GRAPH_VERSION } from "../../../_shared/ig-api.ts";
 
 interface Env {
   INSTAGRAM_APP_ID?: string;
@@ -95,7 +96,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     if (!tokenResponse.ok || !tokenData.access_token) {
       console.warn("[instagram][exchange] Endpoint 1 failed, trying endpoint 2...");
       const form2 = new URLSearchParams(form);
-      tokenResponse = await fetch("https://graph.instagram.com/v21.0/oauth/access_token", {
+      tokenResponse = await fetch(`https://graph.instagram.com/${IG_GRAPH_VERSION}/oauth/access_token`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form2.toString()
@@ -141,8 +142,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       });
 
       const llCandidates = [
-        `https://graph.instagram.com/v21.0/access_token?${llParams.toString()}`,
-        `https://graph.instagram.com/access_token?${llParams.toString()}`,
+        `https://graph.instagram.com/${IG_GRAPH_VERSION}/access_token?${llParams.toString()}`,
       ];
 
       for (const llUrl of llCandidates) {
@@ -190,13 +190,10 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     // ✅ Use GET with query parameters only
     const profileCandidates: ProfileCandidate[] = [
       {
-        url: `https://graph.instagram.com/v21.0/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`
+        url: `https://graph.instagram.com/${IG_GRAPH_VERSION}/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`
       },
       {
-        url: `https://graph.instagram.com/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`
-      },
-      {
-        url: `https://graph.instagram.com/v21.0/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`
+        url: `https://graph.instagram.com/${IG_GRAPH_VERSION}/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`
       }
     ];
 
