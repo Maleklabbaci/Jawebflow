@@ -81,12 +81,13 @@ export interface LoadedState {
 export async function loadState(env: any, uid: string, assistantRow: Record<string, any>): Promise<LoadedState> {
   const config = supabaseAssistantRowToConfig(assistantRow);
 
-  let integ: any = null;
-  try { integ = await supabaseGetInstagramIntegration(env, uid); } catch { /* pas d'Instagram : on continue */ }
+  // Les deux lectures sont indépendantes : en parallèle (gagne un aller-retour vers la base à chaque message).
+  const [integ, listed]: [any, Awaited<ReturnType<typeof listAutomations>>] = await Promise.all([
+    supabaseGetInstagramIntegration(env, uid).catch(() => null), // pas d'Instagram : on continue
+    listAutomations(env, uid),
+  ]);
   const connected = Boolean(integ && integ.connected !== false && integ.accessToken);
   const greetingRaw = String(integ?.customGreeting || '').trim();
-
-  const listed = await listAutomations(env, uid);
   const automations = listed.ok === true ? listed.value : null;
 
   return {

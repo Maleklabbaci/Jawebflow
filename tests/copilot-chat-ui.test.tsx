@@ -224,6 +224,22 @@ describe('« réponds aux commentaires comme ça » — création puis activatio
     expect(within(card).queryByRole('button', { name: /Voir les automatisations/ })).toBeNull();
   });
 
+  it('si l’IA active elle-même l’automatisation (« oui, active »), le bouton « Activer maintenant » de la carte précédente disparaît', async () => {
+    createTurn();
+    mount();
+    await say('crée la réponse prix');
+    await screen.findByText(/elle est en pause/);
+    const autoId = be.supabase.rows('ig_automations')[0].id;
+    expect(screen.getByRole('button', { name: /Activer maintenant/ })).toBeTruthy();
+
+    gemini.next(modelReply(functionCall('set_automation_enabled', { id: autoId, enabled: true })), modelReply(textPart('C’est activé ✅')));
+    await say('oui active');
+    await screen.findByText('C’est activé ✅');
+    expect(be.supabase.rows('ig_automations')[0].enabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Activer maintenant/ })).toBeNull();
+    expect(screen.getAllByText('Activée').length).toBeGreaterThan(0);
+  });
+
   it('une activation refusée (automatisation incomplète) affiche le motif en français sur la carte', async () => {
     createTurn();
     mount();

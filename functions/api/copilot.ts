@@ -119,13 +119,13 @@ export async function onRequestPost(context: Ctx) {
   // Plafond du jour (durable) : seulement si la table du compteur existe.
   const day = dayKey();
   const max = dailyMax(env);
-  const usage = await readUsage(env, user.uid, day);
+  const startedAt = Date.now();
+  // Compteur du jour et état de l'entreprise se lisent en même temps (gain de temps à chaque message).
+  const [usage, state] = await Promise.all([readUsage(env, user.uid, day), loadState(env, user.uid, found.data)]);
   if (usage && usage.messages >= max) {
     return json({ error: `Tu as atteint la limite de ${max} messages par jour avec ton IA. Elle sera de nouveau disponible demain 🙂`, kind: 'daily_limit' }, 429);
   }
 
-  const startedAt = Date.now();
-  const state = await loadState(env, user.uid, found.data);
   const runner = new CopilotRunner({ env, uid: user.uid, assistantId, state });
 
   const loop = await runToolLoop({

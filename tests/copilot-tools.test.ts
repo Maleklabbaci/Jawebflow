@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { applyOp, CopilotRunner, loadState } from '../functions/_shared/copilot-tools';
 import { COPILOT_LIMITS } from '../functions/_shared/copilot-core';
+import { behaviorBlock, compactKnowledgeNotes, officialInfoBlock } from '../functions/_shared/prompt';
 import { ENV, USER_ID, installFakes, seedAutomation, seedMerchant } from './helpers/fakes';
 
 let fx: ReturnType<typeof installFakes>;
@@ -371,6 +372,41 @@ describe('automatisations Instagram (commentaires, messages…)', () => {
     const r = await runner();
     expect(((await r.execute('list_instagram_posts', {})) as any).error).toMatch(/pas encore connecté/);
     expect(((await r.execute('create_automation', { ...priceArgs, post_id: '17900000000000001' })) as any).error).toMatch(/pas encore connecté/);
+  });
+});
+
+describe('ce que l’IA écrit est EXACTEMENT ce que lit le robot des clients (site et Instagram)', () => {
+  it('comportement, infos officielles et fiches passent par les mêmes blocs de consigne que le chat des clients', async () => {
+    seed();
+    const r = await runner();
+    await r.execute('set_behavior', { language: 'darija_dz', length: 'short', website_mentions: 'never', add_rules: ['Tutoie toujours le client.'] });
+    await r.execute('set_business_info', { phone: '0555 12 34 56', hours: '9h–18h', closed_days: 'vendredi' });
+    await r.execute('add_knowledge', { title: 'Coque Spiderman', content: 'Coque Spiderman — iPhone 13 à 16 — 1900 DA', category: 'produits' });
+    await r.execute('add_knowledge', { title: 'Livraison', content: 'Livraison 48h — 600 DA', category: 'livraison' });
+
+    const config = { ...savedConfig(), knowledgeNotes: savedNotes() };
+    const behavior = behaviorBlock(config.behavior);
+    expect(behavior).toMatch(/100% ALGÉRIEN/);
+    expect(behavior).toMatch(/réponds COURT/);
+    expect(behavior).toMatch(/ne mentionne JAMAIS le site web/);
+    expect(behavior).toContain('Tutoie toujours le client.');
+
+    const official = officialInfoBlock(config);
+    expect(official).toContain('Téléphone : 0555 12 34 56');
+    expect(official).toContain('Horaires : 9h–18h');
+    expect(official).toContain('Jours fermés : vendredi');
+
+    const knowledge = compactKnowledgeNotes(config.knowledgeNotes, 'combien coûte la coque spiderman ?');
+    expect(knowledge).toContain('Coque Spiderman — iPhone 13 à 16 — 1900 DA');
+    expect(knowledge).toContain('Livraison 48h — 600 DA'); // « livraison » fait partie des fiches toujours lues
+  });
+
+  it('une fiche mise de côté n’est plus lue par le robot (sans être supprimée)', async () => {
+    seed({ notes: [note({ id: 'n1', title: 'Promo été', content: 'Promo -20 %', category: 'tarifs' })] });
+    const r = await runner();
+    await r.execute('update_knowledge', { id: 'n1', enabled: false });
+    expect(savedNotes()).toHaveLength(1);
+    expect(compactKnowledgeNotes(savedNotes(), 'promo')).toBe('');
   });
 });
 

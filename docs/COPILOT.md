@@ -89,6 +89,8 @@ qu'elle n'écrase jamais ce que l'IA vient d'écrire en base :
 
 `npm test` — `copilot-core` (logique pure), `copilot-tools` (actions réelles + annulations sur une fausse base),
 `copilot-endpoint` (boucle complète avec un **faux Gemini** : protocole, signatures, pannes, quotas, sécurité),
+`copilot-e2e` (la phrase du marchand → l'automatisation créée → un vrai commentaire reçu par le webhook → la réponse
+publique et le message privé partent ; en pause, il se tait),
 `copilot-chat-ui` (fenêtre de chat), `copilot-dashboard` (chat dans le tableau de bord : écrans mis à jour,
 sauvegarde automatique non écrasante).
 

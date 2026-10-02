@@ -16,6 +16,7 @@ import {
   mergeRules,
   normalizeBehavior,
   normalizeBusinessInfo,
+  revertToBehaviorPatch as revertToBehaviorPatchOf,
   searchNotes,
 } from '../functions/_shared/copilot-core';
 import type { Behavior, CopilotSnapshot, Note } from '../functions/_shared/copilot-core';
@@ -55,6 +56,19 @@ describe('buildNote — fiches « Mes informations »', () => {
     expect(unknown.ok === true && unknown.note.category).toBe('general');
     const legacy = buildNote({ title: 't2', content: 'c2' }, { id: 'a', now: NOW, existing: note({ category: 'learned' }) });
     expect(legacy.ok === true && legacy.note.category).toBe('learned');
+  });
+
+  it('pardonne les variantes de catégorie (« Produit », « prix », « Garantie ») sans rien inventer', () => {
+    const cat = (c: string) => {
+      const r = buildNote({ title: 't', content: 'c', category: c }, { id: 'a', now: NOW });
+      return r.ok === true ? r.note.category : null;
+    };
+    expect(cat('Produit')).toBe('produits');
+    expect(cat('prix')).toBe('tarifs');
+    expect(cat('Garantie')).toBe('garanties');
+    expect(cat('Présentation')).toBe('general');
+    expect(cat('livraison')).toBe('livraison');
+    expect(cat('n’importe quoi')).toBe('general');
   });
 
   it('une mise à jour garde l’id, la date de création et les champs inconnus de la fiche', () => {
@@ -168,6 +182,16 @@ describe('applyBehaviorPatch — « Comportement »', () => {
       expect(r.behavior.autoInsights).toBe('Les clients demandent le prix.');
       expect(r.changes).toEqual(['règle ajoutée : « Ne parle jamais de politique. »', 'règle retirée : « Tutoie le client. »']);
     }
+  });
+
+  it('annuler une suppression remet une LONGUE règle saisie à la main telle quelle (sans la raccourcir)', () => {
+    const long = `Quand le client demande un prix ${'très précis '.repeat(30)}réponds poliment.`; // > 200 caractères
+    expect(long.length).toBeGreaterThan(300);
+    const cur = normalizeBehavior({ customRules: `${long}\nTutoie le client.` });
+    const removed = applyBehaviorPatch(cur, { remove_rules: ['très précis'] });
+    expect(removed.ok && removed.behavior.customRules).toBe('Tutoie le client.');
+    const back = applyBehaviorPatch((removed as any).behavior, revertToBehaviorPatchOf((removed as any).revert), { exactRemove: true });
+    expect(back.ok && back.behavior.customRules.split('\n')).toContain(long);
   });
 
   it('interrupteurs oui/non', () => {

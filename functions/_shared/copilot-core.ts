@@ -197,6 +197,17 @@ const SITE_SYNONYMS: Record<string, (typeof SITE_MENTIONS)[number]> = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Fiches « Mes informations »
 // ─────────────────────────────────────────────────────────────────────────────
+/** Variantes courantes qu'une IA peut écrire à la place d'une catégorie exacte. */
+const CATEGORY_SYNONYMS: Record<string, string> = {
+  produit: 'produits', article: 'produits', articles: 'produits', catalogue: 'produits',
+  tarif: 'tarifs', prix: 'tarifs', promo: 'tarifs', promos: 'tarifs', promotion: 'tarifs', promotions: 'tarifs',
+  livraisons: 'livraison', expedition: 'livraison',
+  garantie: 'garanties', retour: 'garanties', retours: 'garanties', politique: 'garanties', politiques: 'garanties',
+  lien: 'liens', site: 'liens', reseaux: 'liens',
+  service: 'services', presentation: 'general', apropos: 'general', autre: 'custom', autres: 'custom',
+  question: 'faq', questions: 'faq', horaires: 'contact', adresse: 'contact', telephone: 'contact',
+};
+
 export type NoteCheck = { ok: true; note: Note } | { ok: false; error: string };
 
 /**
@@ -214,10 +225,11 @@ export function buildNote(raw: any, opts: { id: string; now: string; existing?: 
     return { ok: false, error: `Contenu trop long (${COPILOT_LIMITS.maxNoteContent} caractères max) : découpe en plusieurs fiches plus courtes.` };
   }
 
-  const wanted = String(raw?.category ?? opts.existing?.category ?? '').toLowerCase();
-  const known = (NOTE_CATEGORIES as readonly string[]).includes(wanted);
-  const legacy = /^[a-z_]{2,20}$/.test(wanted) && (opts.allowAnyCategory === true || wanted === String(opts.existing?.category || '').toLowerCase());
-  const category = known || legacy ? wanted : 'general';
+  const asked = String(raw?.category ?? opts.existing?.category ?? '').toLowerCase().trim();
+  const mapped = (NOTE_CATEGORIES as readonly string[]).includes(asked) ? asked : CATEGORY_SYNONYMS[normalizeText(asked).replace(/\s+/g, '')] || asked;
+  const known = (NOTE_CATEGORIES as readonly string[]).includes(mapped);
+  const legacy = /^[a-z_]{2,20}$/.test(asked) && (opts.allowAnyCategory === true || asked === String(opts.existing?.category || '').toLowerCase());
+  const category = known ? mapped : legacy ? asked : 'general';
 
   const enabled = asBool(raw?.enabled) ?? opts.existing?.enabled ?? true;
   return {
@@ -321,7 +333,7 @@ export type RulesResult =
  * Ajoute / retire des règles personnalisées (une par ligne). Retirer : le texte
  * (ou un morceau distinctif) de la règle, ou son numéro dans la liste.
  */
-export function mergeRules(current: unknown, add: string[], remove: string[], opts: { exactRemove?: boolean } = {}): RulesResult {
+export function mergeRules(current: unknown, add: string[], remove: string[], opts: { exactRemove?: boolean; maxRuleLen?: number } = {}): RulesResult {
   let rules = parseRules(current);
   const removed: string[] = [];
   const added: string[] = [];
@@ -350,7 +362,7 @@ export function mergeRules(current: unknown, add: string[], remove: string[], op
   }
 
   for (const a of add) {
-    const rule = cleanText(a, COPILOT_LIMITS.maxRule).replace(/\s*\n+\s*/g, ' ');
+    const rule = cleanText(a, opts.maxRuleLen ?? COPILOT_LIMITS.maxRule).replace(/\s*\n+\s*/g, ' ');
     if (rule.length < 5) continue;
     const key = titleKey(rule);
     if (rules.some((l) => titleKey(l) === key)) continue;
@@ -416,10 +428,12 @@ export function applyBehaviorPatch(current: Behavior, input: BehaviorPatchInput,
     changes.push(stopCmd ? 'commande « stop » activée' : 'commande « stop » désactivée');
   }
 
-  const add = asStringList(input.add_rules, 10, COPILOT_LIMITS.maxRule);
-  const remove = asStringList(input.remove_rules, 10, COPILOT_LIMITS.maxRule);
+  // En annulation, une règle remise comme avant ne doit jamais être raccourcie (même une longue règle saisie à la main).
+  const ruleMax = opts.exactRemove ? COPILOT_LIMITS.maxRulesTotal : COPILOT_LIMITS.maxRule;
+  const add = asStringList(input.add_rules, 10, ruleMax);
+  const remove = asStringList(input.remove_rules, 10, ruleMax);
   if (add.length || remove.length) {
-    const merged = mergeRules(current.customRules, add, remove, { exactRemove: opts.exactRemove });
+    const merged = mergeRules(current.customRules, add, remove, { exactRemove: opts.exactRemove, maxRuleLen: ruleMax });
     if (merged.ok === false) return { ok: false, error: merged.error, rules: merged.rules };
     next.customRules = merged.text;
     revert.removeRules = merged.added;

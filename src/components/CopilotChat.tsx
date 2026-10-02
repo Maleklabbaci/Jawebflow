@@ -286,7 +286,18 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
       assistantIdRef.current = id;
       const res = await copilotApi.ask(id, toHistory(base));
       const actions: ActionView[] = (res.actions || []).map((a) => ({ ...a, state: 'idle' as const }));
-      commit([...messagesRef.current, { id: newId(), role: 'assistant', text: res.reply || 'C’est fait ✅', ...(actions.length ? { actions } : {}) }]);
+      // Si l'IA vient d'ACTIVER une automatisation (« oui, active »), le bouton « Activer maintenant » d'une carte plus
+      // ancienne n'a plus lieu d'être : on la marque comme activée.
+      const nowActive = new Set(
+        actions.flatMap((a) => (a.tool === 'set_automation_enabled' && a.undo?.type === 'automation_set_enabled' && a.undo.enabled === false ? [a.undo.automationId] : [])),
+      );
+      const previous = nowActive.size
+        ? messagesRef.current.map((m) => ({
+            ...m,
+            actions: m.actions?.map((a) => (a.activate && nowActive.has(a.activate.automationId) && a.state === 'idle' ? { ...a, state: 'activated' as const } : a)),
+          }))
+        : messagesRef.current;
+      commit([...previous, { id: newId(), role: 'assistant', text: res.reply || 'C’est fait ✅', ...(actions.length ? { actions } : {}) }]);
       if (res.state && Object.keys(res.state).length) propsRef.current.onStatePatch(res.state);
       propsRef.current.onReply?.();
     } catch (e: any) {
@@ -378,7 +389,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
       aria-label="Discussion avec mon IA"
       hidden={!open}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
-      className={`${open ? 'flex' : 'hidden'} fixed inset-0 z-[60] flex-col bg-white sm:inset-auto sm:bottom-4 sm:right-4 sm:top-4 sm:w-[430px] sm:rounded-2xl sm:border sm:border-slate-200 sm:shadow-2xl`}
+      className={`${open ? 'flex' : 'hidden'} fixed inset-0 z-[60] flex-col bg-white sm:inset-auto sm:bottom-4 sm:right-4 sm:top-[4.75rem] sm:w-[430px] sm:rounded-2xl sm:border sm:border-slate-200 sm:shadow-2xl`}
     >
       {/* En-tête */}
       <div className="flex items-center gap-3 border-b border-slate-200 bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-3 text-white sm:rounded-t-2xl">
