@@ -114,24 +114,44 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       .split(",").map((p: string) => p.trim()).filter(Boolean);
 
     // 4. Échange contre un jeton d'accès LONGUE DURÉE (valide 60 jours).
-    // Deux chemins selon le type d'app — non versionné et versionné.
+    // ✅ FIXED: Use POST method with form-encoded body, not GET with query parameters
     let longLivedOk = false;
     try {
+      const llForm = new URLSearchParams({
+        grant_type: "ig_exchange_token",
+        client_secret: appSecret,
+        access_token: accessToken
+      });
+
       const llCandidates = [
-        `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(appSecret)}&access_token=${encodeURIComponent(accessToken)}`,
-        `https://graph.instagram.com/v21.0/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(appSecret)}&access_token=${encodeURIComponent(accessToken)}`,
+        "https://graph.instagram.com/v21.0/access_token",
+        "https://graph.instagram.com/access_token",
       ];
+
       for (const llUrl of llCandidates) {
-        const longLivedResponse = await fetch(llUrl);
-        const longLivedData = await longLivedResponse.json().catch(() => ({})) as any;
-        if (longLivedResponse.ok && longLivedData.access_token) {
-          accessToken = String(longLivedData.access_token);
-          longLivedOk = true;
-          break;
+        try {
+          const longLivedResponse = await fetch(llUrl, {
+            method: "POST",  // ✅ EXPLICIT POST
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: llForm.toString()  // ✅ Pass form data as body
+          });
+          const longLivedData = await longLivedResponse.json().catch(() => ({})) as any;
+          
+          if (longLivedResponse.ok && longLivedData.access_token) {
+            accessToken = String(longLivedData.access_token);
+            longLivedOk = true;
+            console.log("[instagram][exchange] jeton longue durée obtenu :", llUrl.includes("v21.0") ? "v21.0" : "non-versionné");
+            break;
+          }
+          console.warn("[instagram][exchange] jeton longue durée refusé :", JSON.stringify(longLivedData).slice(0, 200));
+        } catch (llFetchErr: any) {
+          console.warn("[instagram][exchange] erreur lors de la tentative longue durée :", llFetchErr?.message);
         }
-        console.warn("[instagram][exchange] jeton longue durée refusé :", JSON.stringify(longLivedData).slice(0, 200));
       }
-    } catch (_) { /* on conserve le token court */ }
+    } catch (llErr: any) {
+      console.warn("[instagram][exchange] erreur bloc longue durée :", llErr?.message);
+    }
+    
     console.log("[instagram][exchange] jeton :", longLivedOk ? "LONGUE DURÉE (60 jours)" : "COURTE DURÉE (à relier sous 1 h)");
 
     // 5. Récupération des informations du profil.
@@ -142,24 +162,82 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     //  - « id »      : ID applicatif (apps Facebook Login)
     //  - « user_id » : l'ID PROFESSIONNEL utilisé par la messagerie/webhooks
     // (les DM entrants arrivent avec recipient = user_id).
+    
     const profileFields = "user_id,username,name,profile_picture_url";
-    const profileCandidates = [
-      `https://graph.instagram.com/v21.0/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`,
-      `https://graph.instagram.com/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`,
-      `https://graph.instagram.com/v21.0/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`,
+    
+    // ✅ FIXED: Profile endpoints support GET with query parameters (correct)
+    // If these fail, we try POST variants as fallback
+    interface ProfileCandidate {
+      url: string;
+      method: "GET" | "POST";
+      body?: URLSearchParams;
+    }
+    
+    const profileCandidates: ProfileCandidate[] = [
+      // GET variants (primary)
+      {
+        url: `https://graph.instagram.com/v21.0/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`,
+        method: "GET"
+      },
+      {
+        url: `https://graph.instagram.com/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`,
+        method: "GET"
+      },
+      // Simplified GET variant
+      {
+        url: `https://graph.instagram.com/v21.0/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`,
+        method: "GET"
+      },
+      // POST variants as fallback (if GET consistently fails)
+      {
+        url: "https://graph.instagram.com/v21.0/me",
+        method: "POST",
+        body: new URLSearchParams({
+          fields: profileFields,
+          access_token: accessToken
+        })
+      },
+      {
+        url: "https://graph.instagram.com/me",
+        method: "POST",
+        body: new URLSearchParams({
+          fields: profileFields,
+          access_token: accessToken
+        })
+      }
     ];
+
     let profile: any = null;
     const profileErrors: string[] = [];
-    for (const pUrl of profileCandidates) {
-      const profileResponse = await fetch(pUrl);
-      const pData = await profileResponse.json().catch(() => ({})) as any;
-      if (profileResponse.ok && (pData.id || pData.user_id)) {
-        profile = pData;
-        break;
+    
+    for (const candidate of profileCandidates) {
+      try {
+        const fetchOptions: RequestInit = {
+          method: candidate.method
+        };
+        
+        if (candidate.method === "POST" && candidate.body) {
+          fetchOptions.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+          fetchOptions.body = candidate.body.toString();
+        }
+        
+        const profileResponse = await fetch(candidate.url, fetchOptions);
+        const pData = await profileResponse.json().catch(() => ({})) as any;
+        
+        if (profileResponse.ok && (pData.id || pData.user_id)) {
+          profile = pData;
+          console.log("[instagram][exchange] profil récupéré via :", candidate.method, candidate.url.split("?")[0]);
+          break;
+        }
+        
+        const pErr = pData?.error?.message || `HTTP ${profileResponse.status}`;
+        profileErrors.push(pErr);
+        console.warn("[instagram][exchange] profil refusé :", candidate.method, pErr);
+      } catch (pFetchErr: any) {
+        const pErr = pFetchErr?.message || "Erreur réseau";
+        profileErrors.push(pErr);
+        console.warn("[instagram][exchange] erreur réseau profil :", pErr);
       }
-      const pErr = pData?.error?.message || `HTTP ${profileResponse.status}`;
-      profileErrors.push(pErr);
-      console.warn("[instagram][exchange] profil refusé :", pErr);
     }
 
     // 💡 Profil best-effort : même si Meta le refuse, on continue avec le
