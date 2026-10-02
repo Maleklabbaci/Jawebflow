@@ -1,27 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Instagram, 
-  CheckCircle2, 
-  AlertCircle, 
-  RefreshCw, 
-  ExternalLink, 
-  ShieldCheck, 
-  MessageSquare, 
-  Sparkles, 
-  ArrowRight, 
-  Check, 
-  Copy, 
-  Sliders, 
-  Zap, 
-  HelpCircle,
-  Clock,
-  ToggleLeft,
-  ToggleRight,
+import {
+  Instagram,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  Check,
   Send,
   Loader2,
-  Lock,
-  Globe
+  MessageSquare,
+  Bell,
 } from 'lucide-react';
+import { Stepper, type StepDef } from './dashboard/Stepper';
+import { Toggle } from './automations/ui';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { LEGACY_DEFAULT_GREETING } from '../../functions/_shared/ig-automation-core';
@@ -56,6 +49,12 @@ interface InstagramIntegrationProps {
   /** Venu des Automatisations : met en avant « Autoriser les commentaires ». */
   highlightCommentsAuth?: boolean;
 }
+
+const IG_STEPS: StepDef[] = [
+  { id: 'connect', label: 'Connexion' },
+  { id: 'rules', label: 'Réglages' },
+  { id: 'test', label: 'Test' },
+];
 
 export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   assistantId,
@@ -132,6 +131,13 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     unresolvedCount: 0
   });
 
+  // ── Parcours en 3 étapes (hooks tout en haut : avant tout « return » anticipé) ──
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    if (integrationData.connected) setStep((cur) => (cur === 0 ? 1 : cur));
+  }, [integrationData.connected]);
+  const maxReachable = integrationData.connected ? 2 : 0;
+
   // Simulator / Test State for Instagram DM
   const [testDmInput, setTestDmInput] = useState('');
   const [testDmMessages, setTestDmMessages] = useState<Array<{ sender: 'user' | 'bot'; text: string; time: string }>>([
@@ -142,9 +148,6 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     }
   ]);
   const [isTestingDm, setIsTestingDm] = useState(false);
-  const [showAdvancedDevSettings, setShowAdvancedDevSettings] = useState<boolean>(false);
-  const [manualTokenInput, setManualTokenInput] = useState<string>('');
-  const [manualAccountIdInput, setManualAccountIdInput] = useState<string>('');
   const [repairingSubscription, setRepairingSubscription] = useState(false);
 
   // Empêche de renvoyer deux fois le même code d'autorisation Meta à
@@ -663,673 +666,194 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     }
   };
 
-  const handleSaveManualToken = async () => {
-    if (!user || !manualTokenInput.trim()) return;
-    setSaveLoading(true);
-    try {
-      const cleanToken = manualTokenInput.trim();
-      let igUsername = integrationData.instagramUsername || '';
-      let igUserId = manualAccountIdInput.trim() || integrationData.instagramUserId || '';
-      let pageName = integrationData.pageName || `${businessName || 'Entreprise'} Instagram`;
-      let profilePic = integrationData.profilePictureUrl || '';
+  const card = 'rounded-[28px] bg-white p-6 sm:p-8 shadow-[0_1px_2px_rgba(27,22,71,0.04)]';
+  const primary = 'inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-50 cursor-pointer';
+  const ghost = 'inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-slate-500 transition hover:bg-slate-100 cursor-pointer';
 
-      // Live verification with Meta Graph API
-      try {
-        const metaRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id,username,name,account_type,profile_picture_url&access_token=${cleanToken}`);
-        if (metaRes.ok) {
-          const metaInfo = await metaRes.json();
-          if (metaInfo.id) igUserId = metaInfo.id;
-          if (metaInfo.username) igUsername = `@${metaInfo.username}`;
-          if (metaInfo.name) pageName = metaInfo.name;
-          if (metaInfo.profile_picture_url) profilePic = metaInfo.profile_picture_url;
-        }
-      } catch (mErr) {
-        console.warn('Meta Graph check notice:', mErr);
-      }
-
-      // Abonnement obligatoire aux événements "messages" — sans ça, Meta ne
-      // délivrera jamais les DM entrants même avec un token valide.
-      let isSubscribed = false;
-      let subscribeErrorMsg = '';
-      try {
-        const subRes = await fetch('/api/instagram/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-          body: JSON.stringify({ accessToken: cleanToken })
-        });
-        const subData = await subRes.json().catch(() => ({}));
-        isSubscribed = subData?.success === true;
-        if (!isSubscribed) subscribeErrorMsg = subData?.error || '';
-      } catch (subErr: any) {
-        subscribeErrorMsg = subErr?.message || 'Erreur réseau';
-      }
-
-      const updatedPayload: InstagramIntegrationData = {
-        ...integrationData,
-        connected: true,
-        assistantId,
-        accessToken: cleanToken,
-        instagramUserId: igUserId || `ig_${user.uid.substring(0, 8)}`,
-        instagramUsername: igUsername || `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'mon_compte_ig'}`,
-        pageName: pageName,
-        profilePictureUrl: profilePic,
-        autoReplyEnabled: true,
-        webhookStatus: isSubscribed ? 'active' : 'error',
-        lastConnectedAt: new Date().toISOString()
-      };
-      saveLocalCache(user.uid, updatedPayload);
-      setIntegrationData(updatedPayload);
-
-      if (!isSubscribed) {
-        setNotification({
-          type: 'error',
-          message: `Token validé, mais l'abonnement au webhook "messages" a échoué (${subscribeErrorMsg || 'raison inconnue'}). Aucun DM ne sera reçu tant que ce n'est pas réparé.`
-        });
-        setSaveLoading(false);
-        return;
-      }
-
-      try {
-        await saveRemoteIntegration(updatedPayload);
-      } catch (e) {
-        // Safe fallback
-      }
-
-      setNotification({
-        type: 'success',
-        message: `Compte ${updatedPayload.instagramUsername} lié et validé avec succès par Meta !`
-      });
-      setManualTokenInput('');
-    } catch (err: any) {
-      setNotification({
-        type: 'error',
-        message: 'Erreur lors de la sauvegarde de la connexion Instagram. Réessaie dans un instant.'
-      });
-    } finally {
-      setSaveLoading(false);
-    }
-  };
+  const rows: Array<{ key: 'autoReplyEnabled' | 'respondToStories'; title: string; hint: string }> = [
+    { key: 'autoReplyEnabled', title: 'Répondre à mes messages privés', hint: 'L’assistant répond tout de suite à tes clients, jour et nuit.' },
+    { key: 'respondToStories', title: 'Répondre aux réponses à mes stories', hint: 'Quand un abonné répond à une story, l’assistant lui répond.' },
+  ];
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto animate-in fade-in duration-200">
-
-      {/* 🔔 Alertes Instagram — parcours guidé en 2 étapes */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <p className="font-bold text-sm text-slate-900">🔔 Recevoir les alertes dans Instagram</p>
-        <p className="text-[11px] text-slate-500 mt-0.5">Nouveau client intéressé, demande d'aide humaine — tu reçois tout en DM depuis le compte officiel JawebFlow. Activation en 30 secondes, une seule fois.</p>
-
-        {!notifCode ? (
-          <button
-            type="button"
-            onClick={activateNotifs}
-            disabled={notifBusy || notifEnabled}
-            className={`mt-3 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${notifEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50'}`}
-          >
-            {notifEnabled ? '✅ Alertes activées' : notifBusy ? '…' : 'Activer mes alertes'}
-          </button>
-        ) : (
-          <div className="mt-3 space-y-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase">Étape 1 ·</span>
-              <button
-                type="button"
-                onClick={copyNotifCode}
-                title="Cliquer pour copier"
-                className="px-3 py-1.5 rounded-lg border-2 border-dashed border-purple-300 bg-purple-50 hover:bg-purple-100 transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <span className="font-mono font-bold text-sm tracking-widest text-purple-700">{notifCode}</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${codeCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-600 text-white'}`}>
-                  {codeCopied ? 'Copié ✓' : 'Copier'}
-                </span>
-              </button>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-bold text-slate-400 uppercase">Étape 2 ·</span>
-              <a
-                href={notifLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm inline-flex items-center gap-1.5 transition-colors"
-              >
-                💬 Ouvrir Instagram — la discussion s'ouvre avec le code déjà écrit → appuie sur Envoyer
-              </a>
-            </div>
-            <p className="text-[10px] text-slate-400">Si le message n'est pas pré-écrit : colle le code (il est déjà copié) et envoie-le. Tu recevras la confirmation « ✅ C'est activé ! » dans la discussion.</p>
-          </div>
-        )}
-      </div>
-      
-      {/* Notification Toast */}
+    <div className="mx-auto max-w-3xl space-y-6 animate-in fade-in duration-200">
       {notification && (
-        <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 shadow-sm transition-all ${
-          notification.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
-          notification.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' :
-          'bg-indigo-50 border-indigo-200 text-indigo-800'
+        <div role="status" className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm ${
+          notification.type === 'success' ? 'bg-emerald-50 text-emerald-800'
+          : notification.type === 'error' ? 'bg-rose-50 text-rose-800'
+          : 'bg-indigo-50 text-indigo-800'
         }`}>
-          <div className="flex items-center gap-2.5">
-            {notification.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
-            {notification.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />}
-            {notification.type === 'info' && <Sparkles className="w-5 h-5 text-indigo-600 shrink-0" />}
-            <span className="text-xs sm:text-sm font-semibold">{notification.message}</span>
-          </div>
-          <button 
-            type="button" 
-            onClick={() => setNotification(null)}
-            className="text-xs font-bold px-2 py-1 rounded hover:bg-black/5"
-          >
-            Fermer
-          </button>
+          <span className="flex items-center gap-2">
+            {notification.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : notification.type === 'error' ? <AlertCircle className="h-4 w-4 shrink-0" /> : <Sparkles className="h-4 w-4 shrink-0" />}
+            {notification.message}
+          </span>
+          <button type="button" onClick={() => setNotification(null)} className="text-xs font-semibold opacity-70 hover:opacity-100">Fermer</button>
         </div>
       )}
 
-      {/* Hero Header Card */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white relative overflow-hidden shadow-lg border border-purple-900/40">
-        <div className="absolute right-0 top-0 w-96 h-96 bg-gradient-to-br from-pink-500/20 via-purple-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-3 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-400/30 text-pink-300 text-xs font-bold">
-              <Instagram className="w-3.5 h-3.5" />
-              <span>Instagram</span>
-            </div>
-            
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Répondre automatiquement à mes messages Instagram
-            </h1>
-            
-            <p className="text-xs sm:text-sm text-purple-200/90 leading-relaxed">
-              Votre assistant répond à votre place dans vos messages privés et vos stories : questions de prix, de livraison, de disponibilité… jour et nuit, en darija et en français.
-            </p>
-          </div>
-
-          {/* Connection Status Badge & CTA Button */}
-          <div className="shrink-0 flex flex-col items-start md:items-end gap-3">
-            {integrationData.connected ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>Compte Connecté : {igHandle}</span>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    onClick={handleConnectInstagram}
-                    disabled={isConnecting}
-                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 cursor-pointer disabled:opacity-50"
-                    title="Refaire la connexion avec Instagram (renouvelle l'accès, ou permet de changer de compte)"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isConnecting ? 'animate-spin' : ''}`} />
-                    <span>Reconnecter</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDisconnect}
-                    disabled={saveLoading}
-                    className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold transition-all border border-rose-500/30 cursor-pointer"
-                  >
-                    Déconnecter
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-start md:items-end gap-2">
-                <button
-                  type="button"
-                  id="btn-instagram-oauth-connect"
-                  onClick={handleConnectInstagram}
-                  disabled={isConnecting}
-                  className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center gap-3 shadow-lg shadow-purple-600/40 hover:shadow-purple-600/60 transition-all cursor-pointer transform active:scale-95 disabled:opacity-50"
-                >
-                  {isConnecting ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Connexion Meta OAuth en cours...</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                        <Instagram className="w-4 h-4 text-white" />
-                      </div>
-                      <span>Connecter mon Instagram</span>
-                    </>
-                  )}
-                </button>
-
-                <p className="text-[11px] text-purple-200/80 max-w-xs text-right">
-                  La connexion se fait directement avec votre compte Instagram, en un clic.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Real-time Connection Status & Mobile Setup Guide */}
       {integrationData.connected && (
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 text-white space-y-4 shadow-md">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shrink-0 shadow-sm">
-              <Instagram className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-bold text-sm text-white">État de la connexion Instagram</h3>
-                {integrationData.webhookStatus === 'active' ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Messages reçus automatiquement
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
-                    Connexion à terminer
-                  </span>
-                )}
-
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Compte connecté : <span className="text-purple-300 font-semibold">{igHandle || 'ton compte Instagram'}</span>
-              </p>
-            </div>
-          </div>
-
-          {integrationData.webhookStatus === 'active' && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-500/30 font-medium flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Connexion confirmée
-              </span>
-            </div>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(27,22,71,0.04)]">
+          <span className="flex items-center gap-2 text-sm font-medium text-emerald-700">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Compte Connecté : {igHandle || 'ton compte Instagram'}
+            {integrationData.webhookStatus === 'active' && <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">Connexion confirmée</span>}
+          </span>
+          <span className="flex flex-wrap items-center gap-3">
+            {integrationData.webhookStatus !== 'active' && (
+              <button type="button" onClick={handleRepairSubscription} disabled={repairingSubscription} className="inline-flex items-center gap-1.5 rounded-full bg-amber-600 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer">
+                {repairingSubscription ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Terminer la connexion
+              </button>
+            )}
+            <button type="button" onClick={handleConnectInstagram} disabled={isConnecting} className="text-xs font-medium text-slate-500 underline cursor-pointer">Reconnecter</button>
+            <button type="button" onClick={handleDisconnect} disabled={saveLoading} className="text-xs font-medium text-rose-600 underline cursor-pointer">Déconnecter</button>
+          </span>
         </div>
-
-        {/* Essential Mobile Setting & Verified Status */}
-        {integrationData.webhookStatus === 'active' ? (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center gap-4">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div className="space-y-1 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-xs font-semibold text-emerald-300">
-                  Messages privés connectés
-                </h4>
-              </div>
-              <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-Votre compte <strong>{igHandle || 'Instagram'}</strong> est bien relié : les messages privés que vous recevez arrivent directement à votre assistant.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center gap-4">
-            <div className="w-8 h-8 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
-              <AlertCircle className="w-5 h-5" />
-            </div>
-            <div className="space-y-1 flex-1">
-              <h4 className="text-xs font-semibold text-red-300">
-                Connexion incomplète
-              </h4>
-              <p className="text-[11px] text-red-200/90 leading-relaxed">
-                Votre compte est relié, mais Instagram n'envoie pas encore vos messages privés à l'assistant.
-                Cliquez sur le bouton ci-dessous pour terminer la connexion.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleRepairSubscription}
-              disabled={repairingSubscription}
-              className="shrink-0 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
-            >
-              {repairingSubscription ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Réparation...</>
-              ) : (
-                <><RefreshCw className="w-3.5 h-3.5" /> Terminer la connexion</>
-              )}
-            </button>
-          </div>
-        )}
-      </div>
-
       )}
 
-      {/* Main Grid: Settings & Live Preview Simulation */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Left Column: Automation Rules & Settings (7 cols) */}
-        <div className="lg:col-span-7 space-y-6">
-          
-          {/* Card 1: Bot Activation & Channel Toggles */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                  <Sliders className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base">Réponses de l'IA</h3>
-                  <p className="text-xs text-slate-500">Choisis quand l'IA répond à ta place dans tes messages privés.</p>
-                </div>
-              </div>
-
-              <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
-                integrationData.autoReplyEnabled 
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                  : 'bg-slate-100 text-slate-500'
-              }`}>
-                {integrationData.autoReplyEnabled ? 'IA active' : 'IA en pause'}
-              </span>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              
-              {/* Toggle 1: Auto DM Reply */}
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                <div className="space-y-0.5 max-w-sm">
-                  <span className="text-xs font-bold text-slate-900 block">Répondre aux messages privés avec l'IA</span>
-                  <p className="text-[11px] text-slate-500">L'IA comprend la demande du client et répond tout de suite grâce aux informations de ton assistant. En pause : tes automatisations par mots-clés continuent de répondre.</p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={integrationData.autoReplyEnabled}
-                  aria-label="Répondre aux messages privés avec l'IA"
-                  onClick={() => toggleSetting('autoReplyEnabled')}
-                  className={`w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    integrationData.autoReplyEnabled ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow-md transform transition-transform" />
-                </button>
-              </div>
-
-              {/* Toggle 2: Respond to Story Replies */}
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                <div className="space-y-0.5 max-w-sm">
-                  <span className="text-xs font-bold text-slate-900 block">Répondre aux réponses à mes stories</span>
-                  <p className="text-[11px] text-slate-500">Quand un abonné répond à une story (prix, taille, dispo), l'IA lui répond. Désactivé : l'IA ne répond pas à ces messages (tes règles « Réponse à une story » continuent).</p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={integrationData.respondToStories}
-                  aria-label="Répondre aux réponses à mes stories"
-                  onClick={() => toggleSetting('respondToStories')}
-                  className={`w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    integrationData.respondToStories ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow-md transform transition-transform" />
-                </button>
-              </div>
-
-              {/* Commentaires : gérés dans l'onglet « Automatisations » */}
-              <div
-                id="instagram-comments-card"
-                className={`p-4 rounded-2xl border space-y-3 transition-colors ${
-                  highlightCommentsAuth ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-slate-900 block">💬 Commentaires → réponse publique + message privé</span>
-                  <p className="text-[11px] text-slate-500">Quand quelqu'un commente « prix » ou « info » sous ton post, le robot lui répond en public et lui envoie les détails en privé. Ça se règle dans l'onglet Automatisations.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onGoToAutomations?.()}
-                    disabled={!onGoToAutomations}
-                    className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold cursor-pointer disabled:opacity-40"
-                  >
-                    Ouvrir les automatisations
-                  </button>
-                  {integrationData.connected && (
-                    <button
-                      type="button"
-                      onClick={handleAuthorizeComments}
-                      disabled={isConnecting}
-                      className="px-3.5 py-2 rounded-xl border border-purple-300 bg-white hover:bg-purple-50 text-purple-700 text-xs font-bold cursor-pointer disabled:opacity-50"
-                    >
-                      Autoriser les commentaires
-                    </button>
-                  )}
-                </div>
-                {integrationData.connected && (
-                  <p className="text-[11px] text-slate-400">« Autoriser les commentaires » ouvre Instagram une fois pour te demander la permission de gérer les commentaires de ton compte.</p>
-                )}
-              </div>
-
-            </div>
-
-            {/* Greeting Message & Tone Field */}
-            <div className="space-y-4 pt-4 border-t border-slate-100">
-              <div>
-                <label htmlFor="instagram-greeting" className="block text-xs font-bold text-slate-700 mb-1">
-                  Message d'accueil
-                </label>
-                <input
-                  id="instagram-greeting"
-                  type="text"
-                  value={integrationData.customGreeting || ''}
-                  onChange={(e) => setIntegrationData(prev => ({ ...prev, customGreeting: e.target.value }))}
-                  placeholder="Ex. Salam 👋 Bienvenue chez {entreprise} ! Comment puis-je vous aider ?"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-purple-600"
-                />
-                <p className="mt-1 text-[11px] text-slate-400">Envoyé quand quelqu'un te dit simplement « bonjour » ou « salam ». Laisse vide : l'assistant salue tout seul, dans la langue choisie dans « Comportement ». Tu peux écrire {'{entreprise}'} pour afficher le nom de ton entreprise.</p>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleSaveSettings}
-                  disabled={saveLoading}
-                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-purple-600/20 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {saveLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Enregistrer</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Card 2: Optional Advanced Configuration Accordion */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <button
-              type="button"
-              onClick={() => setShowAdvancedDevSettings(!showAdvancedDevSettings)}
-              className="w-full flex items-center justify-between text-left cursor-pointer group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 group-hover:bg-purple-50 group-hover:text-purple-600 flex items-center justify-center transition-colors">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-xs sm:text-sm">Réglages avancés</h4>
-                  <p className="text-[11px] text-slate-400">Pour les développeurs souhaitant lier manuellement un jeton d'accès Meta Graph API</p>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
-                {showAdvancedDevSettings ? 'Masquer' : 'Afficher'}
-              </span>
-            </button>
-
-            {showAdvancedDevSettings && (
-              <div className="pt-4 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Instagram Account ID (Optionnel)
-                  </label>
-                  <input
-                    type="text"
-                    value={manualAccountIdInput}
-                    onChange={(e) => setManualAccountIdInput(e.target.value)}
-                    placeholder="Ex: 17841475492133009"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:border-purple-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Token d'accès Instagram (Access Token)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="password"
-                      value={manualTokenInput}
-                      onChange={(e) => setManualTokenInput(e.target.value)}
-                      placeholder="Collez votre jeton d'accès Meta généré (EAAB...)"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:border-purple-600"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveManualToken}
-                      disabled={saveLoading || !manualTokenInput.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-40"
-                    >
-                      {saveLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Lier'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    URL du Webhook configuré :
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={webhookCallbackUrl}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-[11px] font-mono text-slate-600"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(webhookCallbackUrl, 'webhook')}
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all shrink-0 cursor-pointer"
-                    >
-                      {copiedKey === 'webhook' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-        </div>
-
-        {/* Right Column: Live Instagram DM Mockup Tester (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                Simulateur de DM Instagram en Direct
-              </span>
-              <span className="text-[10px] font-mono bg-pink-50 text-pink-700 px-2 py-0.5 rounded-full font-bold border border-pink-200">
-                Live Preview
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Testez une conversation en envoyant un message comme le ferait un client sur votre Instagram.
-            </p>
-          </div>
-
-          {/* Instagram Chat Mockup Frame */}
-          <div className="bg-slate-950 rounded-3xl p-2.5 shadow-2xl border-4 border-slate-800 max-w-sm mx-auto">
-            <div className="bg-white rounded-2xl overflow-hidden flex flex-col h-[520px]">
-              
-              {/* Instagram Top Bar */}
-              <div className="p-3.5 bg-white border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 via-pink-500 to-purple-600 p-[2px] shrink-0">
-                    <div className="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden">
-                      <Instagram className="w-4 h-4 text-pink-600" />
-                    </div>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-slate-900 leading-tight">
-                      {integrationData.instagramUsername || `@${businessName ? businessName.toLowerCase().replace(/\s+/g, '_') : 'votre_boutique'}`}
-                    </span>
-                    <span className="block text-[10px] text-emerald-600 font-medium">Actif maintenant</span>
-                  </div>
-                </div>
-
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              </div>
-
-              {/* Instagram DM Messages Body */}
-              <div className="flex-1 p-3.5 space-y-3 overflow-y-auto bg-slate-50/50">
-                
-                {/* Instagram Profile Header in DM */}
-                <div className="text-center py-3 space-y-1">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 text-white flex items-center justify-center mx-auto shadow-sm">
-                    <Instagram className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-900">{businessName || 'Boutique'}</h4>
-                  <p className="text-[10px] text-slate-400">Assistant IA JawebFlow activé pour ce compte</p>
-                </div>
-
-                {testDmMessages.map((msg, index) => (
-                  <div 
-                    key={index}
-                    className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                  >
-                    <div className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                      msg.sender === 'user'
-                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-br-xs shadow-xs'
-                        : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs shadow-xs'
-                    }`}>
-                      <p className="whitespace-pre-line">{msg.text}</p>
-                    </div>
-                    <span className="text-[9px] text-slate-400 mt-0.5 px-1">{msg.time}</span>
-                  </div>
-                ))}
-
-                {isTestingDm && (
-                  <div className="flex items-center gap-1.5 p-3 rounded-2xl bg-white border border-slate-200 w-16 text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-bounce"></span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.2s]"></span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.4s]"></span>
-                  </div>
-                )}
-
-              </div>
-
-              {/* Instagram Input Field */}
-              <div className="p-2.5 bg-white border-t border-slate-100 flex items-center gap-2">
-                <input
-                  type="text"
-                  value={testDmInput}
-                  onChange={(e) => setTestDmInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSendTestDm();
-                    }
-                  }}
-                  placeholder="Écrire un message Instagram..."
-                  className="flex-1 px-3 py-2 rounded-full bg-slate-100 text-xs text-slate-900 focus:outline-none focus:bg-slate-200/70"
-                />
-                <button
-                  type="button"
-                  onClick={handleSendTestDm}
-                  disabled={!testDmInput.trim() || isTestingDm}
-                  className="p-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-40 cursor-pointer transition-all shrink-0"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-
+      <div className="rounded-[28px] bg-white px-6 py-5 shadow-[0_1px_2px_rgba(27,22,71,0.04)]">
+        <Stepper steps={IG_STEPS} current={step} maxReachable={maxReachable} onSelect={setStep} />
       </div>
 
+      {/* ───── Étape 1 : connexion ───── */}
+      {step === 0 && (
+        <div className={card} data-testid="ig-step-connect">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 text-white"><Instagram className="h-6 w-6" /></div>
+          <h3 className="mt-5 text-xl">Connecte ton compte Instagram</h3>
+          <p className="mt-1 text-[15px] text-slate-500">En un clic. Ton assistant pourra alors répondre à tes messages privés.</p>
+
+          {integrationData.connected ? (
+            <div className="mt-6 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+              <CheckCircle2 className="h-4 w-4" /> C’est fait : ton compte est relié.
+            </div>
+          ) : (
+            <button type="button" id="btn-instagram-oauth-connect" onClick={handleConnectInstagram} disabled={isConnecting} className={`${primary} mt-6`}>
+              {isConnecting ? <><Loader2 className="h-4 w-4 animate-spin" /> Connexion en cours…</> : <><Instagram className="h-4 w-4" /> Connecter mon Instagram</>}
+            </button>
+          )}
+
+          <div className="mt-8 flex justify-end">
+            <button type="button" onClick={() => setStep(1)} disabled={!integrationData.connected} className={primary}>Continuer <ArrowRight className="h-4 w-4" /></button>
+          </div>
+        </div>
+      )}
+
+      {/* ───── Étape 2 : réglages ───── */}
+      {step === 1 && (
+        <div className={card} data-testid="ig-step-rules">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xl">Que doit faire ton assistant ?</h3>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${integrationData.autoReplyEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+              {integrationData.autoReplyEnabled ? 'IA active' : 'IA en pause'}
+            </span>
+          </div>
+          <p className="mt-1 text-[15px] text-slate-500">Active ce que tu veux. Tu pourras changer à tout moment.</p>
+
+          <div className="mt-6 space-y-3">
+            {rows.map((r) => (
+              <div key={r.key} className="flex items-center justify-between gap-4 rounded-2xl bg-[#f6f7fd] p-4">
+                <div>
+                  <p className="text-sm font-semibold text-[#1b1647]">{r.title}</p>
+                  <p className="text-xs text-slate-500">{r.hint}</p>
+                </div>
+                <Toggle checked={Boolean(integrationData[r.key])} onChange={() => toggleSetting(r.key)} label={r.key === 'autoReplyEnabled' ? "Répondre aux messages privés avec l'IA" : r.title} />
+              </div>
+            ))}
+            <div id="instagram-comments-card" className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4 ${highlightCommentsAuth ? 'bg-purple-50 ring-2 ring-purple-200' : 'bg-[#f6f7fd]'}`}>
+              <div>
+                <p className="text-sm font-semibold text-[#1b1647]">Répondre aux commentaires</p>
+                <p className="text-xs text-slate-500">Quelqu’un commente « prix » ? Il reçoit la réponse en message privé.</p>
+              </div>
+              <span className="flex gap-2">
+                <button type="button" onClick={handleAuthorizeComments} disabled={isConnecting} className="rounded-full border border-purple-200 bg-white px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-50 cursor-pointer">Autoriser les commentaires</button>
+                <button type="button" onClick={() => onGoToAutomations?.()} disabled={!onGoToAutomations} className="rounded-full bg-[#1b1647] px-4 py-2 text-xs font-semibold text-white disabled:opacity-40 cursor-pointer">Ouvrir les automatisations</button>
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <label htmlFor="instagram-greeting" className="block text-sm font-semibold text-[#1b1647]">Message d’accueil <span className="font-light text-slate-400">(facultatif)</span></label>
+            <input
+              id="instagram-greeting"
+              aria-label="Message d'accueil"
+              type="text"
+              value={integrationData.customGreeting || ''}
+              onChange={(e) => setIntegrationData((prev) => ({ ...prev, customGreeting: e.target.value }))}
+              placeholder="Ex. Salam 👋 Bienvenue chez {entreprise} ! Comment puis-je vous aider ?"
+              className="mt-2 w-full border bg-white px-4 py-3 text-sm text-slate-900"
+            />
+            <p className="mt-1 text-xs text-slate-400">Envoyé quand quelqu’un dit « bonjour ». Vide : l’assistant salue tout seul.</p>
+          </div>
+
+          <div className="mt-8 flex items-center justify-between">
+            <button type="button" onClick={() => setStep(0)} className={ghost}><ArrowLeft className="h-4 w-4" /> Retour</button>
+            <span className="flex flex-wrap gap-2">
+              <button type="button" onClick={handleSaveSettings} disabled={saveLoading} className={ghost}>
+                {saveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Enregistrer
+              </button>
+              <button type="button" onClick={() => setStep(2)} className={primary}>Continuer <ArrowRight className="h-4 w-4" /></button>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ───── Étape 3 : test ───── */}
+      {step === 2 && (
+        <div className={card} data-testid="ig-step-test">
+          <h3 className="text-xl">Teste ton assistant</h3>
+          <p className="mt-1 text-[15px] text-slate-500">Pose une question comme un client : tu vois la réponse qu’il enverrait.</p>
+
+          <div className="mt-6 space-y-2 rounded-2xl bg-[#f6f7fd] p-4">
+            {testDmMessages.map((m, i) => (
+              <div key={i} className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <span className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${m.sender === 'user' ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white' : 'bg-white text-slate-700'}`}>{m.text}</span>
+              </div>
+            ))}
+            {isTestingDm && <p className="text-xs text-slate-400">L’assistant écrit…</p>}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <input
+              type="text"
+              value={testDmInput}
+              onChange={(e) => setTestDmInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleSendTestDm(); }}
+              placeholder="Écrire un message Instagram..."
+              aria-label="Message de test"
+              className="min-w-0 flex-1 border bg-white px-4 py-3 text-sm text-slate-900"
+            />
+            <button type="button" onClick={() => void handleSendTestDm()} disabled={isTestingDm || !testDmInput.trim()} aria-label="Envoyer" className={primary}><Send className="h-4 w-4" /></button>
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-[#f6f7fd] p-4">
+            <div className="flex items-start gap-3">
+              <Bell className="mt-0.5 h-5 w-5 text-purple-600" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-[#1b1647]">Être prévenu dans Instagram <span className="font-light text-slate-400">(facultatif)</span></p>
+                <p className="text-xs text-slate-500">Reçois un message quand un client est intéressé ou demande de l’aide.</p>
+                {!notifCode ? (
+                  <button type="button" onClick={activateNotifs} disabled={notifBusy || notifEnabled} className={`mt-3 rounded-full px-4 py-2 text-xs font-semibold cursor-pointer ${notifEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-[#1b1647] text-white disabled:opacity-50'}`}>
+                    {notifEnabled ? '✓ Alertes activées' : notifBusy ? '…' : 'Activer les alertes'}
+                  </button>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    <button type="button" onClick={copyNotifCode} className="rounded-full border-2 border-dashed border-purple-300 bg-white px-4 py-1.5 text-sm font-semibold tracking-widest text-purple-700 cursor-pointer">
+                      {notifCode} <span className="ml-2 text-[10px] font-semibold">{codeCopied ? 'Copié ✓' : 'Copier'}</span>
+                    </button>
+                    <p className="text-xs text-slate-500">Puis envoie ce code en message privé au compte JawebFlow :</p>
+                    <a href={notifLink} target="_blank" rel="noopener noreferrer" className="inline-flex rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white">Ouvrir Instagram</a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+            <button type="button" onClick={() => setStep(1)} className={ghost}><ArrowLeft className="h-4 w-4" /> Retour</button>
+            <span className="flex flex-wrap gap-2">
+              {onGoToSimulator && <button type="button" onClick={onGoToSimulator} className={ghost}><MessageSquare className="h-4 w-4" /> Test complet</button>}
+              {onGoToAutomations && <button type="button" onClick={onGoToAutomations} className={primary}>Créer une automatisation <ArrowRight className="h-4 w-4" /></button>}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

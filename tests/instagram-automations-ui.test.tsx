@@ -35,6 +35,9 @@ afterEach(() => {
 const mount = (isAdmin = true) => render(<InstagramAutomations businessName="Boutique Nour" isAdmin={isAdmin} onGoToInstagram={goToInstagram as any} />);
 const apiCalls = (method: string, path: string) => be.api.filter((c) => c.method === method && c.url.startsWith(path));
 
+/** Va à une étape du parcours (media · trigger · reply · validate). */
+const step = (id: string) => fireEvent.click(document.querySelector(`[data-step="${id}"]`) as Element);
+
 async function openTemplate(title: RegExp) {
   fireEvent.click(await screen.findByRole('button', { name: /Nouvelle automatisation/ }));
   fireEvent.click(await screen.findByRole('button', { name: title }));
@@ -110,18 +113,23 @@ describe('Automatisations — créer « commentaire → message privé »', () =
     expect(screen.getByTestId('sim-verdict').textContent).toMatch(/reconnu/);
 
     // le marchand complète son message et ajoute un bouton avec un lien invalide, puis valide
+    step('reply');
     fireEvent.change(screen.getByLabelText('Message privé'), { target: { value: 'Salut {prenom} 👋 Voici notre catalogue complet.' } });
     fireEvent.click(screen.getByRole('button', { name: /Ajouter un bouton/ }));
     fireEvent.change(screen.getByLabelText('Texte du bouton 1'), { target: { value: 'Voir le catalogue' } });
+    step('reply');
     fireEvent.change(screen.getByLabelText('Lien du bouton 1'), { target: { value: 'pas un lien' } });
     expect(screen.getByText(/Ce lien n’est pas valide/)).toBeTruthy();
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
     expect(await screen.findByText(/Il manque quelque chose avant d’enregistrer/)).toBeTruthy();
     expect(screen.getByText(/lien du bouton « Voir le catalogue » n’est pas valide/)).toBeTruthy();
     expect(apiCalls('POST', '/api/instagram/automations')).toHaveLength(0); // rien n'est parti au serveur
 
+    step('reply');
     fireEvent.change(screen.getByLabelText('Lien du bouton 1'), { target: { value: 'ma-boutique.dz/catalogue' } });
     expect(screen.getByTestId('phone-preview').textContent).toContain('Voir le catalogue');
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
 
     // retour à la liste, avec la nouvelle automatisation ACTIVE
@@ -143,6 +151,7 @@ describe('Automatisations — créer « commentaire → message privé »', () =
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
     // on retire tous les mots du modèle
+    step('trigger');
     for (const k of ['prix', 'info', 'lien', 'combien', 'سعر', 'ch7al']) fireEvent.click(screen.getByRole('button', { name: `Retirer le mot « ${k} »` }));
     expect(screen.getByTestId('preview-no-trigger')).toBeTruthy();
 
@@ -162,8 +171,11 @@ describe('Automatisations — créer « commentaire → message privé »', () =
   it('refuse d’enregistrer sans mot-clé, et le dit clairement', async () => {
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
+    step('trigger');
     for (const k of ['prix', 'info', 'lien', 'combien', 'سعر', 'ch7al']) fireEvent.click(screen.getByRole('button', { name: `Retirer le mot « ${k} »` }));
+    step('reply');
     fireEvent.change(screen.getByLabelText('Message privé'), { target: { value: 'Salut' } });
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
     expect(await screen.findByText(/Ajoute au moins un mot-clé/)).toBeTruthy();
     expect(apiCalls('POST', '/api/instagram/automations')).toHaveLength(0);
@@ -173,6 +185,7 @@ describe('Automatisations — créer « commentaire → message privé »', () =
   it('variantes de réponse publique : ajouter, insérer une variable, supprimer', async () => {
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
+    step('reply');
     expect(screen.getByLabelText('Réponse publique, variante 3')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Ajouter une variante/ }));
     fireEvent.click(screen.getByRole('button', { name: /Ajouter une variante/ }));
@@ -183,9 +196,11 @@ describe('Automatisations — créer « commentaire → message privé »', () =
     expect(screen.queryByLabelText('Réponse publique, variante 4')).toBeNull();
 
     // insérer {entreprise} dans le message privé
+    step('reply');
     fireEvent.change(screen.getByLabelText('Message privé'), { target: { value: 'Merci' } });
     const chips = screen.getAllByRole('button', { name: '+ Mon entreprise' }); // un jeu de variables par zone de texte
     fireEvent.click(chips[chips.length - 1]); // celui du message privé
+    step('reply');
     expect((screen.getByLabelText('Message privé') as HTMLTextAreaElement).value).toContain('{entreprise}');
   });
 
@@ -193,6 +208,7 @@ describe('Automatisations — créer « commentaire → message privé »', () =
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
     expect(screen.queryByTestId('preview-gate')).toBeNull();
+    step('reply');
     fireEvent.click(screen.getByRole('switch', { name: 'Demander de suivre mon compte' }));
     expect(screen.getByTestId('preview-gate').textContent).toMatch(/C’est fait/);
     fireEvent.click(screen.getByRole('button', { name: /Personnaliser les messages de la demande/ }));
@@ -202,10 +218,12 @@ describe('Automatisations — créer « commentaire → message privé »', () =
   it('on peut désactiver la réponse publique ou le message privé (pas les deux)', async () => {
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
+    step('reply');
     fireEvent.click(screen.getByRole('switch', { name: 'Activer la réponse publique' }));
     expect(screen.queryByLabelText('Réponse publique, variante 1')).toBeNull();
     expect(screen.getByText(/Pas de réponse publique/)).toBeTruthy();
     fireEvent.click(screen.getByRole('switch', { name: 'Activer le message privé' }));
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
     expect(await screen.findByText(/Active au moins une action/)).toBeTruthy();
   });
@@ -215,7 +233,9 @@ describe('Automatisations — choisir une publication', () => {
   it('le sélecteur affiche les vrais posts ; le choix est mémorisé avec sa miniature', async () => {
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
+    step('reply');
     fireEvent.change(screen.getByLabelText('Message privé'), { target: { value: 'Voici les infos' } });
+    step('media');
     fireEvent.click(screen.getByRole('radio', { name: /Une publication précise/ }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Choisir une publication' });
@@ -229,6 +249,7 @@ describe('Automatisations — choisir une publication', () => {
     expect(screen.getByTestId('chosen-media').textContent).toMatch(/Nouvelle collection/);
 
     // sous une AUTRE publication, l'essai dit que ça ne se déclenche pas : la logique de ciblage est la même que celle du robot
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
     await screen.findByLabelText('Tes automatisations');
     const cfg = be.supabase.rows('ig_automations')[0].config;
@@ -241,6 +262,7 @@ describe('Automatisations — choisir une publication', () => {
     be.meta.failWhen((c) => c.path === '/me/media' && c.query.limit === '24', 400, { message: 'Error validating access token', code: 190 }, 1);
     mount();
     await openTemplate(/Commentaire ➜ message privé/);
+    step('media');
     fireEvent.click(screen.getByRole('radio', { name: /Une publication précise/ }));
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText(/reconnecte ton compte/)).toBeTruthy();
@@ -300,9 +322,13 @@ describe('Automatisations — gérer la liste', () => {
     mount();
     fireEvent.click(await screen.findByRole('button', { name: /Modifier « Prix → DM »/ }));
     await screen.findByText(/Modifier l’automatisation/);
+    step('validate');
     expect((screen.getByLabelText('Nom de l’automatisation') as HTMLInputElement).value).toBe('Prix → DM');
+    step('validate');
     fireEvent.change(screen.getByLabelText('Nom de l’automatisation'), { target: { value: 'Prix v2' } });
+    step('reply');
     fireEvent.change(screen.getByLabelText('Message privé'), { target: { value: 'Nouveau message' } });
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /^Enregistrer$/ }));
     await screen.findByLabelText('Tes automatisations');
     expect(be.supabase.rows('ig_automations')).toHaveLength(1);
@@ -343,11 +369,14 @@ describe('Automatisations — mot-clé en message privé, stories', () => {
     await openTemplate(/Réponse automatique à un mot-clé/);
     expect(screen.queryByRole('radio', { name: 'Tout commentaire' })).toBeNull();
     expect(screen.queryByLabelText('Réponse publique, variante 1')).toBeNull();
+    step('reply');
     expect(screen.queryByRole('switch', { name: 'Demander de suivre mon compte' })).toBeNull();
     // l'essai se comporte comme un message privé : le prénom est connu
     expect(screen.getByLabelText('Prénom de test')).toBeTruthy();
+    step('reply');
     fireEvent.change(screen.getByLabelText('Message privé'), { target: { value: 'Bonjour {prenom} ! Livraison en 48h.' } });
     expect(screen.getByTestId('preview-dm').textContent).toMatch(/Bonjour Sara ! Livraison en 48h\./);
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
     await screen.findByLabelText('Tes automatisations');
     expect(be.supabase.rows('ig_automations')[0]).toMatchObject({ trigger_type: 'dm_keyword', enabled: true });
@@ -358,6 +387,7 @@ describe('Automatisations — mot-clé en message privé, stories', () => {
     await openTemplate(/Remerciement pour une mention/);
     expect(screen.queryByLabelText('Ajouter un mot-clé')).toBeNull();
     expect(screen.getByText(/t’a mentionné dans sa story/)).toBeTruthy();
+    step('validate');
     fireEvent.click(screen.getByRole('button', { name: /Enregistrer et activer/ }));
     await screen.findByLabelText('Tes automatisations');
     expect(be.supabase.rows('ig_automations')[0]).toMatchObject({ trigger_type: 'story_mention', enabled: true });
@@ -419,8 +449,7 @@ describe('Automatisations — « est-ce que ça marche ? »', () => {
   it('tout va bien : bandeau vert avec le @compte', async () => {
     be.supabase.seed('ig_automation_state', [{ user_id: USER_ID, last_comment_at: new Date(Date.now() - 600_000).toISOString() }]);
     mount();
-    expect((await screen.findByTestId('health-title')).textContent).toBe('Instagram est bien branché (@boutique_nour)');
-    expect(screen.getByText(/Dernier commentaire reçu il y a 10 min/)).toBeTruthy();
+    expect((await screen.findByTestId('health-title')).textContent?.trim()).toBe('Instagram est bien connecté (@boutique_nour)');
   });
 
   it('autorisation « commentaires » manquante → bouton pour reconnecter, qui renvoie vers l’onglet Instagram', async () => {
@@ -438,7 +467,7 @@ describe('Automatisations — « est-ce que ça marche ? »', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Réparer' }));
     expect(await screen.findByText(/Parfait : Instagram enverra désormais les commentaires/)).toBeTruthy();
     expect(be.meta.subscribedFields).toEqual(['messages', 'messaging_postbacks', 'comments']);
-    await waitFor(() => expect(screen.getByTestId('health-title').textContent).toMatch(/Instagram est bien branché/));
+    await waitFor(() => expect(screen.getByTestId('health-title').textContent).toMatch(/Instagram est bien connecté/));
   });
 
   it('compte non connecté → bouton qui renvoie vers la connexion', async () => {
@@ -450,6 +479,7 @@ describe('Automatisations — « est-ce que ça marche ? »', () => {
   });
 
   it('« Vérifier » relance vraiment les contrôles', async () => {
+    be.meta.commentsPermission = false; // le bouton « Vérifier » n'apparaît que s'il y a un point à régler
     mount();
     await screen.findByTestId('health-title');
     const before = apiCalls('GET', '/api/instagram/diagnostics').length;

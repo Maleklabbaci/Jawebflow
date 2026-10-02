@@ -203,6 +203,13 @@ describe('onglet Instagram — pas de faux affichages', () => {
 
 describe('onglet Instagram — simulateur de DM', () => {
   const send = async (text: string) => {
+    // Le simulateur est à l'étape « Test » du parcours.
+    const stepBtn = await waitFor(() => {
+      const el = document.querySelector('[data-step="test"]') as HTMLButtonElement | null;
+      if (!el || el.disabled) throw new Error('étape Test pas encore accessible');
+      return el;
+    });
+    fireEvent.click(stepBtn);
     const box = await screen.findByPlaceholderText('Écrire un message Instagram...');
     fireEvent.change(box, { target: { value: text } });
     fireEvent.keyDown(box, { key: 'Enter' });

@@ -3,7 +3,7 @@
  * aperçu « téléphone » + essai en direct à droite.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, ImageIcon, Link2, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ImageIcon, Link2, Loader2, Plus, Trash2, X } from 'lucide-react';
 import {
   LIMITS,
   TEMPLATE_VARIABLES,
@@ -19,6 +19,7 @@ import {
 } from '../../../functions/_shared/ig-automation-core';
 import { MediaPicker, type PickedMedia } from './MediaPicker';
 import { PhonePreview } from './PhonePreview';
+import { Stepper, type StepDef } from '../dashboard/Stepper';
 import { Card, Notice, Section, Toggle, ghostBtn, inputClass, primaryBtn, secondaryBtn } from './ui';
 
 export interface Draft {
@@ -232,6 +233,16 @@ export function AutomationEditor({
   const modes = MODE_LABELS[t];
   const heading = TRIGGER_LABELS[t].title;
 
+  // ── Étapes : on ne montre qu'une chose à la fois ──
+  const flow: StepDef[] = isComment
+    ? [{ id: 'media', label: 'Publication' }, { id: 'trigger', label: 'Déclencheur' }, { id: 'reply', label: 'Réponses' }, { id: 'validate', label: 'Valider' }]
+    : isStoryMention
+      ? [{ id: 'reply', label: 'Réponse' }, { id: 'validate', label: 'Valider' }]
+      : [{ id: 'trigger', label: 'Déclencheur' }, { id: 'reply', label: 'Réponse' }, { id: 'validate', label: 'Valider' }];
+  const [stepIdx, setStepIdx] = useState(0);
+  const cur = flow[Math.min(stepIdx, flow.length - 1)].id;
+  const isLastStep = stepIdx >= flow.length - 1;
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -247,6 +258,8 @@ export function AutomationEditor({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* ───────────── Formulaire ───────────── */}
         <Card className="p-5 sm:p-6">
+          <div className="mb-6"><Stepper steps={flow} current={stepIdx} onSelect={setStepIdx} maxReachable={flow.length - 1} /></div>
+          {cur === 'validate' && (
           <Section title="Nom de l’automatisation" hint="Juste pour t’y retrouver dans ta liste.">
             <input
               value={draft.name}
@@ -257,9 +270,10 @@ export function AutomationEditor({
               placeholder="Ex. Prix de la nouvelle collection"
             />
           </Section>
+          )}
 
-          {isComment && (
-            <Section step="1" title="Sous quelle publication ?" hint="Choisis un post ou un reel précis, ou toutes tes publications d’un coup.">
+          {cur === 'media' && isComment && (
+            <Section title="Sous quelle publication ?" hint="Choisis un post ou un reel précis, ou toutes tes publications d’un coup.">
               <div role="radiogroup" aria-label="Publication concernée" className="grid gap-2 sm:grid-cols-2">
                 <button
                   type="button" role="radio" aria-checked={cfg.media.scope === 'any'}
@@ -292,9 +306,8 @@ export function AutomationEditor({
             </Section>
           )}
 
-          {!isStoryMention && (
+          {cur === 'trigger' && !isStoryMention && (
             <Section
-              step={isComment ? '2' : '1'}
               title={isComment ? 'Quel commentaire déclenche le robot ?' : t === 'dm_keyword' ? 'Quel mot déclenche la réponse ?' : 'Quelles réponses déclenchent le robot ?'}
               hint="Les majuscules, les accents et la ponctuation sont ignorés : « Prix », « prix ? » et « PRIX !! » comptent pareil. Ça marche aussi en arabe."
             >
@@ -317,9 +330,8 @@ export function AutomationEditor({
             </Section>
           )}
 
-          {isComment && (
+          {cur === 'reply' && isComment && (
             <Section
-              step="3"
               title="Réponse publique sous le commentaire"
               hint="Une petite réponse visible par tous. Écris-en plusieurs : le robot en choisit une au hasard, ça fait plus naturel (et Instagram aime mieux). Évite les liens ici : ils ne sont pas cliquables dans les commentaires."
               right={<Toggle checked={cfg.publicReply.enabled} onChange={(v) => patch({ publicReply: { ...cfg.publicReply, enabled: v, variations: v && cfg.publicReply.variations.length === 0 ? [''] : cfg.publicReply.variations } })} label="Activer la réponse publique" />}
@@ -357,8 +369,8 @@ export function AutomationEditor({
             </Section>
           )}
 
+          {cur === 'reply' && (
           <Section
-            step={isComment ? '4' : isStoryMention ? '1' : '2'}
             title={isComment ? 'Message privé envoyé à la personne' : isStoryMention ? 'Message de remerciement' : 'Réponse automatique'}
             hint={
               isComment
@@ -458,8 +470,9 @@ export function AutomationEditor({
               </div>
             )}
           </Section>
+          )}
 
-          {isComment && (
+          {cur === 'validate' && isComment && (
             <Section title="Options">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -471,7 +484,7 @@ export function AutomationEditor({
             </Section>
           )}
 
-          {errors.length > 0 && (
+          {cur === 'validate' && errors.length > 0 && (
             <div ref={errorsRef} className="mt-2">
               <Notice kind="error">
                 <p className="font-medium">Il manque quelque chose avant d’enregistrer :</p>
@@ -482,17 +495,27 @@ export function AutomationEditor({
             </div>
           )}
 
-          <div className="mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-5">
-            <button type="button" onClick={onCancel} disabled={saving} className={secondaryBtn}>Annuler</button>
-            {(isNew || !draft.enabled) && (
-              <button type="button" onClick={() => submit(false)} disabled={saving} className={secondaryBtn}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Enregistrer
-              </button>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-5">
+            {stepIdx > 0 ? (
+              <button type="button" onClick={() => setStepIdx((i) => Math.max(0, i - 1))} className={secondaryBtn}><ArrowLeft className="h-4 w-4" /> Retour</button>
+            ) : (
+              <button type="button" onClick={onCancel} disabled={saving} className={secondaryBtn}>Annuler</button>
             )}
-            <button type="button" onClick={() => submit(isNew || !draft.enabled)} disabled={saving} className={primaryBtn}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {isNew || !draft.enabled ? 'Enregistrer et activer' : 'Enregistrer'}
-            </button>
+            {!isLastStep ? (
+              <button type="button" onClick={() => setStepIdx((i) => Math.min(flow.length - 1, i + 1))} className={primaryBtn}>Continuer <ArrowRight className="h-4 w-4" /></button>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                {(isNew || !draft.enabled) && (
+                  <button type="button" onClick={() => submit(false)} disabled={saving} className={secondaryBtn}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Enregistrer
+                  </button>
+                )}
+                <button type="button" onClick={() => submit(isNew || !draft.enabled)} disabled={saving} className={primaryBtn}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {isNew || !draft.enabled ? 'Enregistrer et activer' : 'Enregistrer'}
+                </button>
+              </div>
+            )}
           </div>
         </Card>
 

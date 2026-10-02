@@ -37,6 +37,7 @@ vi.mock('../src/context/AuthContext', () => ({ useAuth: () => AUTH }));
 
 import { DashboardPlatform } from '../src/components/DashboardPlatform';
 import { resetCopilotMemory } from '../functions/api/copilot';
+import { goTo } from './helpers/nav';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 // Aucun test ici ne touche à la facturation : seule la fenêtre d'alerte de l'Accueil est vérifiée.
@@ -177,7 +178,7 @@ describe('Accueil façon Gemini / Claude', () => {
     await say('premier');
     await screen.findByText('Réponse une.');
 
-    fireEvent.click(document.getElementById('nav-behavior')!);
+    goTo('behavior');
     await settle(60);
     fireEvent.click(document.getElementById('copilot-launcher')!);
     const dialog = await screen.findByRole('dialog', { name: 'Discussion avec mon IA' });
@@ -202,7 +203,7 @@ describe('Accueil façon Gemini / Claude', () => {
     await openChat();
     await say('coucou');
     await screen.findByText('Bien reçu.');
-    fireEvent.click(document.getElementById('nav-behavior')!);
+    goTo('behavior');
     await settle(60);
     expect(document.getElementById('copilot-launcher')).toBeTruthy();
     expect(screen.queryByLabelText('Nouvelle réponse')).toBeNull();
@@ -227,7 +228,7 @@ describe('Accueil : rien n’est perdu', () => {
     expect(screen.getByText(/Assistant en préparation/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Renseigner le nom de mon entreprise' })).toBeNull(); // le nom existe déjà
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter mes informations' }));
-    expect(await screen.findByText('Mes informations', { selector: 'h1' })).toBeTruthy();
+    expect(await screen.findByText('Mon assistant', { selector: 'h1' })).toBeTruthy();
   });
 
   it('une urgence (limite atteinte) remonte sur l’Accueil, avec un bouton qui mène au bon écran', async () => {

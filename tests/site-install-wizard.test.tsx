@@ -223,7 +223,7 @@ describe('dans le tableau de bord', () => {
     render(<DashboardPlatform initialSection="integration" />);
     await settle(300);
     expect(screen.getByTestId('site-install')).toBeTruthy();
-    expect(document.querySelector('header h1')!.textContent).toBe('Installer sur mon site');
+    expect(document.querySelector('header h1')!.textContent).toBe('Canaux');
     const main = document.querySelector('main')!.textContent || '';
     for (const technical of ['version pour développeur', 'Options avancées', 'Webhook', 'webhook', 'App.tsx', 'cURL', 'React / Vite']) {
       expect(main, technical).not.toContain(technical);
@@ -247,6 +247,7 @@ describe('dans le tableau de bord', () => {
     await settle(60);
     fireEvent.click(screen.getByRole('button', { name: /Connecter Instagram/ }));
     await settle(60);
-    expect(document.querySelector('header h1')!.textContent).toBe('Instagram');
+    expect(document.querySelector('header h1')!.textContent).toBe('Canaux');
+    expect(document.querySelector('[data-tab="instagram"]')!.getAttribute('aria-selected')).toBe('true');
   });
 });

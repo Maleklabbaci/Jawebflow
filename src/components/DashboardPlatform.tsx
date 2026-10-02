@@ -54,7 +54,8 @@ import {
   BrainCircuit,
   SlidersHorizontal,
   Activity,
-  ChevronDown
+  ChevronDown,
+  Share2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -71,6 +72,7 @@ import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
+import { SubTabs } from './dashboard/SubTabs';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
@@ -81,37 +83,44 @@ export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge
  * On évite volontairement le vocabulaire technique (crawler, widget, webhook,
  * simulateur, CRM, API) qui perdait les utilisateurs non techniques.
  */
-const NAV_GROUPS: Array<{
-  title: string;
-  items: Array<{ id: DashboardSectionId; label: string; icon: React.ComponentType<{ className?: string }>; pro?: boolean }>;
-}> = [
-  {
+type NavItem = { id: DashboardSectionId; label: string; icon: React.ComponentType<{ className?: string }>; pro?: boolean };
+
+/**
+ * UNE SEULE plateforme, 6 entrées de menu :
+ *   Accueil · Résumé · Mon assistant · Tester · Canaux · Clients
+ * « Mon assistant » et « Canaux » regroupent plusieurs écrans, affichés en petits onglets.
+ */
+const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: DashboardSectionId; label: string }> }> = {
+  assistant: {
     title: 'Mon assistant',
-    items: [
-      { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
-      { id: 'summary', label: 'Résumé', icon: TrendingUp },
-      { id: 'crawler', label: 'Mon site web', icon: Store, pro: true },
-      { id: 'knowledge', label: 'Mes informations', icon: Database },
-      { id: 'behavior', label: 'Comportement', icon: SlidersHorizontal },
-      { id: 'widget', label: 'Apparence', icon: Palette },
-      { id: 'simulator', label: 'Tester l\'assistant', icon: MessageSquare, pro: true },
-      { id: 'learning', label: 'Apprentissage IA', icon: BrainCircuit },
+    tabs: [
+      { id: 'knowledge', label: 'Mes informations' },
+      { id: 'crawler', label: 'Mon site web' },
+      { id: 'behavior', label: 'Comportement' },
+      { id: 'widget', label: 'Apparence' },
+      { id: 'learning', label: 'Apprentissage' },
     ],
   },
-  {
-    title: 'Mes résultats',
-    items: [
-      { id: 'leads', label: 'Clients & statistiques', icon: BarChart3, pro: true },
+  channels: {
+    title: 'Canaux',
+    tabs: [
+      { id: 'integration', label: 'Mon site' },
+      { id: 'instagram', label: 'Instagram' },
+      { id: 'automations', label: 'Automatisations' },
     ],
   },
-  {
-    title: 'Installation',
-    items: [
-      { id: 'integration', label: 'Mettre sur mon site', icon: Code2 },
-      { id: 'instagram', label: 'Instagram', icon: Instagram, pro: true },
-      { id: 'automations', label: 'Automatisations', icon: Zap },
-    ],
-  },
+};
+
+const groupOf = (id: DashboardSectionId): string | null =>
+  Object.keys(SECTION_GROUPS).find((g) => SECTION_GROUPS[g].tabs.some((t) => t.id === id)) || null;
+
+const NAV_ITEMS: Array<NavItem & { group?: string }> = [
+  { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
+  { id: 'summary', label: 'Résumé', icon: TrendingUp },
+  { id: 'knowledge', label: 'Mon assistant', icon: Bot, group: 'assistant' },
+  { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
+  { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
+  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true },
 ];
 
 interface DashboardPlatformProps {
@@ -1345,54 +1354,41 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             </button>
           </div>
 
-          {/* Navigation : libellés simples, pensés pour un commerçant, pas pour un développeur */}
-          <nav className="px-3 pb-4" aria-label="Menu principal">
-            {NAV_GROUPS.map((group) => (
-              <div key={group.title}>
-                <div className="px-3 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  {group.title}
-                </div>
-                <div className="space-y-0.5">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = currentSection === item.id;
-                    const badge =
-                      item.id === 'leads' ? String(leadsList.length)
-                      : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length)
-                      : null;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        id={`nav-${item.id}`}
-                        title={item.label}
-                        aria-current={isActive ? 'page' : undefined}
-                        onClick={() => handleSectionChange(item.id)}
-                        className={`group flex h-9 w-full items-center gap-2.5 rounded-full px-3 text-[13px] transition-all cursor-pointer ${
-                          isActive
-                            ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
-                            : 'font-medium text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
-                        }`}
-                      >
-                        <span className="relative shrink-0">
-                          <Icon className={`h-[18px] w-[18px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
-                          {badge && badge !== '0' && (
-                            <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
-                              {badge}
-                            </span>
-                          )}
+          {/* Navigation : 6 entrées, libellés simples */}
+          <nav className="px-3 pb-4 pt-3" aria-label="Menu principal">
+            <div className="space-y-1">
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = item.group ? groupOf(currentSection) === item.group : currentSection === item.id;
+                const badge = item.id === 'leads' ? String(leadsList.length) : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length) : null;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    id={`nav-${item.id}`}
+                    title={item.label}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => handleSectionChange(item.id)}
+                    className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                        : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="relative shrink-0">
+                      <Icon className={`h-[19px] w-[19px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                      {badge && badge !== '0' && (
+                        <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
+                          {badge}
                         </span>
-                        <span className="flex-1 truncate text-left">{item.label}</span>
-                        {item.pro && showLockedGates && (
-                          <Lock className="w-3 h-3 text-amber-500" />
-                        )}
-                        {!isActive && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-purple-400" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+                      )}
+                    </span>
+                    <span className="flex-1 truncate text-left">{item.label}</span>
+                    {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
+                  </button>
+                );
+              })}
+            </div>
           </nav>
         </div>
       </aside>
@@ -1424,24 +1420,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               <Menu className="w-5 h-5" />
             </button>
             <div className="min-w-0">
-              <h1 className="truncate text-lg font-medium tracking-tight text-[#2a2745] sm:text-2xl">
+              <h1 className="dash-title truncate text-lg sm:text-2xl">
                 {currentSection === 'overview' && 'Accueil'}
                 {currentSection === 'summary' && 'Résumé'}
-                {currentSection === 'crawler' && 'Mon site web'}
-                {currentSection === 'knowledge' && 'Mes informations'}
-                {currentSection === 'behavior' && 'Comportement'}
-                {currentSection === 'widget' && 'Apparence de la bulle'}
+                {groupOf(currentSection) === 'assistant' && SECTION_GROUPS.assistant.title}
+                {groupOf(currentSection) === 'channels' && SECTION_GROUPS.channels.title}
                 {currentSection === 'simulator' && 'Tester mon assistant'}
-                {currentSection === 'learning' && 'Apprentissage IA'}
-                {currentSection === 'integration' && 'Installer sur mon site'}
-                {currentSection === 'leads' && 'Clients & statistiques'}
+                {currentSection === 'leads' && 'Mes clients'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
-                {currentSection === 'instagram' && 'Instagram'}
-                {currentSection === 'automations' && 'Automatisations Instagram'}
               </h1>
               {currentSection !== 'overview' && (
-                <p className="truncate text-xs text-slate-400">{businessName || 'Assistant en configuration'}</p>
+                <p className="dash-subtitle truncate text-xs">{businessName || 'Assistant en configuration'}</p>
               )}
             </div>
           </div>
@@ -1556,6 +1546,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
+          {groupOf(currentSection) && (
+            <SubTabs
+              tabs={SECTION_GROUPS[groupOf(currentSection) as string].tabs}
+              active={currentSection}
+              onChange={(id) => handleSectionChange(id)}
+            />
+          )}
+
           {currentSection === 'overview' && (
             // « Bonjour {prénom} » + grand champ de texte : le chat « Mon IA » s'affiche ici (voir <CopilotChat mode="page" />).
             <div ref={setCopilotHost} className="h-full" data-testid="copilot-home-host" />
@@ -1866,7 +1864,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-slate-400">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Nous respectons les règles du site (robots.txt). Rien n'est publié sans votre validation.</span>
+                    <span>Rien n'est publié sans ta validation.</span>
                   </div>
                 </form>
 
@@ -2405,7 +2403,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           )}
 
           {/* =================================================================
-              SECTION 6: LEADS & PROSPECTS CRM
+              SECTION 6: CLIENTS
               ================================================================= */}
           {currentSection === 'leads' && (
             <>
@@ -2427,7 +2425,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 icon={Users}
                 featureName="Clients & statistiques"
                 benefits={[
-                  "Registre CRM complet avec filtres par statut et recherche instantanée",
+                  "Liste complète de tes clients avec filtres et recherche",
                   "Détection technique des visiteurs (appareil, OS, navigateur, langue)",
                   "Export CSV complet et format publicitaire Google & Facebook Ads",
                   "Nombre de visiteurs, de conversations et de clients intéressés"
@@ -2478,19 +2476,19 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             return (
               <div className="space-y-6 animate-in fade-in duration-200">
                 {/* Insights vs CRM Tabs */}
-                <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-max">
+                <div className="flex w-full gap-2 sm:w-max">
                   <button
                     onClick={() => setInsightsTab('analytics')}
-                    className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                      insightsTab === 'analytics' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
+                      insightsTab === 'analytics' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
                     }`}
                   >
                     Vue d'ensemble
                   </button>
                   <button
                     onClick={() => setInsightsTab('prospects')}
-                    className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                      insightsTab === 'prospects' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
+                      insightsTab === 'prospects' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
                     }`}
                   >
                     Mes clients
@@ -2501,65 +2499,30 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   <InsightsDashboard user={user} />
                 ) : (
                   <>
-                    {/* Top Export Banner with Quick Download and Expandable Details */}
-                <div className="p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl border border-slate-800 shadow-md flex flex-col gap-4">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold uppercase tracking-wider">
-                          Export
-                        </span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        <span className="text-[10px] text-slate-400">{totalTracked} clients enregistrés</span>
-                      </div>
-                      <h3 className="text-base font-bold tracking-tight">Exporter mes clients</h3>
-                      <p className="text-xs text-indigo-200/90 leading-relaxed max-w-xl">
-                        Téléchargez la liste de vos clients intéressés (nom, téléphone, besoin) pour l'importer dans vos contacts, WhatsApp ou vos publicités Facebook.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2.5 items-center">
-                      <button
-                        type="button"
-                        onClick={handleExportCSV}
-                        disabled={leadsList.length === 0}
-                        className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-purple-600/10"
-                      >
-                        <FileText className="w-4 h-4 text-purple-200" />
-                        <span>Exporter CSV CRM Complet</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleExportAdsCSV}
-                        disabled={leadsList.length === 0}
-                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer border border-slate-700 hover:border-slate-600"
-                      >
-                        <Target className="w-4 h-4 text-purple-400" />
-                        <span>CSV Google & Facebook Ads</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setShowExportDetails(!showExportDetails)}
-                        className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-purple-300 hover:text-purple-200 text-xs font-bold transition-all cursor-pointer border border-slate-800 flex items-center gap-1.5"
-                      >
-                        <span>{showExportDetails ? "Masquer les détails" : "En savoir plus"}</span>
-                        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showExportDetails ? "rotate-90" : ""}`} />
-                      </button>
-                    </div>
+                    {/* Export : une carte simple, deux boutons */}
+                <div className="flex flex-col gap-4 rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(27,22,71,0.04)] sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-base">Mes clients intéressés</h3>
+                    <p className="mt-0.5 text-sm text-slate-500">{totalTracked} client{totalTracked > 1 ? 's' : ''} enregistré{totalTracked > 1 ? 's' : ''}. Télécharge la liste pour l’ouvrir dans Excel ou l’importer dans tes contacts.</p>
                   </div>
-
-                  {showExportDetails && (
-                    <div className="pt-3 border-t border-slate-800 text-xs text-indigo-200/80 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200 leading-relaxed max-w-3xl">
-                      <p>
-                        <strong>Format CRM Complet :</strong> Contient toutes les colonnes détaillées collectées (ID unique, nom, email, téléphone, besoin client détecté, date d'enregistrement, referer d'acquisition, navigateur et langue). Idéal pour Excel, Google Sheets ou CRM (HubSpot, Salesforce, etc.).
-                      </p>
-                      <p>
-                        <strong>Format Publicitaire Ads :</strong> Format optimisé (sans en-têtes complexes) pour Meta Business Manager & Google Customer Match. Permet la synchronisation d'Audiences Personnalisées (Custom Audiences) et d'Audiences Similaires (Lookalike) pour maximiser le retour sur investissement de vos campagnes de remarketing.
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleExportCSV}
+                      disabled={leadsList.length === 0}
+                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
+                    >
+                      <Download className="h-4 w-4" /> Télécharger la liste
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportAdsCSV}
+                      disabled={leadsList.length === 0}
+                      className="inline-flex items-center gap-2 rounded-full bg-[#f1eaff] px-5 py-2.5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
+                    >
+                      <Target className="h-4 w-4" /> Pour mes publicités
+                    </button>
+                  </div>
                 </div>
 
                 {/* 1. Analytics & Metrics Dashboard row */}
@@ -3620,7 +3583,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
-                            Sur-mesure & API
+                            Sur mesure
                           </span>
                         )}
                       </div>
@@ -3651,7 +3614,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Intégrations sur mesure (CRM, outils de gestion et Google Sheets)</span>
+                          <span>Connexion avec tes outils de gestion</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />

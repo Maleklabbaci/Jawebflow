@@ -29,6 +29,7 @@ vi.mock('../src/context/AuthContext', () => ({
 }));
 
 import { DashboardPlatform } from '../src/components/DashboardPlatform';
+import { goTo, MENU_ENTRY } from './helpers/nav';
 
 const SECTIONS: Array<{ id: string; nav: string }> = [
   { id: 'overview', nav: 'Accueil' },
@@ -76,10 +77,20 @@ describe('tableau de bord — navigation', () => {
     for (const s of SECTIONS) {
       // « Abonnement & factures » est un bouton en haut à droite ; « Mon profil » est dans le menu du profil (même endroit)
       if (s.id === 'settings') await act(async () => { fireEvent.click(document.getElementById('account-menu-button')!); });
-      const btn = document.getElementById(`nav-${s.id}`);
-      expect(btn, `bouton de menu « ${s.nav} »`).toBeTruthy();
-      expect(btn!.textContent).toContain(s.nav);
-      await act(async () => { fireEvent.click(btn!); await new Promise((r) => setTimeout(r, 60)); });
+      if (s.id === 'settings' || s.id === 'billing') {
+        const btn = document.getElementById(`nav-${s.id}`);
+        expect(btn, `bouton « ${s.nav} »`).toBeTruthy();
+        await act(async () => { fireEvent.click(btn!); await new Promise((r) => setTimeout(r, 60)); });
+      } else {
+        // menu d'abord, puis petit onglet (deux rendus successifs)
+        const entry = MENU_ENTRY[s.id];
+        if (entry && entry !== s.id) {
+          await act(async () => { fireEvent.click(document.getElementById(`nav-${entry}`)!); });
+          await act(async () => { fireEvent.click(document.querySelector(`[data-tab="${s.id}"]`)!); await new Promise((r) => setTimeout(r, 60)); });
+        } else {
+          await act(async () => { goTo(s.id); await new Promise((r) => setTimeout(r, 60)); });
+        }
+      }
       expect(document.querySelector('main')!.innerHTML.length, `onglet « ${s.nav} » vide`).toBeGreaterThan(200);
     }
     expect(errors, errors.join('\n')).toEqual([]);
@@ -88,15 +99,15 @@ describe('tableau de bord — navigation', () => {
   it('« Automatisations » ouvre bien l’écran des automatisations avec son titre', async () => {
     render(<DashboardPlatform initialSection="overview" />);
     await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
-    fireEvent.click(document.getElementById('nav-automations')!);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Automatisations Instagram' })).toBeTruthy();
+    goTo('automations');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Canaux' })).toBeTruthy();
     expect(await screen.findByRole('button', { name: /Nouvelle automatisation/ })).toBeTruthy();
     expect(window.location.pathname).toBe('/dashboard/automations');
   });
 
   it('on peut ouvrir directement /dashboard/automations', async () => {
     render(<DashboardPlatform initialSection="automations" />);
-    expect(await screen.findByText(/Automatisations Instagram/, { selector: 'h2' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Nouvelle automatisation/ })).toBeTruthy();
   });
 
   it('depuis l’onglet Instagram, « Ouvrir les automatisations » mène à l’écran des automatisations', async () => {

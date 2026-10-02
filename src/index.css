@@ -195,3 +195,33 @@ html:has(.dash-theme)::-webkit-scrollbar-track { background: #eef1fb; }
   box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.14);
   outline: none;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TYPOGRAPHIE UNIQUE DE L'ESPACE CLIENT — Poppins partout.
+   Titres en gras, sous-titres et textes d'aide en léger / normal.
+   ══════════════════════════════════════════════════════════════════════════ */
+.dash-theme,
+.dash-theme :is(button, input, select, textarea, label, a, span, div, p, td, th, li) {
+  font-family: var(--font-sans);
+}
+/* Plus de police « code » : tout est en Poppins */
+.dash-theme .font-mono { font-family: var(--font-sans); }
+
+/* Titres : gras */
+.dash-theme :is(h1, h2, h3, h4),
+.dash-theme .dash-title {
+  font-weight: 700;
+  color: var(--dash-ink);
+  letter-spacing: -0.015em;
+}
+/* Sous-titres et textes d'aide : léger / normal */
+.dash-theme p:not([class*='font-']),
+.dash-theme .dash-subtitle {
+  font-weight: 300;
+}
+.dash-theme .dash-subtitle { color: #64648a; }
+.dash-theme p.text-slate-400:not([class*='font-semibold']):not([class*='font-bold']),
+.dash-theme p.text-slate-500:not([class*='font-semibold']):not([class*='font-bold']),
+.dash-theme p.text-slate-600:not([class*='font-semibold']):not([class*='font-bold']) {
+  font-weight: 300;
+}

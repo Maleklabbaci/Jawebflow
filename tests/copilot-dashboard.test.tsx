@@ -37,6 +37,7 @@ vi.mock('../src/context/AuthContext', () => ({ useAuth: () => AUTH }));
 
 import { DashboardPlatform } from '../src/components/DashboardPlatform';
 import { resetCopilotMemory } from '../functions/api/copilot';
+import { goTo } from './helpers/nav';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const NOTE_1 = { id: 'n1', title: 'Livraison', content: 'Livraison en 48h', category: 'livraison', enabled: true };
@@ -108,7 +109,7 @@ describe('où trouver « Parler à mon IA »', () => {
     expect(document.activeElement).toBe(chatBox());
 
     // Sur un autre écran : bouton flottant → fenêtre
-    fireEvent.click(document.getElementById('nav-behavior')!);
+    goTo('behavior');
     await settle(60);
     const launcher = document.getElementById('copilot-launcher')!;
     expect(launcher.textContent).toContain('Parler à mon IA');

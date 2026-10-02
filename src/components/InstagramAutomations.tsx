@@ -9,7 +9,7 @@
  * reste : les règles passent en premier, l'IA prend le relais.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { History, Loader2, Plus, Zap } from 'lucide-react';
+import { History, Loader2, Plus } from 'lucide-react';
 import { AUTOMATION_TEMPLATES, normalizeConfig, type Automation } from '../../functions/_shared/ig-automation-core';
 import { ApiError, igApi, type Diagnostics } from '../lib/ig-automations-api';
 import { AutomationEditor, type Draft } from './automations/AutomationEditor';
@@ -17,6 +17,7 @@ import { HealthPanel } from './automations/HealthPanel';
 import { AutomationCard } from './automations/AutomationCard';
 import { HistoryPanel } from './automations/HistoryPanel';
 import { SetupBanner } from './automations/SetupBanner';
+import { PageHeader } from './dashboard/PageHeader';
 import { Card, Notice, ghostBtn, primaryBtn, secondaryBtn } from './automations/ui';
 
 interface Props {
@@ -218,18 +219,18 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
   }
 
   const templateGrid = (
-    <div className="grid gap-3 sm:grid-cols-2" aria-label="Modèles d’automatisation">
+    <div className="grid gap-4 sm:grid-cols-2" aria-label="Modèles d’automatisation">
       {AUTOMATION_TEMPLATES.map((tpl) => (
         <button
           key={tpl.id}
           type="button"
           onClick={() => startFromTemplate(tpl.id)}
-          className="group rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-purple-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+          className="group rounded-[24px] bg-white p-5 text-left shadow-[0_1px_2px_rgba(27,22,71,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-18px_rgba(90,44,255,0.45)] focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
         >
-          <span className="text-2xl" aria-hidden>{tpl.emoji}</span>
-          <span className="mt-2 block text-sm font-semibold text-slate-900">{tpl.title}</span>
-          <span className="mt-1 block text-xs leading-relaxed text-slate-500">{tpl.description}</span>
-          <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-purple-700 group-hover:underline">Utiliser ce modèle →</span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f1eaff] text-2xl" aria-hidden>{tpl.emoji}</span>
+          <span className="mt-3 block text-[15px] font-bold text-[#1b1647]">{tpl.title}</span>
+          <span className="mt-1 block text-xs font-light leading-relaxed text-slate-500">{tpl.description}</span>
+          <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-purple-700">Utiliser ce modèle →</span>
         </button>
       ))}
     </div>
@@ -241,8 +242,8 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => setView('list')} className={ghostBtn}>← Retour</button>
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Que veux-tu automatiser ?</h2>
-            <p className="text-xs text-slate-500">Choisis un point de départ : tu pourras tout modifier ensuite.</p>
+            <h2 className="dash-title text-xl">Que veux-tu automatiser ?</h2>
+            <p className="dash-subtitle text-sm">Choisis un point de départ, tu pourras tout modifier ensuite.</p>
           </div>
         </div>
         {templateGrid}
@@ -252,30 +253,20 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
 
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
-      <Card className="p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-purple-600" />
-              <h2 className="text-lg font-semibold text-slate-900">Automatisations Instagram</h2>
-            </div>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">
-              Réponds tout seul aux commentaires, envoie un message privé à ceux qui commentent « prix » ou « info », et réponds aux mots-clés dans tes messages — 24h/24.
-              Pour tout le reste, ton assistant IA prend le relais.
-            </p>
+      <PageHeader
+        title="Automatisations"
+        subtitle="Réponds tout seul aux commentaires et aux messages. Pour tout le reste, ton assistant prend le relais."
+        action={!setupRequired ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => { setHistoryFor(undefined); setView('history'); }} className={secondaryBtn}>
+              <History className="h-4 w-4" /> Historique
+            </button>
+            <button type="button" onClick={() => setView('new')} className={primaryBtn}>
+              <Plus className="h-4 w-4" /> Nouvelle automatisation
+            </button>
           </div>
-          {!setupRequired && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => { setHistoryFor(undefined); setView('history'); }} className={secondaryBtn}>
-                <History className="h-4 w-4" /> Historique
-              </button>
-              <button type="button" onClick={() => setView('new')} className={primaryBtn}>
-                <Plus className="h-4 w-4" /> Nouvelle automatisation
-              </button>
-            </div>
-          )}
-        </div>
-      </Card>
+        ) : undefined}
+      />
 
       {notice && <Notice kind={notice.kind} onClose={() => setNotice(null)}>{notice.text}</Notice>}
 
@@ -304,13 +295,13 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
           {loading && automations.length === 0 && !loadError ? (
             <Card className="flex items-center justify-center gap-2 py-14 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Chargement de tes automatisations…</Card>
           ) : automations.length === 0 && !loadError ? (
-            <Card className="space-y-4 p-5 sm:p-6">
+            <div className="space-y-5">
               <div>
-                <h3 className="text-base font-semibold text-slate-900">Tu n’as pas encore d’automatisation</h3>
-                <p className="mt-1 text-sm text-slate-500">Commence avec un modèle, c’est prêt en 2 minutes :</p>
+                <h3 className="text-lg">Tu n’as pas encore d’automatisation</h3>
+                <p className="mt-1 text-sm text-slate-500">Commence avec un modèle, c’est prêt en 2 minutes.</p>
               </div>
               {templateGrid}
-            </Card>
+            </div>
           ) : (
             <>
               {automations.length > 0 && (
@@ -339,15 +330,13 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
             </>
           )}
 
-          <details className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600">
-            <summary className="cursor-pointer select-none font-medium text-slate-800">Bon à savoir (les règles d’Instagram)</summary>
-            <ul className="mt-3 list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate-500">
-              <li>Instagram autorise <strong>un seul message privé par commentaire</strong>, et seulement dans les <strong>7 jours</strong> qui suivent.</li>
-              <li>Si la personne ne te suit pas, ton message arrive dans ses « Demandes de messages » : elle doit l’accepter pour le lire.</li>
-              <li>Les liens ne sont pas cliquables dans les commentaires : mets-les dans le message privé (bouton).</li>
-              <li>Le prénom n’est connu que dans les messages privés. Sous un commentaire, utilise <strong>@pseudo</strong>.</li>
-              <li>Ton compte doit être un compte professionnel (Business ou Créateur) et public.</li>
-              <li>Quand une règle correspond, elle répond à la place de l’IA. Sinon, l’IA répond comme d’habitude.</li>
+          <details className="rounded-2xl bg-white px-5 py-4 text-sm text-slate-600">
+            <summary className="cursor-pointer select-none font-semibold text-slate-800">Bon à savoir</summary>
+            <ul className="mt-3 list-disc space-y-1.5 pl-5 text-xs font-light leading-relaxed text-slate-500">
+              <li>Un seul message privé par commentaire, dans les 7 jours qui suivent.</li>
+              <li>Si la personne ne te suit pas, ton message arrive dans ses « Demandes ».</li>
+              <li>Les liens ne sont pas cliquables sous un commentaire : mets-les dans le message privé.</li>
+              <li>Ton compte doit être professionnel (Business ou Créateur) et public.</li>
             </ul>
           </details>
         </>

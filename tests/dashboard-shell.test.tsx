@@ -38,6 +38,7 @@ const AUTH = vi.hoisted(() => ({
 vi.mock('../src/context/AuthContext', () => ({ useAuth: () => AUTH }));
 
 import { DashboardPlatform } from '../src/components/DashboardPlatform';
+import { goTo, MENU_ENTRY } from './helpers/nav';
 import { StatCard } from '../src/components/dashboard/StatCard';
 import { Users } from 'lucide-react';
 import { resetCopilotMemory } from '../functions/api/copilot';
@@ -105,16 +106,16 @@ async function say(text: string) {
 const TITLES: Array<{ id: string; nav: string; title: string }> = [
   { id: 'overview', nav: 'Accueil', title: 'Accueil' },
   { id: 'summary', nav: 'Résumé', title: 'Résumé' },
-  { id: 'crawler', nav: 'Mon site web', title: 'Mon site web' },
-  { id: 'knowledge', nav: 'Mes informations', title: 'Mes informations' },
-  { id: 'behavior', nav: 'Comportement', title: 'Comportement' },
-  { id: 'widget', nav: 'Apparence', title: 'Apparence de la bulle' },
-  { id: 'simulator', nav: 'Tester l\'assistant', title: 'Tester mon assistant' },
-  { id: 'learning', nav: 'Apprentissage IA', title: 'Apprentissage IA' },
-  { id: 'leads', nav: 'Clients & statistiques', title: 'Clients & statistiques' },
-  { id: 'integration', nav: 'Mettre sur mon site', title: 'Installer sur mon site' },
-  { id: 'instagram', nav: 'Instagram', title: 'Instagram' },
-  { id: 'automations', nav: 'Automatisations', title: 'Automatisations Instagram' },
+  { id: 'knowledge', nav: 'Mon assistant', title: 'Mon assistant' },
+  { id: 'crawler', nav: 'Mon assistant', title: 'Mon assistant' },
+  { id: 'behavior', nav: 'Mon assistant', title: 'Mon assistant' },
+  { id: 'widget', nav: 'Mon assistant', title: 'Mon assistant' },
+  { id: 'learning', nav: 'Mon assistant', title: 'Mon assistant' },
+  { id: 'simulator', nav: 'Tester', title: 'Tester mon assistant' },
+  { id: 'integration', nav: 'Canaux', title: 'Canaux' },
+  { id: 'instagram', nav: 'Canaux', title: 'Canaux' },
+  { id: 'automations', nav: 'Canaux', title: 'Canaux' },
+  { id: 'leads', nav: 'Clients', title: 'Mes clients' },
   { id: 'billing', nav: 'Abonnement & factures', title: 'Abonnement & factures' },
   { id: 'settings', nav: 'Mon profil', title: 'Mon profil' },
 ];
@@ -136,7 +137,9 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     for (const s of TITLES) {
       // « Abonnement & factures » et « Mon profil » sont en haut à droite, plus dans la barre latérale
       if (s.id === 'settings') fireEvent.click(document.getElementById('account-menu-button')!);
-      fireEvent.click(document.getElementById(`nav-${s.id}`)!);
+      if (s.id === 'billing') fireEvent.click(document.getElementById('nav-billing')!);
+      else if (s.id === 'settings') fireEvent.click(document.getElementById('nav-settings')!);
+      else goTo(s.id);
       await settle(40);
       const inMenu = document.querySelectorAll('aside nav [aria-current="page"]');
       const inHeader = document.querySelectorAll('header [aria-current="page"]');
@@ -145,7 +148,7 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
         expect(inHeader.length, `bouton actif en haut pour « ${s.nav} »`).toBe(1);
       } else {
         expect(inMenu.length, `entrée active pour « ${s.nav} »`).toBe(1);
-        expect(inMenu[0].id).toBe(`nav-${s.id}`);
+        expect(inMenu[0].id).toBe(`nav-${MENU_ENTRY[s.id]}`);
         expect(inHeader.length).toBe(0);
       }
       expect(document.querySelector('header h1')!.textContent, `titre de « ${s.nav} »`).toBe(s.title);
@@ -162,7 +165,7 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     await settle(300);
     expect(document.getElementById('nav-knowledge')!.textContent).toContain('1');
     expect(document.getElementById('nav-leads')!.textContent).toContain('2');
-    expect(document.getElementById('nav-behavior')!.textContent).toBe('Comportement'); // pas de chiffre
+    expect(document.getElementById('nav-simulator')!.textContent).toBe('Tester'); // pas de chiffre
   });
 
   it('Résumé : trois cartes de chiffres (statut, clients, informations) avec les vrais nombres', async () => {
@@ -193,7 +196,7 @@ describe('barre latérale épurée, abonnement et profil en haut à droite', () 
       expect(side.textContent, `« ${gone} » ne doit plus être dans la barre latérale`).not.toContain(gone);
     }
     expect(side.textContent).toContain('JawebFlow');
-    expect(side.querySelectorAll('nav button').length).toBe(12); // 14 écrans − abonnement − profil
+    expect(side.querySelectorAll('nav button').length).toBe(6); // 6 entrées : une seule plateforme
   });
 
   it('plus de bouton « Enregistrer » en haut : à la place, « Abonnement & factures » et le profil', async () => {

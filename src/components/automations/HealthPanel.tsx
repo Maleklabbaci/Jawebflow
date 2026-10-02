@@ -69,6 +69,15 @@ export function HealthPanel({
     );
   }
 
+  // Tout va bien : une simple ligne discrète, rien de technique.
+  if (allGood && !repairMessage) {
+    return (
+      <p className="flex items-center gap-2 text-xs text-emerald-700" data-testid="health-title">
+        <CheckCircle2 className="h-4 w-4" /> Instagram est bien connecté{diag?.username ? ` (@${diag.username})` : ''}
+      </p>
+    );
+  }
+
   return (
     <Card className={allGood ? 'border-emerald-200 bg-emerald-50/50' : 'border-amber-300 bg-amber-50/50'}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -77,7 +86,7 @@ export function HealthPanel({
           <div className="min-w-0">
             <p className="font-semibold text-slate-900" data-testid="health-title">
               {allGood
-                ? `Instagram est bien branché${diag?.username ? ` (@${diag.username})` : ''}`
+                ? `Instagram est bien connecté${diag?.username ? ` (@${diag.username})` : ''}`
                 : !diag?.connected
                   ? 'Instagram n’est pas encore connecté'
                   : `${problems.length} point${problems.length > 1 ? 's' : ''} à régler pour que tout fonctionne`}
@@ -86,9 +95,6 @@ export function HealthPanel({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900" aria-expanded={open}>
-            Détails <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-          </button>
           <button type="button" onClick={onRefresh} disabled={loading} className={secondaryBtn} aria-label="Vérifier à nouveau la connexion">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Vérifier
           </button>
