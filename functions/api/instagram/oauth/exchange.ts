@@ -121,9 +121,10 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
 
     console.log("[instagram][exchange] ✅ Token exchange SUCCESS");
 
-    const tokenUserId = String(tokenData.user_id || "").trim();
-    let accessToken = String(tokenData.access_token);
-    const grantedPermissions = String(tokenData.permissions ?? tokenData.data?.[0]?.permissions ?? "")
+    const tokenRecord = Array.isArray(tokenData.data) ? (tokenData.data[0] || {}) : tokenData;
+    const tokenUserId = String(tokenRecord.user_id || tokenData.user_id || "").trim();
+    let accessToken = String(tokenRecord.access_token || tokenData.access_token || "");
+    const grantedPermissions = String(tokenRecord.permissions ?? tokenData.permissions ?? "")
       .split(",").map((p: string) => p.trim()).filter(Boolean);
 
     console.log("[instagram][exchange] Permissions:", grantedPermissions);
@@ -142,7 +143,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       });
 
       const llCandidates = [
-        `https://graph.instagram.com/${IG_GRAPH_VERSION}/access_token?${llParams.toString()}`,
+        `https://graph.instagram.com/access_token?${llParams.toString()}`,
       ];
 
       for (const llUrl of llCandidates) {
@@ -230,7 +231,15 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       }
     }
 
-    const igProfessionalId = String(profile?.user_id || profile?.id || tokenUserId || "").trim();
+    if (!profile) {
+      return json({
+        error: "Meta n’a pas renvoyé le vrai compte Instagram. Vérifie que l’utilisateur est un compte professionnel, que les autorisations sont accordées et reconnecte-le.",
+        step: "profile",
+        details: { attempts: profileErrors, tokenUserId: tokenUserId || undefined },
+      }, 400);
+    }
+
+    const igProfessionalId = String(profile.user_id || profile.id || "").trim();
     const igUsername = String(profile?.username || "").trim();
     
     console.log("[instagram][exchange] Identity resolved:", {
@@ -292,7 +301,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     // ✅ FIXED: For merchant mode, we don't strictly require profile data
     // because we have user_id from token. But if profile failed for all endpoints,
     // we should handle it gracefully.
-    if (!profile && !igProfessionalId) {
+    if (!igProfessionalId || !igUsername) {
       console.error("[instagram][exchange] FAIL: No identity data available");
       return json({ 
         error: "Impossible de récupérer l'identifiant du compte Instagram.",
