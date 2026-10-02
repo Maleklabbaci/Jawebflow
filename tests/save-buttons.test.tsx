@@ -2,7 +2,7 @@
 // Les boutons « Enregistrer » ne doivent JAMAIS écraser les fiches « Mes informations » (bug : l'événement du clic
 // était enregistré à leur place quand un bouton appelait directement la fonction de sauvegarde).
 import React from 'react';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { seedMerchant } from './helpers/fakes';
 import { installUiBackend, type UiBackend } from './helpers/ui-backend';
@@ -57,7 +57,6 @@ async function openAndClick(section: string, pick: (b: HTMLButtonElement) => boo
 
 describe('boutons « Enregistrer »', () => {
   it.each([
-    ['en-tête (toutes pages)', 'overview', (b: HTMLButtonElement) => !!b.closest('header') && /Enregistrer/.test(b.textContent || '')],
     ['page Comportement', 'behavior', (b: HTMLButtonElement) => /Enregistrer/.test(b.textContent || '') && !b.closest('header')],
     ['page Apparence', 'widget', (b: HTMLButtonElement) => /Enregistrer/.test(b.textContent || '') && !b.closest('header')],
   ])('%s : enregistre les VRAIES fiches, pas l’événement du clic', async (_name, section, pick) => {
@@ -70,18 +69,32 @@ describe('boutons « Enregistrer »', () => {
 });
 
 describe('échec d’enregistrement', () => {
-  it('le bouton du haut le dit (plus d’échec silencieux) puis redevient normal', async () => {
-    render(<DashboardPlatform initialSection="overview" />);
-    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+  it('le témoin en haut à droite le dit (plus d’échec silencieux), et « Échec — réessayer » enregistre pour de bon', async () => {
     saveSpy.mockImplementation(async () => { throw new Error('réseau coupé'); });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const header = () => (Array.from(document.querySelectorAll('header button')) as HTMLButtonElement[]).find((b) => /Enregistrer|Échec|Enregistré/.test(b.textContent || ''))!;
-    await act(async () => { fireEvent.click(header()); await new Promise((r) => setTimeout(r, 120)); });
-    expect(header().textContent).toMatch(/Échec — réessayer/);
-    expect(header().title).toMatch(/a échoué/);
-    // on réessaie avec une connexion rétablie : « Enregistré ! »
+    render(<DashboardPlatform initialSection="overview" />);
+    // plus de bouton « Enregistrer » en haut : l'enregistrement est automatique (≈ 1 s après le chargement) et échoue ici
+    expect(Array.from(document.querySelectorAll('header button')).some((b) => /^\s*Enregistrer\s*$/.test(b.textContent || ''))).toBe(false);
+    const retry = await screen.findByRole('button', { name: /Échec — réessayer/ }, { timeout: 4000 });
+    expect(retry.title).toMatch(/a échoué/);
+    // on réessaie avec une connexion rétablie : « Enregistré »
     saveSpy.mockImplementation(async () => 'asst1');
-    await act(async () => { fireEvent.click(header()); await new Promise((r) => setTimeout(r, 120)); });
-    expect(header().textContent).toMatch(/Enregistré !/);
+    await act(async () => { fireEvent.click(retry); await new Promise((r) => setTimeout(r, 120)); });
+    expect(screen.getByRole('status').textContent).toMatch(/Enregistré/);
+    expect(screen.queryByRole('button', { name: /Échec/ })).toBeNull();
+  });
+
+  it('l’échec reste affiché : il ne disparaît pas tout seul (plus de bouton « Enregistrer » pour réessayer à tout moment)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      saveSpy.mockImplementation(async () => { throw new Error('réseau coupé'); });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      render(<DashboardPlatform initialSection="overview" />);
+      await screen.findByRole('button', { name: /Échec — réessayer/ }, { timeout: 4000 });
+      await act(async () => { vi.advanceTimersByTime(30_000); }); // bien plus que les 6 s d'avant
+      expect(screen.getByRole('button', { name: /Échec — réessayer/ })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

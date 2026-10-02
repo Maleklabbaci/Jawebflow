@@ -53,7 +53,8 @@ import {
   Shield,
   BrainCircuit,
   SlidersHorizontal,
-  Activity
+  Activity,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -111,13 +112,6 @@ const NAV_GROUPS: Array<{
       { id: 'automations', label: 'Automatisations', icon: Zap },
     ],
   },
-  {
-    title: 'Mon compte',
-    items: [
-      { id: 'billing', label: 'Abonnement & factures', icon: CreditCard },
-      { id: 'settings', label: 'Mon profil', icon: User },
-    ],
-  },
 ];
 
 interface DashboardPlatformProps {
@@ -171,6 +165,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Mobile sidebar drawer state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Menu du profil (en haut à droite) : Mon profil, Se déconnecter
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Sync when initialSection prop changes
   useEffect(() => {
@@ -184,9 +181,29 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
   }, [currentSection]);
 
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) setAccountMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAccountMenuOpen(false);
+        document.getElementById('account-menu-button')?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [accountMenuOpen]);
+
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
     setMobileMenuOpen(false);
+    setAccountMenuOpen(false);
     if (onNavigate) {
       onNavigate('create-assistant', section);
     } else {
@@ -826,9 +843,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       return savedId || undefined;
     } catch (err) {
       console.error('Error saving assistant:', err);
-      // Plus d'échec silencieux : le bouton le dit (sinon le marchand croit avoir enregistré).
+      // Plus d'échec silencieux : le témoin d'enregistrement (en haut à droite) le dit et le garde affiché
+      // jusqu'au prochain succès (sinon le marchand croit avoir enregistré).
       setSaveDbError(true);
-      setTimeout(() => setSaveDbError(false), 6000);
       return undefined;
     } finally {
       setIsSavingDb(false);
@@ -1465,26 +1482,26 @@ echo "Réponse de l'Assistant : " . $result['message'];
         =======================================================================
       */}
       <aside className={`
-        fixed top-0 bottom-0 left-0 w-72 bg-white z-30 flex flex-col justify-between
+        fixed top-0 bottom-0 left-0 w-64 bg-white z-30 flex flex-col
         transition-transform duration-200 ease-in-out
         ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="overflow-y-auto flex-1">
+        <div className="flex-1 overflow-y-auto">
           {/* Logo */}
-          <div className="flex items-start justify-between px-6 pb-3 pt-7">
+          <div className="flex items-start justify-between px-5 pb-2 pt-5">
             <div>
-              <span className="block bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-[27px] font-extrabold leading-none tracking-tight text-transparent">JawebFlow</span>
-              <span className="mt-1.5 block text-[11px] font-medium text-slate-400">Espace client</span>
+              <span className="block bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-[21px] font-extrabold leading-none tracking-tight text-transparent">JawebFlow</span>
+              <span className="mt-1 block text-[10px] font-medium text-slate-400">Espace client</span>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               {onNavigate && (
                 <button
                   onClick={() => onNavigate('home')}
                   className="text-xs text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                   title="Retour au site public"
                 >
-                  <ExternalLink className="w-4 h-4" />
+                  <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               )}
               <button
@@ -1497,37 +1514,24 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </div>
           </div>
 
-          {/* Encart assistant : nom + état, en clair */}
-          <div className="mx-4 mb-3 flex items-center gap-3 rounded-2xl bg-[#f5f3ff] px-4 py-3">
-            <div className={`h-2.5 w-2.5 shrink-0 rounded-full ${isReadyToDeploy ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></div>
-            <div className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-bold text-[#1b1647]">
-                {businessName || 'Assistant en configuration'}
-              </span>
-              <span className="block truncate text-[11px] text-slate-500">
-                {isReadyToDeploy ? 'En ligne · répond à vos visiteurs' : 'À compléter pour être en ligne'}
-              </span>
-            </div>
-          </div>
-
           {/* Parler à mon IA : l'entrée la plus visible du menu */}
-          <div className="px-4">
+          <div className="px-3 pt-1">
             <button
               type="button"
               id="nav-copilot"
               onClick={openCopilot}
-              className="flex w-full items-center gap-3 rounded-full bg-[#efe9ff] px-4 py-3 text-[15px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#e5dcff] focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-200 cursor-pointer"
+              className="flex h-9 w-full items-center gap-2.5 rounded-full bg-[#efe9ff] px-3 text-[13px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#e5dcff] focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-200 cursor-pointer"
             >
-              <Sparkles className="h-5 w-5" />
+              <Sparkles className="h-[18px] w-[18px]" />
               <span className="flex-1 text-left">Parler à mon IA</span>
             </button>
           </div>
 
           {/* Navigation : libellés simples, pensés pour un commerçant, pas pour un développeur */}
-          <nav className="px-4 pb-4" aria-label="Menu principal">
+          <nav className="px-3 pb-4" aria-label="Menu principal">
             {NAV_GROUPS.map((group) => (
-              <div key={group.title} className="pb-1">
-                <div className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <div key={group.title}>
+                <div className="px-3 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   {group.title}
                 </div>
                 <div className="space-y-0.5">
@@ -1546,16 +1550,16 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         title={item.label}
                         aria-current={isActive ? 'page' : undefined}
                         onClick={() => handleSectionChange(item.id)}
-                        className={`group flex h-11 w-full items-center gap-3 rounded-full px-3.5 text-sm transition-all cursor-pointer ${
+                        className={`group flex h-9 w-full items-center gap-2.5 rounded-full px-3 text-[13px] transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_12px_24px_-10px_rgba(110,50,255,0.65)]'
+                            ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
                             : 'font-medium text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
                         }`}
                       >
                         <span className="relative shrink-0">
-                          <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                          <Icon className={`h-[18px] w-[18px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
                           {badge && badge !== '0' && (
-                            <span className={`absolute -right-2.5 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
+                            <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
                               {badge}
                             </span>
                           )}
@@ -1564,7 +1568,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                         {item.pro && showLockedGates && (
                           <Lock className="w-3 h-3 text-amber-500" />
                         )}
-                        {!isActive && <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-purple-400" />}
+                        {!isActive && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-purple-400" />}
                       </button>
                     );
                   })}
@@ -1572,37 +1576,6 @@ echo "Réponse de l'Assistant : " . $result['message'];
               </div>
             ))}
           </nav>
-        </div>
-
-        {/* Profil */}
-        <div className="p-4">
-          <div className="flex items-center justify-between rounded-2xl bg-[#f6f5fb] p-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-sm font-bold text-purple-700">
-                {profile?.photoURL || user?.photoURL ? (
-                  <img src={profile?.photoURL || user?.photoURL || ''} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  (profile?.displayName || user?.displayName || user?.email || 'U')[0].toUpperCase()
-                )}
-              </div>
-              <div className="min-w-0">
-                <span className="block truncate text-[13px] font-bold text-slate-800">
-                  {profile?.displayName || user?.displayName || 'Mon Compte'}
-                </span>
-                <span className="block truncate text-[11px] text-slate-500">
-                  {user?.email || 'Connecté'}
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => logout()}
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
-              title="Déconnexion"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -1619,7 +1592,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
         MAIN CONTENT WORKSPACE (Clean, Responsive, High Contrast)
         =======================================================================
       */}
-      <div className={`flex-1 min-w-0 lg:ml-72 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
+      <div className={`flex-1 min-w-0 lg:ml-64 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
         
         {/* Sticky Top Header Bar */}
         <header className="sticky top-0 z-20 flex h-[72px] shrink-0 items-center justify-between gap-4 bg-white/95 px-4 backdrop-blur sm:px-8">
@@ -1655,34 +1628,105 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Quick Save Database Button */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Enregistrement automatique : un simple témoin (plus de bouton). L'échec reste affiché et réessayable. */}
+            {saveDbError ? (
+              <button
+                type="button"
+                onClick={() => { void handleSaveToDatabase(); }}
+                title="L’enregistrement a échoué : vérifie ta connexion internet puis clique pour réessayer."
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-100 cursor-pointer"
+              >
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Échec — réessayer</span>
+              </button>
+            ) : (isSavingDb || savedDbSuccess) ? (
+              <span
+                role="status"
+                className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${savedDbSuccess && !isSavingDb ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}
+              >
+                {isSavingDb ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">{isSavingDb ? 'Enregistrement…' : 'Enregistré'}</span>
+              </span>
+            ) : null}
+
+            {/* Abonnement & factures */}
             <button
               type="button"
-              onClick={handleSaveToDatabase}
-              disabled={isSavingDb}
-              className={`px-5 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
-                savedDbSuccess
-                  ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                  : saveDbError
-                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20'
-                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
+              id="nav-billing"
+              title="Abonnement & factures"
+              aria-label="Abonnement & factures"
+              aria-current={currentSection === 'billing' ? 'page' : undefined}
+              onClick={() => handleSectionChange('billing')}
+              className={`inline-flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium transition-all cursor-pointer xl:px-4 ${
+                currentSection === 'billing'
+                  ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                  : 'bg-slate-100 text-slate-600 hover:bg-[#efe9ff] hover:text-[#6d28d9]'
               }`}
-              title={saveDbError ? 'L’enregistrement a échoué : vérifie ta connexion internet puis clique à nouveau.' : undefined}
             >
-              {isSavingDb ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : savedDbSuccess ? (
-                <Check className="w-3.5 h-3.5" />
-              ) : saveDbError ? (
-                <AlertCircle className="w-3.5 h-3.5" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">
-                {isSavingDb ? 'Sauvegarde...' : savedDbSuccess ? 'Enregistré !' : saveDbError ? 'Échec — réessayer' : 'Enregistrer'}
-              </span>
+              <CreditCard className="h-4 w-4" />
+              <span className="hidden xl:inline">Abonnement & factures</span>
             </button>
+
+            {/* Mon profil */}
+            <div className="relative" ref={accountMenuRef}>
+              <button
+                type="button"
+                id="account-menu-button"
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
+                aria-current={currentSection === 'settings' ? 'page' : undefined}
+                title="Mon compte"
+                onClick={() => setAccountMenuOpen((o) => !o)}
+                className={`inline-flex h-10 items-center gap-2 rounded-full pl-1 pr-3 text-sm font-medium transition-all cursor-pointer ${
+                  currentSection === 'settings'
+                    ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                    : 'bg-slate-100 text-slate-700 hover:bg-[#efe9ff]'
+                }`}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-sm font-bold text-purple-700">
+                  {profile?.photoURL || user?.photoURL ? (
+                    <img src={profile?.photoURL || user?.photoURL || ''} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    (profile?.displayName || user?.displayName || user?.email || 'U')[0].toUpperCase()
+                  )}
+                </span>
+                <span className="hidden max-w-[110px] truncate sm:inline">{homeFirstName || 'Mon compte'}</span>
+                <ChevronDown className={`h-4 w-4 opacity-60 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {accountMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Mon compte"
+                  className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_20px_50px_-12px_rgba(27,22,71,0.35)] ring-1 ring-slate-100"
+                >
+                  <div className="px-3 py-2.5">
+                    <p className="truncate text-sm font-bold text-[#1b1647]">{profile?.displayName || user?.displayName || 'Mon compte'}</p>
+                    <p className="truncate text-xs text-slate-500">{user?.email || 'Connecté'}</p>
+                    {businessName && <p className="mt-0.5 truncate text-xs text-slate-400">{businessName}</p>}
+                  </div>
+                  <div className="my-1 h-px bg-slate-100" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    id="nav-settings"
+                    onClick={() => handleSectionChange('settings')}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-[#f4f2ff] cursor-pointer"
+                  >
+                    <User className="h-4 w-4 text-slate-400" /> Mon profil
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setAccountMenuOpen(false); logout(); }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 cursor-pointer"
+                  >
+                    <LogOut className="h-4 w-4" /> Se déconnecter
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
