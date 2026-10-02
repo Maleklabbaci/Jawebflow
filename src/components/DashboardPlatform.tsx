@@ -514,6 +514,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   // Persistence status
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
   const [savedDbSuccess, setSavedDbSuccess] = useState<boolean>(false);
+  const [saveDbError, setSaveDbError] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string; details?: string } | null>(null);
@@ -746,8 +747,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return () => { cancelled = true; clearInterval(interval); };
   }, [assistantId]);
 
-  const handleSaveToDatabase = async (notesOverride?: KnowledgeNote[], metadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>) => {
+  const handleSaveToDatabase = async (rawNotesOverride?: KnowledgeNote[], rawMetadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>) => {
     if (!user) return;
+    // 🛡️ Les boutons « Enregistrer » branchés directement (onClick={handleSaveToDatabase}) transmettent
+    // l'ÉVÉNEMENT du clic en premier argument. Il était enregistré À LA PLACE des fiches « Mes informations »
+    // (la base de connaissances se retrouvait vidée). On n'accepte donc que de vrais tableaux / objets de données.
+    const notesOverride = Array.isArray(rawNotesOverride) ? rawNotesOverride : undefined;
+    const metadataOverride = rawMetadataOverride && typeof rawMetadataOverride === 'object' && !('nativeEvent' in (rawMetadataOverride as object)) ? rawMetadataOverride : undefined;
     try {
       setIsSavingDb(true);
       const effectiveWidgetId = widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`;
@@ -787,10 +793,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const eff = activePlan !== 'free' ? activePlan : String(profile?.plan || '').toLowerCase();
         if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
       }
+      setSaveDbError(false);
       setSavedDbSuccess(true);
       setTimeout(() => setSavedDbSuccess(false), 3000);
     } catch (err) {
       console.error('Error saving assistant:', err);
+      // Plus d'échec silencieux : le bouton le dit (sinon le marchand croit avoir enregistré).
+      setSaveDbError(true);
+      setTimeout(() => setSaveDbError(false), 6000);
     } finally {
       setIsSavingDb(false);
     }
@@ -1510,18 +1520,23 @@ echo "Réponse de l'Assistant : " . $result['message'];
               className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
                 savedDbSuccess
                   ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
+                  : saveDbError
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
               }`}
+              title={saveDbError ? 'L’enregistrement a échoué : vérifie ta connexion internet puis clique à nouveau.' : undefined}
             >
               {isSavingDb ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : savedDbSuccess ? (
                 <Check className="w-3.5 h-3.5" />
+              ) : saveDbError ? (
+                <AlertCircle className="w-3.5 h-3.5" />
               ) : (
                 <Save className="w-3.5 h-3.5" />
               )}
               <span className="hidden sm:inline">
-                {isSavingDb ? 'Sauvegarde...' : savedDbSuccess ? 'Enregistré !' : 'Enregistrer'}
+                {isSavingDb ? 'Sauvegarde...' : savedDbSuccess ? 'Enregistré !' : saveDbError ? 'Échec — réessayer' : 'Enregistrer'}
               </span>
             </button>
           </div>
@@ -1895,11 +1910,11 @@ echo "Réponse de l'Assistant : " . $result['message'];
                       </div>
                       <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400">Contact / Téléphone</span>
-                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.phone || "Déduit des formulaires"}</p>
+                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.phone || "Non détecté sur le site"}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400">Livraison & Couverture</span>
-                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.deliveryInfo || "Algérie (58 Wilayas)"}</p>
+                        <p className="font-semibold text-slate-900 truncate">{detectedBusinessMeta.deliveryInfo || "Non détecté sur le site"}</p>
                       </div>
                     </div>
                   </div>
@@ -1946,7 +1961,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                           general: { label: "Général", color: "bg-blue-50 text-blue-700 border-blue-200" },
                           services: { label: "Services & Produits", color: "bg-purple-50 text-purple-700 border-purple-200" },
                           tarifs: { label: "Tarifs & Devis", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-                          livraison: { label: "Livraison 58 Wilayas", color: "bg-amber-50 text-amber-700 border-amber-200" },
+                          livraison: { label: "Livraison", color: "bg-amber-50 text-amber-700 border-amber-200" },
                           faq: { label: "Questions Fréquentes", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
                           contact: { label: "Contact & Horaires", color: "bg-rose-50 text-rose-700 border-rose-200" },
                         };
@@ -2551,7 +2566,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
             
             const avgTimeSpent = (() => {
               const withTime = leadsList.filter(l => (l as any).timeSpent);
-              if (withTime.length === 0) return '15s';
+              if (withTime.length === 0) return '—'; // pas encore de mesure : on n'invente pas un chiffre
               const avg = Math.round(withTime.reduce((acc, curr) => acc + ((curr as any).timeSpent || 0), 0) / withTime.length);
               if (avg < 60) return avg + 's';
               return Math.floor(avg / 60) + 'm ' + (avg % 60) + 's';
