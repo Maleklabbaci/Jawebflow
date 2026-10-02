@@ -9,7 +9,8 @@
  * en fait la liste, l'IA ne peut pas l'inventer) avec « Annuler », « Activer » et « Voir ».
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Database, ExternalLink, Instagram, Loader2, Mic, Phone, RotateCcw, Send, SlidersHorizontal, Sparkles, Undo2, X, Zap } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, ArrowUp, BarChart3, Check, Database, ExternalLink, Instagram, Loader2, Mic, Phone, Plus, RotateCcw, Send, SlidersHorizontal, Sparkles, Undo2, Users, X, Zap } from 'lucide-react';
 import { ApiError, copilotApi } from '../lib/copilot-api';
 import type { CopilotAction, CopilotMessage, CopilotStatePatch } from '../lib/copilot-api';
 
@@ -36,14 +37,31 @@ interface ChatMsg {
   retry?: string;
 }
 
-export const QUICK_PROMPTS: Array<{ label: string; text: string; send: boolean }> = [
-  { label: 'Ajouter une info à ma base', text: 'Ajoute à ma base : ', send: false },
-  { label: 'Répondre aux commentaires', text: 'Quand quelqu’un commente « prix » sous mes publications, réponds-lui en public et envoie-lui un message privé avec mes tarifs.', send: false },
-  { label: 'Répondre plus court', text: 'Réponds toujours court et clair à mes clients.', send: true },
-  { label: 'Parler darija', text: 'Réponds à mes clients en darija algérienne.', send: true },
-  { label: 'Que sais-tu de moi ?', text: 'Fais-moi un résumé de ce que tu sais sur mon entreprise.', send: true },
-  { label: 'Mes automatisations', text: 'Quelles automatisations Instagram j’ai ? Lesquelles sont actives ?', send: true },
+const P_MESSAGES = { label: 'Combien de messages cette semaine ?', text: 'Combien de messages mes clients m’ont envoyés cette semaine ?', send: true };
+const P_LEADS = { label: 'Combien de leads ?', text: 'Combien de leads j’ai eus cette semaine ? Montre-moi les derniers.', send: true };
+const P_ADD = { label: 'Ajouter une info à ma base', text: 'Ajoute à ma base : ', send: false };
+const P_COMMENTS = { label: 'Répondre aux commentaires', text: 'Quand quelqu’un commente « prix » sous mes publications, réponds-lui en public et envoie-lui un message privé avec mes tarifs.', send: false };
+const P_SHORT = { label: 'Répondre plus court', text: 'Réponds toujours court et clair à mes clients.', send: true };
+const P_DARIJA = { label: 'Parler darija', text: 'Réponds à mes clients en darija algérienne.', send: true };
+const P_KNOW = { label: 'Que sais-tu de moi ?', text: 'Fais-moi un résumé de ce que tu sais sur mon entreprise.', send: true };
+const P_AUTOS = { label: 'Mes automatisations', text: 'Quelles automatisations Instagram j’ai ? Lesquelles sont actives ?', send: true };
+
+/** Suggestions de la fenêtre flottante. */
+export const QUICK_PROMPTS: Array<{ label: string; text: string; send: boolean }> = [P_MESSAGES, P_LEADS, P_ADD, P_COMMENTS, P_SHORT, P_DARIJA, P_KNOW, P_AUTOS];
+
+type HomeIcon = 'stats' | 'leads' | 'note' | 'instagram' | 'behavior' | 'ask';
+/** Suggestions de la page d'accueil (façon Gemini / Claude). */
+export const HOME_PROMPTS: Array<{ label: string; text: string; send: boolean; icon: HomeIcon }> = [
+  { ...P_MESSAGES, icon: 'stats' },
+  { ...P_LEADS, icon: 'leads' },
+  { ...P_ADD, icon: 'note' },
+  { ...P_COMMENTS, icon: 'instagram' },
+  { ...P_DARIJA, icon: 'behavior' },
+  { ...P_KNOW, icon: 'ask' },
 ];
+const HOME_ICONS: Record<HomeIcon, React.ComponentType<{ className?: string }>> = {
+  stats: BarChart3, leads: Users, note: Database, instagram: Instagram, behavior: SlidersHorizontal, ask: Sparkles,
+};
 
 const GOTO_LABEL: Record<CopilotSection, string> = {
   knowledge: 'Voir mes informations',
@@ -196,6 +214,21 @@ const ActionCard: React.FC<{
 // Le chat
 // ─────────────────────────────────────────────────────────────────────────────
 export interface CopilotChatProps {
+  /**
+   * « drawer » = fenêtre flottante (par défaut) ; « page » = grand écran d'accueil façon Gemini / Claude,
+   * dessiné dans `homeHost`. C'est la MÊME discussion dans les deux cas (une seule instance, donc rien ne se perd
+   * quand on change d'écran).
+   */
+  mode?: 'drawer' | 'page';
+  homeHost?: HTMLElement | null;
+  /** Prénom affiché dans « Bonjour … » (page d'accueil). */
+  firstName?: string;
+  /** Résumé discret sous les suggestions (page d'accueil). */
+  summary?: { online: boolean; leads: number; notes: number };
+  /** Étapes restantes : petites pastilles cliquables (page d'accueil). */
+  todo?: Array<{ label: string; onClick: () => void }>;
+  /** Alerte importante au-dessus du titre (ex. limite atteinte). */
+  notice?: { text: string; tone: 'warn' | 'danger'; actionLabel: string; onAction: () => void } | null;
   open: boolean;
   onClose: () => void;
   userId: string;
@@ -222,6 +255,7 @@ export interface CopilotChatProps {
 
 export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
   const { open, onClose, userId } = props;
+  const pageMode = props.mode === 'page';
   const [messages, setMessages] = useState<ChatMsg[]>(() => loadHistory(userId));
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -257,13 +291,20 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }, [draft]);
+    el.style.height = `${Math.min(el.scrollHeight, pageMode ? 220 : 140)}px`;
+  }, [draft, pageMode]);
 
   // À l'ouverture, le curseur est prêt dans la zone de texte
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+
+  // Page d'accueil : sur ordinateur le curseur est prêt tout de suite ; sur téléphone on évite d'ouvrir le clavier d'office.
+  useEffect(() => {
+    if (!pageMode || !props.homeHost) return;
+    const fine = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+    if (fine) inputRef.current?.focus();
+  }, [pageMode, props.homeHost]);
 
   useEffect(() => () => { try { recRef.current?.abort?.(); } catch { /* ignoré */ } }, []);
 
@@ -386,10 +427,194 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
 
   const onView = (section: CopilotSection) => {
     props.onNavigate(section);
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) onClose(); // sur téléphone, le chat cache l'écran
+    if (!pageMode && typeof window !== 'undefined' && window.innerWidth < 1024) onClose(); // sur téléphone, la fenêtre cache l'écran
   };
 
   const empty = messages.length === 0;
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Page d'accueil façon Gemini / Claude : « Bonjour {prénom} », un grand champ de texte, puis la discussion
+  // message par message. La zone de saisie reste au MÊME endroit dans l'arbre : le curseur ne saute pas quand
+  // la première réponse arrive.
+  // ───────────────────────────────────────────────────────────────────────────
+  if (pageMode) {
+    if (!props.homeHost) return null;
+    const first = (props.firstName || '').trim();
+    const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
+    const notice = props.notice;
+    const page = (
+      <section id="copilot-home" role="region" aria-label="Discussion avec mon IA" className="relative flex h-full min-h-0 flex-col">
+        {!empty && (
+          <button type="button" onClick={reset} disabled={busy} aria-label="Nouvelle discussion" title="Nouvelle discussion" className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm backdrop-blur hover:bg-white hover:text-slate-900 disabled:opacity-40 cursor-pointer">
+            <Plus className="h-3.5 w-3.5" /> Nouvelle discussion
+          </button>
+        )}
+
+        {/* Titre (au début) ou discussion */}
+        <div ref={listRef} aria-live="polite" className={empty ? 'flex flex-1 flex-col items-center justify-end px-4 pb-6 pt-8 text-center' : 'flex-1 overflow-y-auto px-4'}>
+          {empty ? (
+            <div className="w-full max-w-2xl">
+              {notice && (
+                <div role="alert" className={`mb-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-2xl border px-4 py-2.5 text-sm ${notice.tone === 'danger' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  <span>{notice.text}</span>
+                  <button type="button" onClick={notice.onAction} className="font-semibold underline underline-offset-2 hover:no-underline cursor-pointer">{notice.actionLabel}</button>
+                </div>
+              )}
+              <h2 className="bg-gradient-to-r from-purple-600 via-fuchsia-500 to-indigo-500 bg-clip-text pb-1 text-4xl font-semibold tracking-tight text-transparent sm:text-5xl">
+                Bonjour{first ? ` ${first}` : ''}
+              </h2>
+              <p className="mt-2 text-2xl font-medium text-slate-400 sm:text-3xl">Quoi de neuf ? On ajoute quoi ?</p>
+            </div>
+          ) : (
+            <div className="mx-auto w-full max-w-3xl space-y-6 pb-4 pt-14">
+              {messages.map((m) => (
+                <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex gap-3'}>
+                  {m.role === 'user' ? (
+                    <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-3xl rounded-br-lg bg-purple-600 px-4 py-2.5 text-[15px] leading-relaxed text-white">{m.text}</div>
+                  ) : (
+                    <>
+                      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${m.error ? 'bg-rose-100 text-rose-600' : 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white'}`}>
+                        {m.error ? <AlertTriangle className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                      </span>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${m.error ? 'text-rose-700' : 'text-slate-800'}`}>{tidy(m.text)}</p>
+                        {m.error && m.retry && (
+                          <button type="button" onClick={() => void send(m.retry!, { resend: true })} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                            <RotateCcw className="h-3 w-3" /> Réessayer
+                          </button>
+                        )}
+                        {m.actions && m.actions.length > 0 && (
+                          <div className="space-y-1.5">
+                            {m.actions.map((a) => (
+                              <ActionCard key={a.id} action={a} busy={busy} onUndo={() => void runAction(m.id, a, 'undo')} onActivate={() => void runAction(m.id, a, 'activate')} onView={onView} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {busy && (
+                <div role="status" className="flex items-center gap-3 text-sm text-slate-500">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white"><Sparkles className="h-4 w-4" /></span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400" />
+                  </span>
+                  Mon IA s’en occupe…
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Zone de saisie */}
+        <form className="px-4 pb-4" onSubmit={(e) => { e.preventDefault(); void send(draft); }}>
+          <div className="mx-auto w-full max-w-3xl">
+            <div className="rounded-3xl border border-slate-300 bg-white shadow-sm transition focus-within:border-purple-400 focus-within:ring-4 focus-within:ring-purple-100">
+              <textarea
+                id="copilot-input"
+                ref={inputRef}
+                value={draft}
+                rows={1}
+                maxLength={4000}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any)?.isComposing) {
+                    e.preventDefault();
+                    void send(draft);
+                  }
+                }}
+                aria-label="Ton message pour mon IA"
+                placeholder={empty ? 'Ajoute une info, demande tes chiffres…' : 'Écris ta réponse…'}
+                className="block max-h-56 min-h-[56px] w-full resize-none rounded-3xl bg-transparent px-5 pb-2 pt-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none"
+              />
+              <div className="flex items-center justify-between px-3 pb-3">
+                <div className="flex items-center gap-1">
+                  {Recognition && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={toggleMic}
+                        aria-label={listening ? 'Arrêter la dictée' : 'Dicter mon message'}
+                        title={listening ? 'Arrêter la dictée' : 'Dicter mon message'}
+                        className={`rounded-full p-2 cursor-pointer ${listening ? 'animate-pulse bg-rose-100 text-rose-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        <Mic className="h-5 w-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceLang((l) => (l === 'fr-FR' ? 'ar-DZ' : 'fr-FR'))}
+                        disabled={listening}
+                        aria-label={`Langue de la dictée : ${voiceLang === 'fr-FR' ? 'français' : 'arabe'}`}
+                        title="Changer la langue de la dictée"
+                        className="rounded-md px-1.5 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                      >
+                        {voiceLang === 'fr-FR' ? 'FR' : 'عربي'}
+                      </button>
+                    </>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={busy || !draft.trim()}
+                  aria-label="Envoyer"
+                  title="Envoyer"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-600 text-white transition-colors hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer disabled:cursor-default"
+                >
+                  {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-center text-[11px] text-slate-400">Tout est enregistré tout de suite · chaque action peut être annulée</p>
+          </div>
+        </form>
+
+        {/* Suggestions (seulement au début) */}
+        {empty && (
+          <div className="flex-1 overflow-y-auto px-4 pb-8">
+            <div className="mx-auto w-full max-w-2xl text-center">
+              <div className="flex flex-wrap justify-center gap-2">
+                {HOME_PROMPTS.map((p) => {
+                  const Icon = HOME_ICONS[p.icon];
+                  return (
+                    <button key={p.label} type="button" onClick={() => pickPrompt(p)} disabled={busy} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-700 shadow-sm transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800 disabled:opacity-50 cursor-pointer">
+                      <Icon className="h-4 w-4 text-purple-500" />
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {props.todo && props.todo.length > 0 && (
+                <div className="mt-6">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Pour démarrer</p>
+                  <div className="mt-2 flex flex-wrap justify-center gap-2">
+                    {props.todo.map((t) => (
+                      <button key={t.label} type="button" onClick={t.onClick} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 cursor-pointer">
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {props.summary && (
+                <p className="mt-6 text-xs text-slate-400">
+                  <span className={props.summary.online ? 'text-emerald-600' : 'text-amber-600'}>● {props.summary.online ? 'Assistant en ligne' : 'Assistant en préparation'}</span>
+                  {' · '}{plural(props.summary.leads, 'client intéressé', 'clients intéressés')}
+                  {' · '}{plural(props.summary.notes, 'information utilisée', 'informations utilisées')}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+    return createPortal(page, props.homeHost);
+  }
 
   return (
     <div
@@ -424,6 +649,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
               <li>📚 Ajouter ou corriger les infos de ton entreprise</li>
               <li>💬 Répondre aux commentaires Instagram à ta façon</li>
               <li>🎯 Changer la façon de parler à tes clients (court, darija, tutoiement…)</li>
+              <li>📊 Savoir tes chiffres : messages, leads, questions sans réponse…</li>
             </ul>
             <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Essaie par exemple</p>
             <div className="mt-2 flex flex-wrap gap-2">

@@ -32,6 +32,7 @@ import { DashboardPlatform } from '../src/components/DashboardPlatform';
 
 const SECTIONS: Array<{ id: string; nav: string }> = [
   { id: 'overview', nav: 'Accueil' },
+  { id: 'summary', nav: 'Résumé' },
   { id: 'crawler', nav: 'Mon site web' },
   { id: 'knowledge', nav: 'Mes informations' },
   { id: 'behavior', nav: 'Comportement' },

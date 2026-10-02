@@ -70,7 +70,7 @@ import { LockedFeatureGate } from './LockedFeatureGate';
 import { WebhookTestingUtility } from './WebhookTestingUtility';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
 
 /**
  * Menu de l'espace client.
@@ -86,6 +86,7 @@ const NAV_GROUPS: Array<{
     title: 'Mon assistant',
     items: [
       { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
+      { id: 'summary', label: 'Résumé', icon: TrendingUp },
       { id: 'crawler', label: 'Mon site web', icon: Store, pro: true },
       { id: 'knowledge', label: 'Mes informations', icon: Database },
       { id: 'behavior', label: 'Comportement', icon: SlidersHorizontal },
@@ -197,6 +198,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotUnread, setCopilotUnread] = useState(false);
   const copilotOpenRef = useRef(false);
+  // Accueil = chat plein écran : l'élément où il se dessine (une seule instance du chat, déplacée selon l'écran).
+  const [copilotHost, setCopilotHost] = useState<HTMLElement | null>(null);
+  const currentSectionRef = useRef<DashboardSectionId>('overview');
   const copilotBusyRef = useRef(false);
   const autosavePendingRef = useRef(false);
   const [autosaveNonce, setAutosaveNonce] = useState(0);
@@ -900,11 +904,17 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   assistantIdRef.current = assistantId;
   assistantLoadedRef.current = assistantLoaded;
   copilotOpenRef.current = copilotOpen;
+  currentSectionRef.current = currentSection;
 
   const openCopilot = () => {
-    setCopilotOpen(true);
     setCopilotUnread(false);
     setMobileMenuOpen(false);
+    // Sur l'Accueil, le chat EST la page : on met simplement le curseur dans le champ de texte.
+    if (currentSectionRef.current === 'overview') {
+      document.getElementById('copilot-input')?.focus();
+      return;
+    }
+    setCopilotOpen(true);
   };
 
   /** Avant chaque demande : on enregistre ce qui est en attente, pour que l'IA lise la même chose que l'écran. */
@@ -1413,6 +1423,32 @@ echo "Réponse de l'Assistant : " . $result['message'];
   const hasKnowledge = knowledgeNotes.some(n => n.enabled);
   const isReadyToDeploy = hasIdentity && hasKnowledge;
 
+  // ── Accueil façon Gemini / Claude : prénom, étapes restantes et alerte urgente ──
+  const homeFirstName = (() => {
+    const first = (profile?.displayName || user?.displayName || '').trim().split(/\s+/)[0] || '';
+    return first.includes('@') ? '' : first;
+  })();
+  const homeTodo: Array<{ label: string; onClick: () => void }> = [
+    !hasIdentity && { label: 'Renseigner le nom de mon entreprise', onClick: () => handleSectionChange('settings') },
+    !hasKnowledge && { label: 'Ajouter mes informations', onClick: () => handleSectionChange('knowledge') },
+    websiteUrl.trim().length === 0 && { label: 'Indiquer l’adresse de mon site', onClick: () => handleSectionChange('crawler') },
+    !isReadyToDeploy && { label: 'Installer la bulle sur mon site', onClick: () => handleSectionChange('integration') },
+  ].filter(Boolean) as Array<{ label: string; onClick: () => void }>;
+  // Seules les urgences remontent sur l'Accueil ; le détail reste dans « Résumé ».
+  const homeNotice = (() => {
+    if (!usageInfo || isPlanGated) return null;
+    const unitsPct = usageInfo.limit !== null && usageInfo.limit > 0 ? Math.round((usageInfo.used / usageInfo.limit) * 100) : usageInfo.limit === 0 ? 100 : 0;
+    const costPct = (usageInfo.costCap ?? 0) > 0 ? Math.round(((usageInfo.costUsd || 0) / usageInfo.costCap!) * 100) : 0;
+    if (usageInfo.limit !== null && Math.max(unitsPct, costPct) >= 100) {
+      return { text: 'Limite atteinte : l’assistant est en pause.', tone: 'danger' as const, actionLabel: 'Voir mon abonnement', onAction: () => handleSectionChange('billing') };
+    }
+    const daysLeft = (usageInfo as any).daysLeft;
+    if (daysLeft != null && daysLeft <= 7) {
+      return { text: `Ton plan expire dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''}.`, tone: 'warn' as const, actionLabel: 'Renouveler', onAction: () => handleSectionChange('billing') };
+    }
+    return null;
+  })();
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
       
@@ -1571,7 +1607,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
         MAIN CONTENT WORKSPACE (Clean, Responsive, High Contrast)
         =======================================================================
       */}
-      <div className="flex-1 md:ml-64 min-h-screen bg-slate-50 flex flex-col">
+      <div className={`flex-1 md:ml-64 bg-slate-50 flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
         
         {/* Sticky Top Header Bar */}
         <header className="sticky top-0 bg-white/90 backdrop-blur-md border-b border-slate-200 z-20 px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
@@ -1585,7 +1621,8 @@ echo "Réponse de l'Assistant : " . $result['message'];
             </button>
             <div>
               <h1 className="text-base sm:text-lg font-semibold text-slate-900">
-                {currentSection === 'overview' ? `Bonjour${(profile?.displayName || user?.displayName || '').split(' ')[0] ? ` ${(profile?.displayName || user?.displayName || '').split(' ')[0]}` : ''}` : null}
+                {currentSection === 'overview' && 'Accueil'}
+                {currentSection === 'summary' && 'Résumé'}
                 {currentSection === 'crawler' && 'Mon site web'}
                 {currentSection === 'knowledge' && 'Mes informations'}
                 {currentSection === 'widget' && 'Apparence de la bulle'}
@@ -1636,12 +1673,20 @@ echo "Réponse de l'Assistant : " . $result['message'];
         </header>
 
         {/* Workspace Body */}
-        <main className="p-4 sm:p-8 flex-1 max-w-6xl w-full mx-auto">
+        <main className={currentSection === 'overview' ? 'flex-1 min-h-0 w-full' : 'p-4 sm:p-8 flex-1 max-w-6xl w-full mx-auto'}>
           
           {/* =================================================================
               SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
           {currentSection === 'overview' && (
+            // « Bonjour {prénom} » + grand champ de texte : le chat « Mon IA » s'affiche ici (voir <CopilotChat mode="page" />).
+            <div ref={setCopilotHost} className="h-full" data-testid="copilot-home-host" />
+          )}
+
+          {/* =================================================================
+              SECTION: RÉSUMÉ — l'ancien écran d'accueil (statut, chiffres, à faire, usage)
+              ================================================================= */}
+          {currentSection === 'summary' && (
             <div className="space-y-6 animate-in fade-in duration-200">
 
               {/* Message d'accueil + action principale */}
@@ -4041,8 +4086,14 @@ echo "Réponse de l'Assistant : " . $result['message'];
           ================================================================= */}
       {user && (
         <>
-          {!copilotOpen && <CopilotLauncher onClick={openCopilot} unread={copilotUnread} />}
+          {!copilotOpen && currentSection !== 'overview' && <CopilotLauncher onClick={openCopilot} unread={copilotUnread} />}
           <CopilotChat
+            mode={currentSection === 'overview' ? 'page' : 'drawer'}
+            homeHost={copilotHost}
+            firstName={homeFirstName}
+            summary={{ online: isReadyToDeploy, leads: leadsList.length, notes: knowledgeNotes.filter((n) => n.enabled).length }}
+            todo={homeTodo}
+            notice={homeNotice}
             open={copilotOpen}
             onClose={() => setCopilotOpen(false)}
             userId={user.uid}
@@ -4051,7 +4102,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
             onStatePatch={applyCopilotPatch}
             onNavigate={(section: CopilotSection) => handleSectionChange(section)}
             onBusyChange={handleCopilotBusy}
-            onReply={() => { if (!copilotOpenRef.current) setCopilotUnread(true); }}
+            onReply={() => { if (!copilotOpenRef.current && currentSectionRef.current !== 'overview') setCopilotUnread(true); }}
             onResync={resyncFromDatabase}
           />
         </>

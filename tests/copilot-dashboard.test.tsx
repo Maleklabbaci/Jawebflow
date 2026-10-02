@@ -85,10 +85,10 @@ const notesInDb = () => (be.supabase.rows('assistants')[0].knowledge_notes || []
 const lastSave = () => hoisted.saves.at(-1);
 
 async function openChat() {
+  // L'Accueil EST le chat (« Bonjour {prénom} » + grand champ de texte) : rien à ouvrir.
   render(<DashboardPlatform initialSection="overview" />);
   await settle();
-  fireEvent.click(document.getElementById('copilot-launcher')!);
-  await screen.findByRole('dialog', { name: 'Discussion avec mon IA' });
+  await screen.findByRole('textbox', { name: 'Ton message pour mon IA' });
 }
 async function say(text: string) {
   fireEvent.change(chatBox(), { target: { value: text } });
@@ -96,16 +96,25 @@ async function say(text: string) {
 }
 
 describe('où trouver « Parler à mon IA »', () => {
-  it('bouton flottant, entrée du menu et bouton de l’accueil : tous ouvrent le même chat', async () => {
+  it('Accueil : le chat est déjà là, sans bouton flottant ; ailleurs : bouton flottant, menu et bouton du Résumé ouvrent la même fenêtre', async () => {
     render(<DashboardPlatform initialSection="overview" />);
     await settle();
+    // Accueil = chat plein écran : pas de bouton flottant, pas de fenêtre
+    expect(screen.getByRole('textbox', { name: 'Ton message pour mon IA' })).toBeTruthy();
+    expect(document.getElementById('copilot-launcher')).toBeNull();
     expect(screen.queryByRole('dialog', { name: 'Discussion avec mon IA' })).toBeNull();
+    // l'entrée du menu met le curseur dans le champ de texte
+    fireEvent.click(document.getElementById('nav-copilot')!);
+    expect(document.activeElement).toBe(chatBox());
 
+    // Sur un autre écran : bouton flottant → fenêtre
+    fireEvent.click(document.getElementById('nav-behavior')!);
+    await settle(60);
     const launcher = document.getElementById('copilot-launcher')!;
     expect(launcher.textContent).toContain('Parler à mon IA');
     fireEvent.click(launcher);
     expect(await screen.findByRole('dialog', { name: 'Discussion avec mon IA' })).toBeTruthy();
-    expect(document.getElementById('copilot-launcher')).toBeNull(); // le bouton flottant s'efface quand le chat est ouvert
+    expect(document.getElementById('copilot-launcher')).toBeNull(); // le bouton flottant s'efface quand la fenêtre est ouverte
 
     fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
     expect(screen.queryByRole('dialog', { name: 'Discussion avec mon IA' })).toBeNull();
@@ -115,6 +124,9 @@ describe('où trouver « Parler à mon IA »', () => {
     expect(await screen.findByRole('dialog', { name: 'Discussion avec mon IA' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
 
+    // L'ancien Accueil s'appelle « Résumé » : son bouton « Parler à mon IA » ouvre la fenêtre
+    fireEvent.click(document.getElementById('nav-summary')!);
+    await settle(60);
     fireEvent.click(within(document.querySelector('main')!).getByRole('button', { name: /Parler à mon IA/ }));
     expect(await screen.findByRole('dialog', { name: 'Discussion avec mon IA' })).toBeTruthy();
     expect(errors, errors.join('\n')).toEqual([]);
