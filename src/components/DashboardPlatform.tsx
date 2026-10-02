@@ -70,7 +70,7 @@ import type { CopilotSection } from './CopilotChat';
 import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
-import { WebhookTestingUtility } from './WebhookTestingUtility';
+import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
@@ -281,12 +281,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     setWidgetConfig(prev => ({ ...prev, ...updated }));
   };
 
-  // Integration Code & Format
-  const [integrationTab, setIntegrationTab] = useState<'react' | 'nextjs' | 'html' | 'wordpress' | 'php'>('react');
-  // Les détails techniques (code multi-frameworks, test de webhook) sont masqués
-  // par défaut : l'espace client s'adresse à des commerçants, pas à des devs.
-  const [showAdvancedIntegration, setShowAdvancedIntegration] = useState(false);
-  const [showAdvancedWebhook, setShowAdvancedWebhook] = useState(false);
   const [showLeadTech, setShowLeadTech] = useState(false);
   const [assistantTone, setAssistantTone] = useState<string>('professionnel');
   const [languages, setLanguages] = useState<{ fr: boolean; darija: boolean; en: boolean; ar: boolean }>({
@@ -559,9 +553,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
   const [savedDbSuccess, setSavedDbSuccess] = useState<boolean>(false);
   const [saveDbError, setSaveDbError] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
-  const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
-  const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string; details?: string } | null>(null);
 
   // Crawler & Scanner state
   const [crawlerUrl, setCrawlerUrl] = useState<string>('');
@@ -847,57 +838,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       // jusqu'au prochain succès (sinon le marchand croit avoir enregistré).
       setSaveDbError(true);
       return undefined;
-    } finally {
-      setIsSavingDb(false);
-    }
-  };
-
-  const handleSaveWebhookSetting = async (newUrl: string) => {
-    setWebhookUrl(newUrl);
-    if (!user) return;
-    try {
-      setIsSavingDb(true);
-      const effectiveWidgetId = widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`;
-      const savedId = await saveAssistantToDatabase({
-        id: assistantId || undefined,
-        userId: user.uid,
-        plan: activePlan !== 'free' ? activePlan : (profile?.plan || activePlan), // plan payé > plan admin (fiche client) > gratuit
-        businessName: businessName.trim() || 'Mon Entreprise',
-        websiteUrl: websiteUrl.trim(),
-        siteType,
-        siteTypeConfidence,
-        scrapingStrategy,
-        businessCategory: businessCategory || 'Services',
-        businessDescription: businessDescription.trim(),
-        knowledgeNotes,
-        faqText: faqText.trim(),
-        pricingServicesText: pricingServicesText.trim(),
-        specialRulesText: specialRulesText.trim(),
-        behavior,
-        assistantTone,
-        languages,
-        autoLeadCapture,
-        whatsappEscalation: whatsappEscalation.trim(),
-        businessInfo,
-        siteShopping,
-        webhookUrl: newUrl.trim(),
-        widgetId: effectiveWidgetId,
-        widgetConfig: {
-          ...widgetConfig,
-          headerTitle: widgetConfig.headerTitle || businessName.trim() || 'Assistant IA'
-        }
-      });
-      if (savedId) {
-        setAssistantId(savedId);
-        localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, savedId);
-        // Plan effectif immédiat dans l'interface : plan payé choisi > plan admin (fiche client) > gratuit
-        const eff = activePlan !== 'free' ? activePlan : String(profile?.plan || '').toLowerCase();
-        if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
-      }
-      setSavedDbSuccess(true);
-      setTimeout(() => setSavedDbSuccess(false), 3000);
-    } catch (err) {
-      console.error('Error saving webhook setting:', err);
     } finally {
       setIsSavingDb(false);
     }
@@ -1319,128 +1259,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   data-welcome="${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '&quot;')}"${whatsappEscalation ? `\n  data-whatsapp="${whatsappEscalation}"` : ''}${widgetConfig.iconType === 'custom_logo' && widgetConfig.customLogoUrl ? `\n  data-avatar-url="${widgetConfig.customLogoUrl}"` : ''}
   defer>
 </script>`;
-
-  // React Component Code
-  const widgetReactComponentCode = `import React from 'react';
-import { JawebChatWidget } from './components/JawebChatWidget';
-
-export function App() {
-  return (
-    <div className="min-h-screen">
-      {/* Le contenu de votre site web */}
-      
-      {/* Bulle Assistant IA JawebFlow personnalisée */}
-      <JawebChatWidget 
-        businessName="${businessName || 'Mon Entreprise'}"
-        whatsappNumber="${whatsappEscalation || ''}"
-        config={{
-          primaryColor: "${widgetConfig.primaryColor}",
-          gradientSecondary: "${widgetConfig.gradientSecondary || '#6366f1'}",
-          useGradient: ${widgetConfig.useGradient !== false},
-          position: "${widgetConfig.position}",
-          shape: "${widgetConfig.shape}",
-          iconType: "${widgetConfig.iconType}",
-          customLogoUrl: "${widgetConfig.customLogoUrl || ''}",
-          themeMode: "${widgetConfig.themeMode}",
-          showTeaser: ${widgetConfig.showTeaser !== false},
-          teaserText: "${(widgetConfig.teaserText || 'Une question ? Discutons en direct 👋').replace(/"/g, '\\"')}",
-          welcomeMessage: "${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '\\"')}",
-          onlineBadge: ${widgetConfig.onlineBadge !== false},
-          showBranding: ${widgetConfig.showBranding !== false}
-        }}
-      />
-    </div>
-  );
-}`;
-
-  // Next.js Code
-  const widgetNextJsCode = `// Dans votre fichier app/layout.tsx (App Router)
-import Script from 'next/script';
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="fr">
-      <body>
-        {children}
-        
-        {/* Widget Assistant IA JawebFlow personnalisé */}
-        <Script
-          src="${liveScriptCdnUrl}"
-          strategy="lazyOnload"
-          data-assistant-id="${currentWidgetId}"
-          data-business-name="${(businessName || 'Mon Entreprise').replace(/"/g, '&quot;')}"
-          data-position="${widgetConfig.position}"
-          data-theme="${widgetConfig.themeMode}"
-          data-primary-color="${widgetConfig.primaryColor}"
-          data-secondary-color="${widgetConfig.gradientSecondary || '#6366f1'}"
-          data-shape="${widgetConfig.shape}"
-          data-icon="${widgetConfig.iconType}"
-          data-teaser="${(widgetConfig.teaserText || 'Une question ? Discutons en direct 👋').replace(/"/g, '&quot;')}"
-          data-welcome="${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '&quot;')}"
-        />
-      </body>
-    </html>
-  );
-}`;
-
-  // PHP cURL API Code
-  const widgetPhpCurlCode = `<?php
-// Exemple: Appel API cURL PHP pour JawebFlow Assistant IA
-$API_URL = "https://jawebflow.com/api/v1/chat";
-$PUBLIC_KEY = "${currentWidgetId}"; // Votre clé/ID d'Assistant unique
-
-$payload = json_encode(array(
-    "assistantId" => $PUBLIC_KEY,
-    "message" => "Bonjour, quels sont vos tarifs et disponibilités ?"
-));
-
-$cURL = curl_init();
-curl_setopt($cURL, CURLOPT_URL, $API_URL);
-curl_setopt($cURL, CURLOPT_HTTPHEADER, array(
-    "Accept: application/json",
-    "Content-Type: application/json",
-    "Authorization: Bearer " . $PUBLIC_KEY
-));
-curl_setopt($cURL, CURLOPT_POST, true);
-curl_setopt($cURL, CURLOPT_POSTFIELDS, $payload);
-curl_setopt($cURL, CURLOPT_SSL_VERIFYHOST, false);
-curl_setopt($cURL, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($cURL, CURLOPT_CONNECTTIMEOUT, 3);
-curl_setopt($cURL, CURLOPT_TIMEOUT, 20);
-
-$response = curl_exec($cURL);
-
-if (curl_errno($cURL)) {
-    $error_msg = curl_error($cURL);
-    curl_close($cURL);
-    die("Erreur cURL: " . $error_msg);
-}
-
-curl_close($cURL);
-
-$result = json_decode($response, true);
-
-// Exploitation du résultat JSON retourné
-echo "Réponse de l'Assistant : " . $result['message'];
-?>`;
-
-  const getActiveIntegrationCode = () => {
-    switch (integrationTab) {
-      case 'react': return widgetReactComponentCode;
-      case 'nextjs': return widgetNextJsCode;
-      case 'wordpress': return widgetScriptHtml;
-      case 'php': return widgetPhpCurlCode;
-      case 'html':
-      default:
-        return widgetScriptHtml;
-    }
-  };
-
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(getActiveIntegrationCode());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   // Completion calculation
   const hasIdentity = Boolean(businessName.trim());
@@ -2515,161 +2333,14 @@ echo "Réponse de l'Assistant : " . $result['message'];
               SECTION 5: INTEGRATION CODE (REACT, NEXT.JS, HTML, WORDPRESS)
               ================================================================= */}
           {currentSection === 'integration' && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Environ 3 minutes</span>
-                    </div>
-                    <h2 className="text-xl font-semibold text-slate-900 tracking-tight">
-                      Mettre la bulle sur mon site
-                    </h2>
-                    <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
-                      Copiez le code ci-dessous et envoyez-le à la personne qui gère votre site
-                      (webmaster, agence, ou votre prestataire Shopify / WordPress). C'est tout :
-                      la bulle apparaîtra automatiquement sur vos pages.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleCopyCode}
-                      className="px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span>{copied ? 'Code copié' : 'Copier le code'}</span>
-                    </button>
-                    <a
-                      href={`mailto:?subject=${encodeURIComponent('Installation de la bulle de discussion sur mon site')}&body=${encodeURIComponent(`Bonjour,\n\nMerci d'installer notre assistant de discussion sur le site.\nCollez ce code juste avant la balise </body> de chaque page :\n\n${widgetScriptHtml}\n\nMerci !`)}`}
-                      className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      <span>Envoyer par e-mail</span>
-                    </a>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedIntegration((v) => !v)}
-                  className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 cursor-pointer"
-                >
-                  <ChevronRight className={`w-4 h-4 transition-transform ${showAdvancedIntegration ? 'rotate-90' : ''}`} />
-                  <span>Je gère moi-même l'installation (version pour développeur)</span>
-                </button>
-
-                {showAdvancedIntegration && (
-                <>
-                {/* Framework Tabs */}
-                <div className="flex items-center gap-2 border-b border-slate-200 pt-2 overflow-x-auto">
-                  {[
-                    { id: 'react', label: 'React / Vite (JSX Component)' },
-                    { id: 'nextjs', label: 'Next.js (App Router)' },
-                    { id: 'html', label: 'HTML Standard / Script' },
-                    { id: 'wordpress', label: 'WordPress / Shopify' },
-                    { id: 'php', label: 'PHP / cURL Backend API' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setIntegrationTab(tab.id as any)}
-                      className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 whitespace-nowrap cursor-pointer ${
-                        integrationTab === tab.id
-                          ? 'border-purple-600 text-purple-700'
-                          : 'border-transparent text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Code Block Window */}
-                <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-md">
-                  <div className="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
-                      <span className="text-[11px] font-mono text-slate-400 ml-2">
-                        {integrationTab === 'react' && 'App.tsx'}
-                        {integrationTab === 'nextjs' && 'app/layout.tsx'}
-                        {integrationTab === 'html' && 'index.html'}
-                        {integrationTab === 'wordpress' && 'header.php / Theme Customizer'}
-                        {integrationTab === 'php' && 'api_chat.php'}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyCode}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copied ? 'Copié' : 'Copier'}</span>
-                    </button>
-                  </div>
-
-                  <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
-                    <code>{getActiveIntegrationCode()}</code>
-                  </pre>
-                </div>
-                </>
-                )}
-              </div>
-
-              {/* Outil technique : replié, il n'intéresse que les développeurs */}
-              <div className="rounded-xl border border-slate-200 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedWebhook((v) => !v)}
-                  className="flex w-full items-center justify-between px-5 py-4 text-left cursor-pointer"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Options avancées</p>
-                    <p className="text-xs text-slate-400">
-                      Connexion à un autre logiciel (CRM, Google Sheets…) — utile uniquement si vous avez un développeur.
-                    </p>
-                  </div>
-                  <ChevronRight className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${showAdvancedWebhook ? 'rotate-90' : ''}`} />
-                </button>
-                {showAdvancedWebhook && (
-                  <div className="border-t border-slate-200 p-4">
-                    <WebhookTestingUtility
-                      initialWebhookUrl={webhookUrl}
-                      assistantId={assistantId || currentWidgetId}
-                      businessName={businessName}
-                      onSaveWebhookUrl={handleSaveWebhookSetting}
-                      isSavingGlobal={isSavingDb}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Instagram Quick Connect Banner */}
-              <div className="p-6 rounded-2xl bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 text-white flex items-center justify-center shadow-md">
-                    <Instagram className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">Vous souhaitez aussi connecter votre compte Instagram ?</h4>
-                    <p className="text-xs text-slate-600">Recevez vos messages privés directement dans votre espace et laissez l'assistant répondre.</p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleSectionChange('instagram')}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shrink-0 cursor-pointer"
-                >
-                  <span>Connecter Instagram</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            <div className="animate-in fade-in duration-200">
+              <SiteInstallWizard
+                scriptHtml={widgetScriptHtml}
+                websiteUrl={websiteUrl}
+                userId={user?.uid || ''}
+                onGoTest={() => handleSectionChange('simulator')}
+                onGoInstagram={() => handleSectionChange('instagram')}
+              />
             </div>
           )}
 
