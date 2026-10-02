@@ -52,7 +52,8 @@ import {
   Lock,
   Shield,
   BrainCircuit,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -63,6 +64,7 @@ import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
 import { InstagramAutomations } from './InstagramAutomations';
 import { CopilotChat, CopilotLauncher } from './CopilotChat';
+import { StatCard } from './dashboard/StatCard';
 import type { CopilotSection } from './CopilotChat';
 import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
@@ -176,6 +178,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setCurrentSection(initialSection as DashboardSectionId);
     }
   }, [initialSection]);
+
+  useEffect(() => {
+    const el = document.getElementById(`nav-${currentSection}`) as (HTMLElement & { scrollIntoView?: (o?: object) => void }) | null;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+  }, [currentSection]);
 
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
@@ -1450,7 +1457,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
   })();
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
+    <div className="dash-theme min-h-screen bg-white text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
       
       {/* 
         =======================================================================
@@ -1458,28 +1465,23 @@ echo "Réponse de l'Assistant : " . $result['message'];
         =======================================================================
       */}
       <aside className={`
-        fixed top-0 bottom-0 left-0 w-64 bg-white border-r border-slate-200 shadow-sm z-30 flex flex-col justify-between
+        fixed top-0 bottom-0 left-0 w-72 bg-white z-30 flex flex-col justify-between
         transition-transform duration-200 ease-in-out
-        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="overflow-y-auto flex-1">
-          {/* Top Platform Header */}
-          <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white text-sm font-bold">
-                J
-              </div>
-              <div>
-                <span className="font-semibold text-sm text-slate-900 block">JawebFlow</span>
-                <span className="text-[11px] text-slate-400 block">Espace client</span>
-              </div>
+          {/* Logo */}
+          <div className="flex items-start justify-between px-6 pb-3 pt-7">
+            <div>
+              <span className="block bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-[27px] font-extrabold leading-none tracking-tight text-transparent">JawebFlow</span>
+              <span className="mt-1.5 block text-[11px] font-medium text-slate-400">Espace client</span>
             </div>
-            
+
             <div className="flex items-center gap-1">
               {onNavigate && (
                 <button
                   onClick={() => onNavigate('home')}
-                  className="text-xs text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="text-xs text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                   title="Retour au site public"
                 >
                   <ExternalLink className="w-4 h-4" />
@@ -1487,7 +1489,8 @@ echo "Réponse de l'Assistant : " . $result['message'];
               )}
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="md:hidden text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100"
+                aria-label="Fermer le menu"
+                className="lg:hidden text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1495,102 +1498,111 @@ echo "Réponse de l'Assistant : " . $result['message'];
           </div>
 
           {/* Encart assistant : nom + état, en clair */}
-          <div className="p-3 mx-3 my-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-2.5">
-            <div className={`w-2 h-2 rounded-full shrink-0 ${isReadyToDeploy ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></div>
-            <div className="truncate flex-1">
-              <span className="block text-xs font-bold text-slate-900 truncate">
+          <div className="mx-4 mb-3 flex items-center gap-3 rounded-2xl bg-[#f5f3ff] px-4 py-3">
+            <div className={`h-2.5 w-2.5 shrink-0 rounded-full ${isReadyToDeploy ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></div>
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-bold text-[#1b1647]">
                 {businessName || 'Assistant en configuration'}
               </span>
-              <span className="block text-[11px] text-slate-400 truncate">
+              <span className="block truncate text-[11px] text-slate-500">
                 {isReadyToDeploy ? 'En ligne · répond à vos visiteurs' : 'À compléter pour être en ligne'}
               </span>
             </div>
           </div>
 
           {/* Parler à mon IA : l'entrée la plus visible du menu */}
-          <div className="px-3">
+          <div className="px-4">
             <button
               type="button"
               id="nav-copilot"
               onClick={openCopilot}
-              className="flex w-full items-center gap-3 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
+              className="flex w-full items-center gap-3 rounded-full bg-[#efe9ff] px-4 py-3 text-[15px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#e5dcff] focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-200 cursor-pointer"
             >
-              <Sparkles className="h-[18px] w-[18px]" />
+              <Sparkles className="h-5 w-5" />
               <span className="flex-1 text-left">Parler à mon IA</span>
             </button>
           </div>
 
           {/* Navigation : libellés simples, pensés pour un commerçant, pas pour un développeur */}
-          <nav className="p-3 space-y-1">
+          <nav className="px-4 pb-4" aria-label="Menu principal">
             {NAV_GROUPS.map((group) => (
               <div key={group.title} className="pb-1">
-                <div className="px-3 pb-1.5 pt-3 text-[11px] font-semibold text-slate-400">
+                <div className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                   {group.title}
                 </div>
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = currentSection === item.id;
-                  const badge =
-                    item.id === 'leads' ? String(leadsList.length)
-                    : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length)
-                    : null;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      id={`nav-${item.id}`}
-                      onClick={() => handleSectionChange(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
-                        isActive
-                          ? 'bg-slate-100 text-slate-900 font-semibold'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50 font-medium'
-                      }`}
-                    >
-                      <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-slate-900' : 'text-slate-400'}`} />
-                      <span className="flex-1 text-left">{item.label}</span>
-                      {badge && badge !== '0' && (
-                        <span className={`text-[11px] tabular-nums ${isActive ? 'text-slate-600' : 'text-slate-400'}`}>
-                          {badge}
+                <div className="space-y-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = currentSection === item.id;
+                    const badge =
+                      item.id === 'leads' ? String(leadsList.length)
+                      : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length)
+                      : null;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        id={`nav-${item.id}`}
+                        title={item.label}
+                        aria-current={isActive ? 'page' : undefined}
+                        onClick={() => handleSectionChange(item.id)}
+                        className={`group flex h-11 w-full items-center gap-3 rounded-full px-3.5 text-sm transition-all cursor-pointer ${
+                          isActive
+                            ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_12px_24px_-10px_rgba(110,50,255,0.65)]'
+                            : 'font-medium text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
+                        }`}
+                      >
+                        <span className="relative shrink-0">
+                          <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                          {badge && badge !== '0' && (
+                            <span className={`absolute -right-2.5 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
+                              {badge}
+                            </span>
+                          )}
                         </span>
-                      )}
-                      {item.pro && showLockedGates && (
-                        <Lock className="w-3 h-3 text-amber-500" />
-                      )}
-                    </button>
-                  );
-                })}
+                        <span className="flex-1 truncate text-left">{item.label}</span>
+                        {item.pro && showLockedGates && (
+                          <Lock className="w-3 h-3 text-amber-500" />
+                        )}
+                        {!isActive && <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-purple-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </nav>
         </div>
 
-        {/* User Footer Profile */}
-        <div className="p-3 border-t border-slate-200 bg-slate-50/70 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-purple-100 border border-purple-300 text-purple-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
-              {profile?.photoURL || user?.photoURL ? (
-                <img src={profile?.photoURL || user?.photoURL || ''} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                (profile?.displayName || user?.displayName || user?.email || 'U')[0].toUpperCase()
-              )}
+        {/* Profil */}
+        <div className="p-4">
+          <div className="flex items-center justify-between rounded-2xl bg-[#f6f5fb] p-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-sm font-bold text-purple-700">
+                {profile?.photoURL || user?.photoURL ? (
+                  <img src={profile?.photoURL || user?.photoURL || ''} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  (profile?.displayName || user?.displayName || user?.email || 'U')[0].toUpperCase()
+                )}
+              </div>
+              <div className="min-w-0">
+                <span className="block truncate text-[13px] font-bold text-slate-800">
+                  {profile?.displayName || user?.displayName || 'Mon Compte'}
+                </span>
+                <span className="block truncate text-[11px] text-slate-500">
+                  {user?.email || 'Connecté'}
+                </span>
+              </div>
             </div>
-            <div className="truncate">
-              <span className="block text-xs font-bold text-slate-800 truncate">
-                {profile?.displayName || user?.displayName || 'Mon Compte'}
-              </span>
-              <span className="block text-[10px] text-slate-500 truncate">
-                {user?.email || 'Connecté'}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+              title="Déconnexion"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => logout()}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-            title="Déconnexion"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </aside>
 
@@ -1598,7 +1610,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
       {mobileMenuOpen && (
         <div 
           onClick={() => setMobileMenuOpen(false)}
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-25 md:hidden"
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-25 lg:hidden"
         />
       )}
 
@@ -1607,24 +1619,26 @@ echo "Réponse de l'Assistant : " . $result['message'];
         MAIN CONTENT WORKSPACE (Clean, Responsive, High Contrast)
         =======================================================================
       */}
-      <div className={`flex-1 md:ml-64 bg-slate-50 flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
+      <div className={`flex-1 min-w-0 lg:ml-72 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
         
         {/* Sticky Top Header Bar */}
-        <header className="sticky top-0 bg-white/90 backdrop-blur-md border-b border-slate-200 z-20 px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-20 flex h-[72px] shrink-0 items-center justify-between gap-4 bg-white/95 px-4 backdrop-blur sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100"
+              aria-label="Ouvrir le menu"
+              className="lg:hidden p-2 rounded-full text-slate-600 hover:bg-slate-100"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div>
-              <h1 className="text-base sm:text-lg font-semibold text-slate-900">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-medium tracking-tight text-[#2a2745] sm:text-2xl">
                 {currentSection === 'overview' && 'Accueil'}
                 {currentSection === 'summary' && 'Résumé'}
                 {currentSection === 'crawler' && 'Mon site web'}
                 {currentSection === 'knowledge' && 'Mes informations'}
+                {currentSection === 'behavior' && 'Comportement'}
                 {currentSection === 'widget' && 'Apparence de la bulle'}
                 {currentSection === 'simulator' && 'Tester mon assistant'}
                 {currentSection === 'learning' && 'Apprentissage IA'}
@@ -1636,7 +1650,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 {currentSection === 'automations' && 'Automatisations Instagram'}
               </h1>
               {currentSection !== 'overview' && (
-                <p className="text-xs text-slate-400">{businessName || 'Assistant en configuration'}</p>
+                <p className="truncate text-xs text-slate-400">{businessName || 'Assistant en configuration'}</p>
               )}
             </div>
           </div>
@@ -1647,7 +1661,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
               type="button"
               onClick={handleSaveToDatabase}
               disabled={isSavingDb}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
+              className={`px-5 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
                 savedDbSuccess
                   ? 'bg-emerald-600 text-white shadow-emerald-600/20'
                   : saveDbError
@@ -1672,6 +1686,8 @@ echo "Réponse de l'Assistant : " . $result['message'];
           </div>
         </header>
 
+        {/* Feuille lavande aux grands angles arrondis (comme les plateformes modernes) */}
+        <div className="flex min-h-0 flex-1 flex-col rounded-t-[28px] bg-[#eef1fb] lg:rounded-tl-[44px] lg:rounded-tr-none">
         {/* Workspace Body */}
         <main className={currentSection === 'overview' ? 'flex-1 min-h-0 w-full' : 'p-4 sm:p-8 flex-1 max-w-6xl w-full mx-auto'}>
           
@@ -1740,30 +1756,25 @@ echo "Réponse de l'Assistant : " . $result['message'];
 
               {/* Trois informations essentielles, sans surcharge */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-sm text-slate-500">Statut de mon assistant</p>
-                  <p className="mt-1.5 flex items-center gap-2 text-base font-semibold text-slate-900">
-                    <span className={`h-2 w-2 rounded-full ${isReadyToDeploy ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-                    {isReadyToDeploy ? 'En ligne' : 'En préparation'}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {isReadyToDeploy ? 'Répond à vos visiteurs' : 'Complétez les étapes ci-dessous'}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-sm text-slate-500">Clients intéressés</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{leadsList.length}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">Avec nom ou numéro de téléphone</p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-sm text-slate-500">Informations utilisées</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">
-                    {knowledgeNotes.filter(n => n.enabled).length}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">Fiches lues par l'assistant</p>
-                </div>
+                <StatCard
+                  icon={Activity}
+                  label="Statut de mon assistant"
+                  value={isReadyToDeploy ? 'En ligne' : 'En préparation'}
+                  hint={isReadyToDeploy ? 'Répond à vos visiteurs' : 'Complétez les étapes ci-dessous'}
+                  badge={isReadyToDeploy ? { text: '✓ Actif', tone: 'good' } : { text: 'À compléter', tone: 'warn' }}
+                />
+                <StatCard
+                  icon={Users}
+                  label="Clients intéressés"
+                  value={leadsList.length}
+                  hint="Avec nom ou numéro de téléphone"
+                />
+                <StatCard
+                  icon={Database}
+                  label="Informations utilisées"
+                  value={knowledgeNotes.filter(n => n.enabled).length}
+                  hint="Fiches lues par l'assistant"
+                />
               </div>
 
               {/* Ce qu'il reste à faire (3 étapes maximum) */}
@@ -4078,6 +4089,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
           )}
 
         </main>
+        </div>
       </div>
 
       {/* =================================================================
