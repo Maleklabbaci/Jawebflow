@@ -75,17 +75,17 @@ export async function onRequestGet(context: Ctx) {
       });
     }
 
-    console.log("[instagram][diagnostics] Integration found for:", ig.username || ig.id);
+    console.log("[instagram][diagnostics] Integration found for:", ig.username || ig.igUserId);
 
     // Run diagnostics in parallel
     const [subs, firstMedia, state] = await Promise.all([
-      getSubscribedFields(ig.token).catch((err) => {
+      getSubscribedFields(ig.token, ig.igUserId).catch((err) => {
         console.error("[instagram][diagnostics] getSubscribedFields error:", err?.message);
-        return { error: { kind: 'unknown' } };
+        return { ok: false, fields: null, error: { kind: 'unknown' as const } };
       }),
       listMedia(ig.token, { limit: 1 }).catch((err) => {
         console.error("[instagram][diagnostics] listMedia error:", err?.message);
-        return { error: { kind: 'unknown' } };
+        return { ok: false, media: [], next: null, error: { kind: 'unknown' as const } };
       }),
       supabaseRequest(env, `ig_automation_state?user_id=eq.${encodeURIComponent(user.uid)}&select=last_comment_at`)
         .then(async (r) => (r.ok ? (((await r.json().catch(() => [])) as any[])[0] || null) : null))
@@ -274,7 +274,7 @@ export async function onRequestPost(context: Ctx) {
 
     console.log("[instagram][diagnostics] Attempting subscription...");
 
-    const result = await subscribeAccount(ig.token);
+    const result = await subscribeAccount(ig.token, ig.igUserId);
 
     console.log("[instagram][diagnostics] Subscription result:", {
       success: result.success,
@@ -297,8 +297,10 @@ export async function onRequestPost(context: Ctx) {
       return jsonResponse(
         {
           success: false,
-          error: result.error?.message || 'Instagram a refuse l\'abonnement.',
-          detail: result.error?.raw,
+          error: result.error?.kind === 'token' ? result.error.message : result.error?.raw || result.error?.message || 'Instagram a refusé l\'abonnement.',
+          detail: result.error?.message,
+          code: result.error?.code,
+          hint: 'Vérifie dans Meta Developers que les champs messages et messaging_postbacks sont activés pour Instagram Webhooks et que l’application est en mode Live avec les permissions avancées.',
         },
         502
       );
@@ -316,7 +318,7 @@ export async function onRequestPost(context: Ctx) {
         ? 'Les messages prives sont bien relies, mais Instagram n\'a pas accepte tous les types de notifications (' +
             missing.join(', ') +
             '). Verifie que l\'application Meta les autorise (voir le guide).'
-        : 'Parfait : Instagram enverra desormais les commentaires, les messages et les clics sur les boutons.',
+        : 'Parfait : Instagram enverra désormais les commentaires, les messages et les clics sur les boutons.',
     });
 
   } catch (error: any) {

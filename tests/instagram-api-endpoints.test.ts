@@ -256,7 +256,7 @@ describe('/api/instagram/diagnostics', () => {
   });
 
   it('si même « messages » est refusé (jeton mort) : erreur claire, état « erreur »', async () => {
-    fx.meta.failWhen((c) => c.path === '/me/subscribed_apps' && c.method === 'POST', 400, { message: 'Invalid OAuth access token', code: 190 }, 5);
+    fx.meta.failWhen((c) => /\/subscribed_apps$/.test(c.path) && c.method === 'POST', 400, { message: 'Invalid OAuth access token', code: 190 }, 5);
     const res = await call(diagnostics.onRequestPost, 'POST', '/api/instagram/diagnostics', { body: { action: 'subscribe' } });
     expect(res.status).toBe(502);
     expect(res.json.error).toMatch(/reconnecte/i);

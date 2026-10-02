@@ -271,7 +271,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       let subscribed = false;
       let subscribeError: string | undefined;
       try {
-        const subResult = await subscribeToInstagramMessages(accessToken);
+        const subResult = await subscribeToInstagramMessages(accessToken, igProfessionalId);
         subscribed = subResult.success;
         if (!subscribed) subscribeError = subResult.data?.error?.message || `HTTP ${subResult.status}`;
       } catch (e: any) {
@@ -317,7 +317,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     let subscribed = false;
     let subscribeError: string | undefined;
     try {
-      const subResult = await subscribeToInstagramMessages(accessToken);
+      const subResult = await subscribeToInstagramMessages(accessToken, igProfessionalId);
       subscribed = subResult.success;
       if (!subscribed) {
         subscribeError = subResult.data?.error?.message || `Échec de l'abonnement webhook (HTTP ${subResult.status}).`;

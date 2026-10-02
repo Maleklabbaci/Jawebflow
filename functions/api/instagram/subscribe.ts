@@ -27,8 +27,8 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204 });
 }
 
-export async function subscribeToInstagramMessages(accessToken: string) {
-  const r = await subscribeAccount(accessToken);
+export async function subscribeToInstagramMessages(accessToken: string, igUserId?: string) {
+  const r = await subscribeAccount(accessToken, igUserId);
   return {
     success: r.success,
     status: r.status,
@@ -44,14 +44,14 @@ export async function onRequestPost(context: { request: Request; env?: any }) {
     const caller = await verifySupabaseIdToken(context.env || {}, context.request.headers.get("Authorization"));
     if (!caller) return json({ success: false, error: "Connexion requise." }, 401);
 
-    const body = await context.request.json().catch(() => ({})) as { accessToken?: string };
+    const body = await context.request.json().catch(() => ({})) as { accessToken?: string; instagramUserId?: string };
     const accessToken = String(body.accessToken || "").trim();
 
     if (!accessToken) {
       return json({ success: false, error: "accessToken manquant." }, 400);
     }
 
-    const result = await subscribeToInstagramMessages(accessToken);
+    const result = await subscribeToInstagramMessages(accessToken, body.instagramUserId);
 
     if (!result.success) {
       return json({

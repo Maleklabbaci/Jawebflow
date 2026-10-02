@@ -264,8 +264,8 @@ export class FakeMeta {
       const recipient = call.body?.recipient || {};
       return j({ recipient_id: recipient.id || `igsid_of_${recipient.comment_id}`, message_id: `mid_${++this.seq}` });
     }
-    if (method === 'GET' && path === '/me/subscribed_apps') return j({ data: [{ id: 'app', subscribed_fields: this.subscribedFields }] });
-    if (method === 'POST' && path === '/me/subscribed_apps') {
+    if (method === 'GET' && /\/[^/]+\/subscribed_apps$/.test(path)) return j({ data: [{ id: 'app', subscribed_fields: this.subscribedFields }] });
+    if (method === 'POST' && /\/[^/]+\/subscribed_apps$/.test(path)) {
       const asked = (call.query.subscribed_fields || '').split(',');
       const bad = asked.filter((f) => this.rejectFields.includes(f));
       if (bad.length) return j({ error: { message: `(#100) Invalid subscribed field: ${bad.join(',')}`, code: 100 } }, 400);

@@ -287,8 +287,9 @@ export async function listMedia(token: string, opts: { limit?: number; after?: s
   return { ok: true, media, next: r.data?.paging?.next ? String(r.data?.paging?.cursors?.after || '') || null : null };
 }
 
-export async function getSubscribedFields(token: string): Promise<{ ok: boolean; fields: string[] | null; error?: MetaError }> {
-  const r = await igRequest(token, 'GET', '/me/subscribed_apps');
+export async function getSubscribedFields(token: string, igUserId?: string): Promise<{ ok: boolean; fields: string[] | null; error?: MetaError }> {
+  const accountPath = igUserId ? `/${encodeURIComponent(igUserId)}` : '/me';
+  const r = await igRequest(token, 'GET', `${accountPath}/subscribed_apps`);
   if (!r.ok) return { ok: false, fields: null, error: r.error };
   const entries: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
   const fields = entries.flatMap((e) => (Array.isArray(e?.subscribed_fields) ? e.subscribed_fields.map(String) : []));
@@ -301,10 +302,13 @@ export async function getSubscribedFields(token: string): Promise<{ ok: boolean;
  * activés dans l'application Meta), retombe sur une liste plus courte pour ne
  * JAMAIS casser la réception des messages privés.
  */
-export async function subscribeAccount(token: string): Promise<{ success: boolean; fields: string[]; status: number; data: any; error?: MetaError }> {
+export async function subscribeAccount(token: string, igUserId?: string): Promise<{ success: boolean; fields: string[]; status: number; data: any; error?: MetaError }> {
   let last: MetaResult | null = null;
+  // Meta documente l’IG professional account ID pour cette edge. `/me` reste
+  // utile pour les anciens tokens, mais peut être rejeté avec Instagram Login.
+  const accountPath = igUserId ? `/${encodeURIComponent(igUserId)}` : '/me';
   for (const fields of SUBSCRIBE_FIELD_SETS) {
-    const r = await igRequest(token, 'POST', '/me/subscribed_apps', { query: { subscribed_fields: fields.join(',') } });
+    const r = await igRequest(token, 'POST', `${accountPath}/subscribed_apps`, { query: { subscribed_fields: fields.join(',') } });
     last = r;
     if (r.ok && r.data?.success !== false) return { success: true, fields, status: r.status, data: r.data };
     if (r.error?.kind === 'token' || r.error?.kind === 'network') break; // inutile d'insister
