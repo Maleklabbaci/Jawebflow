@@ -32,6 +32,7 @@ function splitTop(s: string): string[] {
 }
 
 function matchOp(value: any, expr: string): boolean {
+  if (expr.startsWith('not.')) return !matchOp(value, expr.slice(4));
   const dot = expr.indexOf('.');
   const op = expr.slice(0, dot);
   const arg = expr.slice(dot + 1);
@@ -47,10 +48,19 @@ function matchOp(value: any, expr: string): boolean {
   }
 }
 
+/** `phone` → la colonne ; `data->>phone` → le champ « phone » du JSON de la colonne « data » (comme PostgREST). */
+function readColumn(row: Row, key: string): any {
+  const arrow = key.indexOf('->>');
+  if (arrow < 0) return row[key];
+  const obj = row[key.slice(0, arrow)];
+  const v = obj && typeof obj === 'object' ? obj[key.slice(arrow + 3)] : undefined;
+  return v === undefined || v === null ? null : String(v);
+}
+
 function matchOr(row: Row, inner: string): boolean {
   return splitTop(inner.replace(/^\(|\)$/g, '')).some((cond) => {
     const dot = cond.indexOf('.');
-    return matchOp(row[cond.slice(0, dot)], cond.slice(dot + 1));
+    return matchOp(readColumn(row, cond.slice(0, dot)), cond.slice(dot + 1));
   });
 }
 
@@ -74,12 +84,12 @@ export class FakeSupabase {
     return `00000000-0000-4000-8000-${hex}`;
   }
 
-  private filter(table: string, params: URLSearchParams): Row[] {
+  private filter(table: string, params: URLSearchParams, applyLimit = true): Row[] {
     let rows = [...(this.tables[table] || [])];
     for (const [key, val] of params.entries()) {
       if (['select', 'order', 'limit', 'on_conflict', 'offset'].includes(key)) continue;
       if (key === 'or') rows = rows.filter((r) => matchOr(r, val));
-      else rows = rows.filter((r) => matchOp(r[key], val));
+      else rows = rows.filter((r) => matchOp(readColumn(r, key), val));
     }
     const order = params.get('order');
     if (order) {
@@ -87,7 +97,7 @@ export class FakeSupabase {
       rows.sort((a, b) => (String(a[col] ?? '') < String(b[col] ?? '') ? -1 : String(a[col] ?? '') > String(b[col] ?? '') ? 1 : 0) * (dir === 'desc' ? -1 : 1));
     }
     const limit = Number(params.get('limit'));
-    if (limit) rows = rows.slice(0, limit);
+    if (applyLimit && limit) rows = rows.slice(0, limit);
     return rows;
   }
 
@@ -142,8 +152,13 @@ export class FakeSupabase {
     if (this.failTables.has(table)) return j({ message: 'boom' }, 500);
 
     if (method === 'GET') {
-      const rows = this.filter(table, url.searchParams);
-      return j(this.project(rows, url.searchParams.get('select')));
+      const all = this.filter(table, url.searchParams, false);
+      const limit = Number(url.searchParams.get('limit'));
+      const rows = limit ? all.slice(0, limit) : all;
+      const res = j(this.project(rows, url.searchParams.get('select')));
+      // Comme PostgREST : le nombre TOTAL de lignes (avant la limite) dans « Content-Range ».
+      if (prefer.includes('count=exact')) res.headers.set('Content-Range', rows.length ? `0-${rows.length - 1}/${all.length}` : `*/${all.length}`);
+      return res;
     }
 
     if (method === 'POST') {
