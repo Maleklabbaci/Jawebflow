@@ -460,15 +460,15 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
                   <button type="button" onClick={notice.onAction} className="font-semibold underline underline-offset-2 hover:no-underline cursor-pointer">{notice.actionLabel}</button>
                 </div>
               )}
-              <h2 className="pb-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-                <span className="mr-2 text-lg font-medium text-slate-500 sm:text-xl">Bonjour</span>
+              <h2 className="flex flex-wrap items-baseline justify-center gap-x-2 pb-1 tracking-[-0.035em]">
+                <span className="text-base font-medium text-slate-500 sm:text-lg">Bonjour</span>
                 {first && (
                   <span className="bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-3xl font-semibold italic text-transparent sm:text-4xl">
                     {first}
                   </span>
                 )}
               </h2>
-              <p className="mt-2 text-base font-medium text-slate-400 sm:text-lg">Quoi de neuf ? On ajoute quoi ?</p>
+              <p className="mt-2 text-[15px] font-medium text-slate-400 sm:text-base">Quoi de neuf ? On ajoute quoi ?</p>
             </div>
           ) : (
             <div className="mx-auto w-full max-w-3xl space-y-6 pb-4 pt-14">
