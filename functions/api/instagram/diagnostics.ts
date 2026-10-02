@@ -17,7 +17,6 @@ export interface Check {
   status: CheckStatus;
   title: string;
   detail?: string;
-  /** Bouton proposé à côté du point : reconnecter, réparer les notifications, ou aller connecter le compte. */
   action?: 'connect' | 'reconnect' | 'repair';
 }
 
@@ -69,8 +68,8 @@ export async function onRequestGet(context: Ctx) {
         checks: [{
           id: 'account',
           status: 'error',
-          title: 'Aucun compte Instagram connecté',
-          detail: 'Connecte ton compte dans l'onglet « Instagram » : c'est la première étape.',
+          title: 'Aucun compte Instagram connecte',
+          detail: 'Connecte ton compte dans l\'onglet "Instagram" : c\'est la premiere etape.',
           action: 'connect',
         } satisfies Check],
       });
@@ -105,7 +104,7 @@ export async function onRequestGet(context: Ctx) {
     const tokenExpired = subs?.error?.kind === 'token' || firstMedia?.error?.kind === 'token';
     console.log("[instagram][diagnostics] Token expired:", tokenExpired);
 
-    // Autorisation « gérer les commentaires » : on essaie VRAIMENT de lire les commentaires d'une publication.
+    // Check comment permission
     let permission: 'ok' | 'missing' | 'unknown' = 'unknown';
     
     if (!tokenExpired && firstMedia?.ok && firstMedia.media?.[0]) {
@@ -129,14 +128,14 @@ export async function onRequestGet(context: Ctx) {
         ? {
             id: 'token',
             status: 'error',
-            title: 'La connexion Instagram a expiré',
-            detail: 'Reconnecte ton compte pour que le robot puisse répondre.',
+            title: 'La connexion Instagram a expire',
+            detail: 'Reconnecte ton compte pour que le robot puisse repondre.',
             action: 'reconnect',
           }
         : {
             id: 'account',
             status: 'ok',
-            title: 'Compte Instagram connecté',
+            title: 'Compte Instagram connecte',
             detail: ig.username ? `@${ig.username}` : undefined,
           },
     );
@@ -146,27 +145,27 @@ export async function onRequestGet(context: Ctx) {
       checks.push({
         id: 'permission',
         status: 'ok',
-        title: 'Autorisation « commentaires » accordée',
+        title: 'Autorisation "commentaires" accordee',
       });
     } else if (permission === 'missing') {
       checks.push({
         id: 'permission',
         status: 'error',
-        title: 'Il manque l'autorisation « gérer les commentaires »',
-        detail: 'Reconnecte ton compte Instagram et accepte toutes les autorisations demandées.',
+        title: 'Il manque l\'autorisation "gerer les commentaires"',
+        detail: 'Reconnecte ton compte Instagram et accepte toutes les autorisations demandees.',
         action: 'reconnect',
       });
     } else {
       checks.push({
         id: 'permission',
         status: 'unknown',
-        title: 'Autorisation « commentaires » : pas encore vérifiable',
+        title: 'Autorisation "commentaires" : pas encore verifiable',
         detail:
           firstMedia?.ok && !firstMedia.media?.length
-            ? 'Publie un premier post : je pourrai alors vérifier l'autorisation.'
+            ? 'Publie un premier post : je pourrai alors verifier l\'autorisation.'
             : tokenExpired
               ? undefined
-              : 'Instagram n'a pas permis de la vérifier maintenant. Clique sur « Vérifier » dans un instant.',
+              : 'Instagram n\'a pas permis de la verifier maintenant. Clique sur "Verifier" dans un instant.',
       });
     }
 
@@ -175,8 +174,8 @@ export async function onRequestGet(context: Ctx) {
       checks.push({
         id: 'subscription',
         status: tokenExpired ? 'unknown' : 'warn',
-        title: 'Notifications Instagram : pas vérifiables',
-        detail: tokenExpired ? undefined : 'Clique sur « Réparer » pour relancer l'abonnement.',
+        title: 'Notifications Instagram : pas verifiables',
+        detail: tokenExpired ? undefined : 'Clique sur "Reparer" pour relancer l\'abonnement.',
         action: tokenExpired ? undefined : 'repair',
       });
     } else {
@@ -189,10 +188,10 @@ export async function onRequestGet(context: Ctx) {
           status: fields.includes('messaging_postbacks') ? 'ok' : 'warn',
           title: fields.includes('messaging_postbacks')
             ? 'Instagram envoie bien les commentaires et les messages'
-            : 'Commentaires et messages OK — boutons à activer',
+            : 'Commentaires et messages OK -- boutons a activer',
           detail: fields.includes('messaging_postbacks')
             ? undefined
-            : 'Sans cela, l'option « Suis mon compte avant de recevoir le message » ne peut pas fonctionner. Clique sur « Réparer ».',
+            : 'Sans cela, l\'option "Suis mon compte avant de recevoir le message" ne peut pas fonctionner. Clique sur "Reparer".',
           action: fields.includes('messaging_postbacks') ? undefined : 'repair',
         });
       } else {
@@ -200,9 +199,9 @@ export async function onRequestGet(context: Ctx) {
           id: 'subscription',
           status: 'warn',
           title: missing.includes('comments')
-            ? 'Instagram n'envoie pas encore les commentaires'
-            : 'Instagram n'envoie pas les messages privés',
-          detail: 'Clique sur « Réparer » pour relancer l'abonnement.',
+            ? 'Instagram n\'envoie pas encore les commentaires'
+            : 'Instagram n\'envoie pas les messages prives',
+          detail: 'Clique sur "Reparer" pour relancer l\'abonnement.',
           action: 'repair',
         });
       }
@@ -215,12 +214,12 @@ export async function onRequestGet(context: Ctx) {
         ? {
             id: 'activity',
             status: 'ok',
-            title: 'Instagram nous a déjà envoyé des commentaires',
+            title: 'Instagram nous a deja envoye des commentaires',
           }
         : {
             id: 'activity',
             status: 'unknown',
-            title: 'Aucun commentaire reçu pour le moment',
+            title: 'Aucun commentaire recu pour le moment',
             detail: 'Normal si tu viens de commencer. Pour tester en vrai : commente une de tes publications depuis un AUTRE compte Instagram.',
           },
     );
@@ -269,7 +268,7 @@ export async function onRequestPost(context: Ctx) {
       console.error("[instagram][diagnostics] No Instagram integration found");
       return jsonResponse({
         success: false,
-        error: 'Connecte d'abord ton compte Instagram.',
+        error: 'Connecte d\'abord ton compte Instagram.',
       }, 409);
     }
 
@@ -298,7 +297,7 @@ export async function onRequestPost(context: Ctx) {
       return jsonResponse(
         {
           success: false,
-          error: result.error?.message || 'Instagram a refusé l'abonnement.',
+          error: result.error?.message || 'Instagram a refuse l\'abonnement.',
           detail: result.error?.raw,
         },
         502
@@ -314,17 +313,17 @@ export async function onRequestPost(context: Ctx) {
       fields: result.fields,
       missing,
       message: missing.length
-        ? 'Les messages privés sont bien reliés, mais Instagram n'a pas accepté tous les types de notifications (' +
+        ? 'Les messages prives sont bien relies, mais Instagram n\'a pas accepte tous les types de notifications (' +
             missing.join(', ') +
-            '). Vérifie que l'application Meta les autorise (voir le guide).'
-        : 'Parfait : Instagram enverra désormais les commentaires, les messages et les clics sur les boutons.',
+            '). Verifie que l\'application Meta les autorise (voir le guide).'
+        : 'Parfait : Instagram enverra desormais les commentaires, les messages et les clics sur les boutons.',
     });
 
   } catch (error: any) {
     console.error("[instagram][diagnostics] POST fatal error:", error?.message);
     return jsonResponse({
       success: false,
-      error: error?.message || "Erreur interne lors de la réparation.",
+      error: error?.message || "Erreur interne lors de la reparation.",
       step: "unknown"
     }, 500);
   }
