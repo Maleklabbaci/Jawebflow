@@ -100,7 +100,7 @@ async function say(text: string) {
 describe('Accueil façon Gemini / Claude', () => {
   it('« Bonjour {prénom} », la question et le grand champ de texte — sans bouton flottant', async () => {
     await openChat();
-    expect(screen.getByRole('heading', { level: 2, name: 'Bonjour Nour' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Bonjour, Nour' })).toBeTruthy();
     expect(screen.getByText('Quoi de neuf ? On ajoute quoi ?')).toBeTruthy();
     expect(chatBox().placeholder).toMatch(/Ajoute une info, demande tes chiffres/);
     expect(document.querySelector('header h1')!.textContent).toBe('Accueil');
@@ -167,7 +167,7 @@ describe('Accueil façon Gemini / Claude', () => {
     expect(screen.queryByText('Quoi de neuf ? On ajoute quoi ?')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Nouvelle discussion' }));
-    expect(await screen.findByRole('heading', { level: 2, name: 'Bonjour Nour' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Bonjour, Nour' })).toBeTruthy();
     expect(chatBox()).toBe(box);
     expect(screen.queryByText('Salam ! Je suis là.')).toBeNull();
   });

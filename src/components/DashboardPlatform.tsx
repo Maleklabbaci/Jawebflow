@@ -1315,12 +1315,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       `}>
         <div className="flex-1 overflow-y-auto">
           {/* Logo */}
-          <div className="flex items-start justify-between px-5 pb-3 pt-5">
-            <div>
-              <div className="flex h-8 items-center">
-                <img src="/jawebflow-logo.png" alt="JawebFlow" className="block h-7 w-auto max-w-[148px] object-contain object-left" />
-              </div>
-              <span className="mt-1.5 block text-[10px] font-medium tracking-[0.01em] text-slate-400">Espace client</span>
+          <div className="flex h-[72px] items-center justify-between px-5">
+            <div className="flex flex-col justify-center">
+              <img src="/jawebflow-logo.png" alt="JawebFlow" className="block h-6 w-auto max-w-[120px] object-contain object-left" />
+              <span className="mt-0.5 block text-[9px] font-medium leading-none tracking-[0.02em] text-slate-400">Espace client</span>
             </div>
 
             <div className="flex items-center gap-0.5">

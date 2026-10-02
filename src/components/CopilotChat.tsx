@@ -460,15 +460,13 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
                   <button type="button" onClick={notice.onAction} className="font-semibold underline underline-offset-2 hover:no-underline cursor-pointer">{notice.actionLabel}</button>
                 </div>
               )}
-              <h2 className="flex flex-wrap items-baseline justify-center gap-x-2 pb-1 tracking-[-0.035em]">
-                <span className="text-base font-medium text-slate-500 sm:text-lg">Bonjour</span>
-                {first && (
-                  <span className="bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text text-3xl font-semibold italic text-transparent sm:text-4xl">
-                    {first}
-                  </span>
-                )}
+              <h2 className="flex items-center justify-center gap-3 text-[#1f1f1f] sm:gap-4" style={{ fontFamily: "'Fraunces', Georgia, 'Times New Roman', serif" }}>
+                <Sparkles aria-hidden="true" className="h-7 w-7 shrink-0 text-[#7c3aed] sm:h-9 sm:w-9" strokeWidth={1.75} />
+                <span className="text-[32px] font-normal leading-tight tracking-[-0.02em] sm:text-[44px]">
+                  Bonjour{first ? <>, {first}</> : null}
+                </span>
               </h2>
-              <p className="mt-2 text-[15px] font-medium text-slate-400 sm:text-base">Quoi de neuf ? On ajoute quoi ?</p>
+              <p className="mt-3 text-[15px] font-normal text-slate-500 sm:text-base">Quoi de neuf ? On ajoute quoi ?</p>
             </div>
           ) : (
             <div className="mx-auto w-full max-w-3xl space-y-6 pb-4 pt-14">
