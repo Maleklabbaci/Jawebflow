@@ -76,3 +76,43 @@
 .animate-pulse-subtle {
   animation: pulse-subtle 4s ease-in-out infinite;
 }
+
+/* ------------------------------------------------------------------ */
+/* Fond léger du site vitrine (composant BackgroundVideo)              */
+/* Dégradés uniquement : aucune image à télécharger, aucune animation. */
+/* ------------------------------------------------------------------ */
+.site-bg-glow,
+.site-bg-glow-low {
+  position: absolute;
+  inset: 0;
+}
+
+/* Lueur violette centrale (derrière le titre) + reflet discret à droite */
+.site-bg-glow {
+  background:
+    radial-gradient(ellipse 52% 58% at 43% 38%,
+      rgba(109, 40, 217, 0.44) 0%,
+      rgba(109, 40, 217, 0.22) 38%,
+      rgba(109, 40, 217, 0.07) 62%,
+      transparent 82%),
+    radial-gradient(ellipse 30% 44% at 82% 40%,
+      rgba(168, 85, 247, 0.16) 0%,
+      transparent 78%);
+}
+
+/* Lueur indigo en bas à droite */
+.site-bg-glow-low {
+  background: radial-gradient(ellipse 42% 40% at 72% 92%,
+    rgba(79, 70, 229, 0.2) 0%,
+    transparent 78%);
+}
+
+/* Trame de points, visible surtout au centre */
+.site-bg-dots {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1.3px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 35%, #000 15%, transparent 78%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 35%, #000 15%, transparent 78%);
+}
