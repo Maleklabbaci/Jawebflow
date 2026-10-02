@@ -116,3 +116,77 @@
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 35%, #000 15%, transparent 78%);
   mask-image: radial-gradient(ellipse 70% 60% at 50% 35%, #000 15%, transparent 78%);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ESPACE CLIENT — look « SaaS moderne » : barre latérale en pastilles, fond lavande,
+   cartes très arrondies, boutons en pastille dégradée violette.
+   Tout est limité à `.dash-theme` (la racine du tableau de bord) : le site public n'est pas touché.
+   ══════════════════════════════════════════════════════════════════════════ */
+.dash-theme {
+  --dash-sheet: #eef1fb;
+  --dash-ink: #1b1647;
+  --dash-line: #e2e6f4;
+  --dash-from: #a23dff;
+  --dash-to: #5a2cff;
+}
+.dash-theme h1,
+.dash-theme h2,
+.dash-theme h3,
+.dash-theme .font-display {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.015em;
+}
+
+/* Défilement discret (le thème global est sombre) */
+.dash-theme ::-webkit-scrollbar-track { background: transparent; }
+.dash-theme ::-webkit-scrollbar-thumb { background: rgba(124, 58, 237, 0.25); }
+html:has(.dash-theme)::-webkit-scrollbar-track { background: #eef1fb; }
+
+/* Dégradé de marque : pastille active du menu, bouton d'envoi, boutons principaux */
+.dash-gradient:not(:disabled):not([aria-disabled='true']) {
+  background-image: linear-gradient(90deg, var(--dash-from), var(--dash-to));
+}
+.dash-theme :is(button, a).bg-purple-600:is([class*='px-'], [class*=' p-2'], [class*=' p-3']),
+.dash-theme :is(button, a).bg-slate-900:is([class*='px-']),
+.dash-theme :is(button, a).bg-indigo-600:is([class*='px-']) {
+  background-image: linear-gradient(90deg, var(--dash-from), var(--dash-to));
+  background-color: #7c3aed;
+  color: #fff;
+  border-radius: 9999px;
+  box-shadow: 0 10px 22px -12px rgba(110, 50, 255, 0.7);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+.dash-theme :is(button, a).bg-purple-600:is([class*='px-'], [class*=' p-2'], [class*=' p-3']):hover:not(:disabled),
+.dash-theme :is(button, a).bg-slate-900:is([class*='px-']):hover:not(:disabled),
+.dash-theme :is(button, a).bg-indigo-600:is([class*='px-']):hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.dash-theme :is(button).bg-purple-600:disabled,
+.dash-theme :is(button).bg-slate-900:disabled {
+  box-shadow: none;
+}
+
+/* Boutons secondaires : pastille à contour doux (les boutons « carte » pleine largeur ne sont pas touchés) */
+.dash-theme button.border[class*='px-']:not(.w-full):not(.bg-purple-600):not(.bg-slate-900):not(.bg-indigo-600):not(.bg-emerald-600):not(.bg-rose-600):not(.bg-red-600):not([role='switch']):not([role='tab']) {
+  border-radius: 9999px;
+  border-color: var(--dash-line);
+}
+
+/* Cartes : très arrondies, sans trait, ombre légère */
+.dash-theme :is(div, section, article, ul, form).bg-white.rounded-xl.border,
+.dash-theme :is(div, section, article, ul, form).bg-white.rounded-2xl.border {
+  border-radius: 1.5rem;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(27, 22, 71, 0.04), 0 12px 32px -20px rgba(27, 22, 71, 0.2);
+}
+
+/* Champs : angles doux, contour lavande, halo violet au clic */
+.dash-theme :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']), textarea, select):not(.dash-bare) {
+  border-radius: 0.95rem;
+  border-color: var(--dash-line);
+}
+.dash-theme :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']), textarea, select):not(.dash-bare):focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.14);
+  outline: none;
+}

@@ -460,7 +460,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
                   <button type="button" onClick={notice.onAction} className="font-semibold underline underline-offset-2 hover:no-underline cursor-pointer">{notice.actionLabel}</button>
                 </div>
               )}
-              <h2 className="bg-gradient-to-r from-purple-600 via-fuchsia-500 to-indigo-500 bg-clip-text pb-1 text-4xl font-semibold tracking-tight text-transparent sm:text-5xl">
+              <h2 className="bg-gradient-to-r from-[#a23dff] to-[#5a2cff] bg-clip-text pb-1 text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
                 Bonjour{first ? ` ${first}` : ''}
               </h2>
               <p className="mt-2 text-2xl font-medium text-slate-400 sm:text-3xl">Quoi de neuf ? On ajoute quoi ?</p>
@@ -513,7 +513,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
         {/* Zone de saisie */}
         <form className="px-4 pb-4" onSubmit={(e) => { e.preventDefault(); void send(draft); }}>
           <div className="mx-auto w-full max-w-3xl">
-            <div className="rounded-3xl border border-slate-300 bg-white shadow-sm transition focus-within:border-purple-400 focus-within:ring-4 focus-within:ring-purple-100">
+            <div className="rounded-[28px] border border-transparent bg-white shadow-[0_1px_2px_rgba(27,22,71,0.05),0_14px_36px_-18px_rgba(27,22,71,0.28)] transition focus-within:border-purple-300 focus-within:ring-4 focus-within:ring-purple-200/60">
               <textarea
                 id="copilot-input"
                 ref={inputRef}
@@ -529,7 +529,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
                 }}
                 aria-label="Ton message pour mon IA"
                 placeholder={empty ? 'Ajoute une info, demande tes chiffres…' : 'Écris ta réponse…'}
-                className="block max-h-56 min-h-[56px] w-full resize-none rounded-3xl bg-transparent px-5 pb-2 pt-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                className="dash-bare block max-h-56 min-h-[56px] w-full resize-none rounded-[28px] bg-transparent px-5 pb-2 pt-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none"
               />
               <div className="flex items-center justify-between px-3 pb-3">
                 <div className="flex items-center gap-1">
@@ -562,7 +562,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
                   disabled={busy || !draft.trim()}
                   aria-label="Envoyer"
                   title="Envoyer"
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-600 text-white transition-colors hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer disabled:cursor-default"
+                  className="dash-gradient flex h-10 w-10 items-center justify-center rounded-full bg-purple-600 text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.8)] transition hover:brightness-110 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none cursor-pointer disabled:cursor-default"
                 >
                   {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
                 </button>
