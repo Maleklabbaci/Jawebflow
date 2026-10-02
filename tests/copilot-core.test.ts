@@ -390,7 +390,7 @@ describe('déclarations d’outils envoyées à Gemini', () => {
 
   it('l’IA peut tout faire demandé : fiches, comportement, infos, accueil, publications, automatisations', () => {
     expect(TOOL_DECLARATIONS.map((t) => t.name).sort()).toEqual([
-      'add_knowledge', 'create_automation', 'delete_automation', 'delete_knowledge', 'list_instagram_posts', 'search_knowledge',
+      'add_knowledge', 'create_automation', 'delete_automation', 'delete_knowledge', 'get_stats', 'list_instagram_posts', 'list_leads', 'search_knowledge',
       'set_automation_enabled', 'set_behavior', 'set_business_info', 'set_instagram_greeting', 'update_automation', 'update_knowledge',
     ]);
   });

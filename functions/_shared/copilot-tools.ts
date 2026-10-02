@@ -24,6 +24,7 @@ import {
 } from './ig-automation-store.ts';
 import { LEGACY_DEFAULT_GREETING, TRIGGER_LABELS, TRIGGER_TYPES } from './ig-automation-core.ts';
 import type { Automation, TriggerType } from './ig-automation-core.ts';
+import { readLeads, readStats } from './copilot-stats.ts';
 import {
   COPILOT_LIMITS,
   applyBehaviorPatch,
@@ -38,6 +39,7 @@ import {
   normalizeBehavior,
   normalizeBusinessInfo,
   noteDetail,
+  periodRange,
   revertToBehaviorPatch,
   searchNotes,
   titleKey,
@@ -210,12 +212,25 @@ export class CopilotRunner {
         case 'update_automation': return await this.updateAutomationTool(args);
         case 'set_automation_enabled': return await this.setAutomationEnabled(args);
         case 'delete_automation': return await this.deleteAutomationTool(args);
+        case 'get_stats': return await this.getStats(args);
+        case 'list_leads': return await this.listLeadsTool(args);
         default: return { ok: false, error: `Outil inconnu : ${String(name).slice(0, 40)}.` };
       }
     } catch (e: any) {
       console.error('[copilot] outil en échec:', name, e?.message || e);
       return { ok: false, error: 'Une erreur est survenue pendant cette action. Rien n’a été confirmé : réessaie.' };
     }
+  }
+
+  // ── Chiffres du compte (lecture seule : rien n'est écrit, aucune carte « action ») ──
+  private async getStats(args: any) {
+    return readStats(this.env, this.assistantId, periodRange(args.period, this.now(), '7d'));
+  }
+
+  private async listLeadsTool(args: any) {
+    const wanted = Math.trunc(Number(args.limit));
+    const limit = Number.isFinite(wanted) ? Math.min(COPILOT_LIMITS.maxLeadsReturned, Math.max(1, wanted)) : 5;
+    return readLeads(this.env, this.assistantId, periodRange(args.period, this.now(), 'all'), { limit, query: cleanText(args.query, 60) });
   }
 
   // ── Fiches ────────────────────────────────────────────────────────────────

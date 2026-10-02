@@ -62,6 +62,7 @@ export default function App() {
           instagram: 'instagram', ig: 'instagram', meta: 'instagram', direct: 'instagram',
           automations: 'automations', automatisations: 'automations', automatisation: 'automations', commentaires: 'automations', comments: 'automations', manychat: 'automations', leads: 'leads', crm: 'leads', prospects: 'leads',
           settings: 'settings', parametres: 'settings', whatsapp: 'settings',
+          summary: 'summary', resume: 'summary',
           behavior: 'behavior', comportement: 'behavior', personnalite: 'behavior',
         };
         return { page: 'create-assistant', section: sections[sub] || 'overview' };
