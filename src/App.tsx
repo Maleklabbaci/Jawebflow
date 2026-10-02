@@ -59,7 +59,8 @@ export default function App() {
           crawler: 'crawler', scan: 'crawler', site: 'crawler', knowledge: 'knowledge', faq: 'knowledge', connaissances: 'knowledge',
           widget: 'widget', bulle: 'widget', appearance: 'widget', style: 'widget', customization: 'widget', simulator: 'simulator',
           test: 'simulator', chatbot: 'simulator', integration: 'integration', script: 'integration', embed: 'integration',
-          instagram: 'instagram', ig: 'instagram', meta: 'instagram', direct: 'instagram', leads: 'leads', crm: 'leads', prospects: 'leads',
+          instagram: 'instagram', ig: 'instagram', meta: 'instagram', direct: 'instagram',
+          automations: 'automations', automatisations: 'automations', automatisation: 'automations', commentaires: 'automations', comments: 'automations', manychat: 'automations', leads: 'leads', crm: 'leads', prospects: 'leads',
           settings: 'settings', parametres: 'settings', whatsapp: 'settings',
           behavior: 'behavior', comportement: 'behavior', personnalite: 'behavior',
         };

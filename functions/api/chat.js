@@ -20,6 +20,7 @@ import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, local
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite, siteShoppingPromptBlock } from '../_shared/site-search.ts';
 import { notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from '../_shared/merchant-notify.ts';
+import { forwardLeadInBackground } from '../_shared/lead-webhook.ts';
 
 // Modèle Gemini : surchargeable par variable d'environnement (Pages → Settings →
 // Environment variables) sans redéploiement de code. Les identifiants « 2.5 »
@@ -369,6 +370,8 @@ Ce client revient : salue-le comme une connaissance (« ah oui kho, tu m'avais d
             diagnostics.push('fiche prospect enrichie');
             // 🔔 Le marchand reçoit le lead sur Instagram (compte JawebFlow, si activé)
             try { await notifyLead(env, assistantId, { ...wf, need: exists ? undefined : String(message).slice(0, 200), source: 'site web' }); } catch { /* notif best-effort */ }
+            // 🔗 Transmis aussi à l'outil du marchand (CRM, Google Sheets, Zapier…) s'il a enregistré une adresse.
+            try { await forwardLeadInBackground(env, assistantId, { ...wf, need: exists ? undefined : String(message).slice(0, 200), source: 'site web', contactKey: sessionKey }, typeof context.waitUntil === 'function' ? context.waitUntil.bind(context) : undefined); } catch { /* best-effort */ }
           }
         }
       } catch (leadErr) {

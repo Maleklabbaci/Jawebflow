@@ -277,6 +277,12 @@ export function appendLinks(text: string, buttons: LinkButton[]): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration par défaut + modèles prêts à l'emploi
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Ancien texte pré-rempli par l'interface dans « Message d'accueil ». Il a été enregistré chez des
+ * marchands qui ne l'ont jamais choisi : on le traite comme « vide » (salutation automatique).
+ */
+export const LEGACY_DEFAULT_GREETING = 'Salam 👋 Bienvenue sur notre page Instagram ! Comment puis-je vous aider ?';
+
 export const DEFAULT_GATE = {
   text: 'Salut {prenom} 👋 Pour recevoir ton message, suis d’abord mon compte, puis appuie sur le bouton ci-dessous 👇',
   button: '✅ C’est fait',

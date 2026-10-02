@@ -28,7 +28,7 @@ import {
   type TriggerType,
 } from '../functions/_shared/ig-automation-core';
 
-function makeAutomation(over: Partial<Automation> & { config?: Partial<AutomationConfig> } = {}): Automation {
+function makeAutomation(over: Omit<Partial<Automation>, 'config'> & { config?: Partial<AutomationConfig> } = {}): Automation {
   const triggerType: TriggerType = over.triggerType || 'comment';
   const base = defaultConfig(triggerType);
   return {

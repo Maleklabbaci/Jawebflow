@@ -5,6 +5,8 @@
 import { vi } from 'vitest';
 
 export const SUPABASE_URL = 'https://fake.supabase.test';
+export const IG_ID = '17841400000000001';
+export const USER_ID = '11111111-1111-4111-8111-111111111111';
 export const ENV = { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-role-test-key' } as any;
 
 type Row = Record<string, any>;
@@ -237,6 +239,11 @@ export class FakeMeta {
     if (rule) { rule.times -= 1; return rule.respond(); }
 
     if (path === '/refresh_access_token') return j({ access_token: 'REFRESHED_TOKEN', token_type: 'bearer', expires_in: 5184000 });
+    if (path === '/access_token') return j({ access_token: 'LONG_LIVED_TOKEN', token_type: 'bearer', expires_in: 5184000 });
+    if (method === 'GET' && path === '/me') {
+      // « id » = identifiant applicatif ; « user_id » = identifiant PROFESSIONNEL (celui des webhooks)
+      return j({ id: 'APP_SCOPED_99', user_id: IG_ID, username: 'boutique_nour', name: 'Boutique Nour', profile_picture_url: 'https://cdn/p.jpg' });
+    }
     if (method === 'POST' && /\/replies$/.test(path)) return j({ id: `reply_${++this.seq}` });
     if (method === 'POST' && /\/messages$/.test(path)) {
       const recipient = call.body?.recipient || {};
@@ -269,18 +276,21 @@ export function installFakes() {
   const supabase = new FakeSupabase();
   const meta = new FakeMeta();
   const other: string[] = [];
+  const external: { handler: ((url: URL, init: any) => Response | Promise<Response>) | null; calls: Array<{ url: string; init: any }> } = { handler: null, calls: [] };
   const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any, init: any = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url || String(input));
     if (url.origin === SUPABASE_URL) return supabase.handle(url, init);
     if (url.host === 'graph.instagram.com') return meta.handle(url, init);
+    if (external.handler) {
+      external.calls.push({ url: url.toString(), init });
+      return external.handler(url, init);
+    }
     other.push(url.toString());
     return new Response(JSON.stringify({ error: 'réseau non simulé' }), { status: 599 });
   });
-  return { supabase, meta, other, restore: () => spy.mockRestore() };
+  return { supabase, meta, other, external, restore: () => spy.mockRestore() };
 }
 
-export const IG_ID = '17841400000000001';
-export const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 /** Un marchand connecté, prêt à recevoir des automatisations. */
 export function seedMerchant(supabase: FakeSupabase, over: Row = {}) {

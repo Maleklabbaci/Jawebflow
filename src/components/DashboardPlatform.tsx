@@ -61,12 +61,13 @@ import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
 import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
+import { InstagramAutomations } from './InstagramAutomations';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { WebhookTestingUtility } from './WebhookTestingUtility';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
 
 /**
  * Menu de l'espace client.
@@ -101,6 +102,7 @@ const NAV_GROUPS: Array<{
     items: [
       { id: 'integration', label: 'Mettre sur mon site', icon: Code2 },
       { id: 'instagram', label: 'Instagram', icon: Instagram, pro: true },
+      { id: 'automations', label: 'Automatisations', icon: Zap },
     ],
   },
   {
@@ -158,6 +160,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     (initialSection as DashboardSectionId) || 'overview'
   );
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
+  // Venue des Automatisations : l'onglet Instagram met en avant « Autoriser les commentaires ».
+  const [instagramFocus, setInstagramFocus] = useState<'comments' | null>(null);
 
   // Mobile sidebar drawer state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1489,6 +1493,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
                 {currentSection === 'instagram' && 'Instagram'}
+                {currentSection === 'automations' && 'Automatisations Instagram'}
               </h1>
               {currentSection !== 'overview' && (
                 <p className="text-xs text-slate-400">{businessName || 'Assistant en configuration'}</p>
@@ -2487,9 +2492,25 @@ echo "Réponse de l'Assistant : " . $result['message'];
                 websiteUrl={websiteUrl || crawlerUrl}
                 knowledgeNotes={knowledgeNotes}
                 onGoToSimulator={() => handleSectionChange('simulator')}
+                onGoToAutomations={() => handleSectionChange('automations')}
+                highlightCommentsAuth={instagramFocus === 'comments'}
               />
             )}
             </>
+          )}
+
+          {/* =================================================================
+              SECTION: AUTOMATISATIONS INSTAGRAM (commentaires → message privé, mots-clés, stories)
+              ================================================================= */}
+          {currentSection === 'automations' && (
+            <InstagramAutomations
+              businessName={businessName}
+              isAdmin={isUserAdmin(profile)}
+              onGoToInstagram={(why) => {
+                setInstagramFocus(why === 'comments' ? 'comments' : null);
+                handleSectionChange('instagram');
+              }}
+            />
           )}
 
           {/* =================================================================

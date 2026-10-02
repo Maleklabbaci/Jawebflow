@@ -141,5 +141,17 @@ $$;
 revoke all on function public.ig_automation_bump(uuid, integer, integer, integer, integer) from public, anon, authenticated;
 grant execute on function public.ig_automation_bump(uuid, integer, integer, integer, integer) to service_role;
 
+-- ----------------------------------------------------------------------------
+-- 5. Réglage « Réponses aux stories » : activé par défaut pour les NOUVELLES
+--    connexions (comme l'affiche l'interface). Les connexions existantes ne
+--    sont pas modifiées.
+-- ----------------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.instagram_integrations') is not null then
+    alter table public.instagram_integrations alter column respond_to_stories set default true;
+  end if;
+end $$;
+
 -- Demande à Supabase de recharger sa liste de tables (prise en compte immédiate).
 notify pgrst, 'reload schema';

@@ -110,6 +110,8 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     const tokenUserId = String(tokenData.user_id || "").trim();
     if (tokenUserId) console.log("[instagram][exchange] user_id reçu dans le token :", tokenUserId.slice(0, 12) + "…");
     let accessToken = String(tokenData.access_token);
+    const grantedPermissions = String(tokenData.permissions ?? tokenData.data?.[0]?.permissions ?? "")
+      .split(",").map((p: string) => p.trim()).filter(Boolean);
 
     // 4. Échange contre un jeton d'accès LONGUE DURÉE (valide 60 jours).
     // Deux chemins selon le type d'app — non versionné et versionné.
@@ -250,7 +252,9 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
               page_name: profile.name || profile.username || null,
               profile_picture_url: profile.profile_picture_url || null,
               access_token: accessToken,
-              auto_reply_enabled: true,
+              // auto_reply_enabled : volontairement ABSENT. Une première connexion prend la
+              // valeur par défaut de la base (activé) ; une reconnexion garde le choix du
+              // marchand (ex. IA mise en pause) au lieu de le réactiver sans le prévenir.
               last_connected_at: new Date().toISOString(),
               webhook_status: subscribed ? "active" : "error",
               updated_at: new Date().toISOString(),
@@ -270,7 +274,11 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     // 8. Succès
     return json({
       success: true,
-      instagramUserId: String(profile.id),
+      // L'identifiant PROFESSIONNEL (celui des webhooks), pas l'identifiant applicatif « id » :
+      // le navigateur le réenregistre ensuite, et le webhook retrouve le compte avec lui.
+      instagramUserId: igProfessionalId || String(profile.id),
+      // Autorisations réellement accordées par la personne (ex. « gérer les commentaires » ou non).
+      permissions: grantedPermissions,
       instagramUsername: profile.username ? `@${profile.username}` : "@compte_instagram",
       accountName: profile.name || profile.username || "Compte Instagram",
       profilePictureUrl: profile.profile_picture_url || "",

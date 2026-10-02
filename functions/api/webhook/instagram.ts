@@ -40,7 +40,8 @@ import { runBackgroundLearning } from "../../_shared/learning.ts";
 import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
 import { handleNotifyAccountMessage, notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from "../../_shared/merchant-notify";
 import { refreshInstagramTokenIfNeeded } from "../../_shared/ig-api.ts";
-import { renderTemplate } from "../../_shared/ig-automation-core.ts";
+import { forwardLeadInBackground } from "../../_shared/lead-webhook.ts";
+import { LEGACY_DEFAULT_GREETING, renderTemplate } from "../../_shared/ig-automation-core.ts";
 import {
   processCommentEvent,
   runDmAutomations,
@@ -697,9 +698,6 @@ async function pushPendingMessage(
 }
 
 /** Traitement d'un message privé : infos de l'entreprise ➜ IA ➜ réponse. */
-/** Ancien texte pré-rempli par l'interface : on ne le traite pas comme un choix du marchand. */
-const LEGACY_DEFAULT_GREETING = "Salam 👋 Bienvenue sur notre page Instagram ! Comment puis-je vous aider ?";
-
 /**
  * « Message de premier contact » du marchand : utilisé quand la personne dit
  * simplement bonjour. Vide (ou texte pré-rempli d'origine) → salutation
@@ -906,6 +904,7 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
         // 🔔 Un téléphone vient d'être capté -> alerte lead au marchand
         if (factsPatch.phone && !known?.data?.phone) {
           try { await notifyLead(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
+          try { await forwardLeadInBackground(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram", contactKey: customerId }); } catch { /* best-effort */ }
         }
       } else if (phoneInMsg) {
         const linkedId = `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200);
@@ -920,6 +919,7 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
         console.log("[instagram] nouvelle identité liée (téléphone) :", linkedId);
         // 🔔 Lead Instagram -> le marchand reçoit les détails en DM (compte JawebFlow)
         try { await notifyLead(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
+        try { await forwardLeadInBackground(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram", contactKey: customerId }); } catch { /* best-effort */ }
       }
     } catch (memErr: any) {
       console.warn("[instagram] mémoire client indisponible:", memErr?.message || memErr);
