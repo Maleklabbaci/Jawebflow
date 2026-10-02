@@ -46,7 +46,10 @@ qu'elle n'écrase jamais ce que l'IA vient d'écrire en base :
    si l'enregistrement échoue, l'IA n'est pas appelée et le marchand le voit ;
 2. pendant que l'IA travaille, la sauvegarde automatique est **suspendue** (reprise dès la fin) ;
 3. la réponse contient `state` (nouvelles fiches / comportement / infos) que le tableau de bord applique
-   à ses écrans.
+   à ses écrans ;
+4. si la réponse se perd en route (coupure de réseau, délai dépassé), le chat le signale (`onResync`) et le tableau
+   de bord **relit la base** : ses écrans montrent ce qui a vraiment été enregistré, et la sauvegarde automatique
+   suivante ne peut pas l'écraser.
 
 ## Fichiers
 

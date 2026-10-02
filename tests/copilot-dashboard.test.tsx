@@ -268,6 +268,38 @@ describe('sauvegarde automatique : en pause pendant que l’IA travaille', () =>
   });
 });
 
+describe('réponse perdue en route : les écrans disent la vérité', () => {
+  it('l’IA a écrit la fiche mais la réponse n’est jamais arrivée : « Mes informations » la montre quand même (et elle n’est pas écrasée)', async () => {
+    await openChat();
+    // Le serveur travaille normalement, mais la réponse se perd (coupure réseau côté marchand).
+    const routed = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: any, init?: any) => {
+      const res = await routed(input, init);
+      if (String(input).startsWith('/api/copilot') && JSON.parse(String(init?.body || '{}')).messages) {
+        hoisted.assistants[0].knowledgeNotes = notesInDb(); // ce que la base contient maintenant
+        throw new TypeError('Failed to fetch');
+      }
+      return res;
+    }) as any;
+    gemini.next(
+      modelReply(functionCall('add_knowledge', { title: 'Coque Spiderman', content: 'Coque Spiderman — iPhone 13 à 16 — 1900 DA', category: 'produits' })),
+      modelReply(textPart('Ajouté ✅')),
+    );
+    await say('ajoute la coque spiderman à 1900 DA');
+    expect(await screen.findByText(/Pas de connexion internet/)).toBeTruthy();
+    expect(notesInDb().map((n) => n.title)).toContain('Coque Spiderman');
+
+    // l'écran « Mes informations » a été remis d'équerre avec la base
+    fireEvent.click(document.getElementById('nav-knowledge')!);
+    const main = document.querySelector('main')!;
+    await waitFor(() => expect(within(main).getAllByText(/Coque Spiderman/).length).toBeGreaterThan(0));
+    globalThis.fetch = routed;
+
+    // et la sauvegarde automatique qui suit garde la fiche
+    await waitFor(() => expect((lastSave()?.knowledgeNotes || []).map((n: any) => n.title)).toContain('Coque Spiderman'), { timeout: 4000 });
+  });
+});
+
 describe('premier message d’un nouveau marchand', () => {
   it('sans assistant enregistré, le premier message crée d’abord l’assistant, puis l’IA travaille', async () => {
     hoisted.assistants = [];

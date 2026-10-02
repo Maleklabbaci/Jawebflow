@@ -213,6 +213,11 @@ export interface CopilotChatProps {
   onBusyChange?: (busy: boolean) => void;
   /** Une réponse vient d'arriver. */
   onReply?: () => void;
+  /**
+   * La réponse s'est perdue en route (coupure de réseau, délai dépassé) : l'IA a peut-être travaillé quand même.
+   * Le tableau de bord relit alors la base pour que ses écrans montrent la vérité.
+   */
+  onResync?: () => void;
 }
 
 export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
@@ -303,6 +308,8 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
     } catch (e: any) {
       const message = e instanceof ApiError ? e.message : 'Une erreur est survenue. Réessaie dans un instant.';
       commit([...messagesRef.current, { id: newId(), role: 'assistant', text: message, error: true, retry: text }]);
+      // Réponse perdue (status 0 = coupure / délai) alors que la demande est peut-être partie : on se re-synchronise.
+      if (e instanceof ApiError && e.status === 0 && assistantIdRef.current) propsRef.current.onResync?.();
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -328,6 +335,7 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
       patchAction(msgId, action.id, { state: kind === 'undo' ? 'undone' : 'activated', note: res.message, failed: false });
     } catch (e: any) {
       patchAction(msgId, action.id, { state: 'idle', note: e instanceof ApiError ? e.message : 'Impossible pour le moment. Réessaie.', failed: true });
+      if (e instanceof ApiError && e.status === 0) propsRef.current.onResync?.();
     } finally {
       busyRef.current = false;
       setBusy(false);

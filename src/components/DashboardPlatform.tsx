@@ -926,6 +926,23 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     if (patch.instagramChanged) setInstagramVersion((v) => v + 1);
   };
 
+  /** La réponse de l'IA s'est perdue en route : on relit la base pour que les écrans montrent ce qui a vraiment été enregistré. */
+  const resyncFromDatabase = async () => {
+    if (!user) return;
+    try {
+      const list = await getUserAssistants(user.uid); // renvoie [] en cas d'erreur : on ne remplace alors rien
+      const current = list.find((a) => a.id === assistantIdRef.current) || list[0];
+      if (!current) return;
+      if (Array.isArray(current.knowledgeNotes)) setKnowledgeNotes(current.knowledgeNotes);
+      if (current.behavior) setBehavior((prev) => ({ ...prev, ...current.behavior }));
+      if (current.businessInfo) setBusinessInfo(current.businessInfo);
+      setAutomationsVersion((v) => v + 1);
+      setInstagramVersion((v) => v + 1);
+    } catch (e) {
+      console.warn('Resynchronisation impossible:', e);
+    }
+  };
+
   const handleCopilotBusy = (busy: boolean) => {
     copilotBusyRef.current = busy;
     // Une modification faite à l'écran pendant l'attente est enregistrée maintenant.
@@ -4035,6 +4052,7 @@ echo "Réponse de l'Assistant : " . $result['message'];
             onNavigate={(section: CopilotSection) => handleSectionChange(section)}
             onBusyChange={handleCopilotBusy}
             onReply={() => { if (!copilotOpenRef.current) setCopilotUnread(true); }}
+            onResync={resyncFromDatabase}
           />
         </>
       )}

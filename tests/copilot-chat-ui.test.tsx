@@ -21,6 +21,7 @@ let onStatePatch: ReturnType<typeof vi.fn>;
 let onNavigate: ReturnType<typeof vi.fn>;
 let onBusyChange: ReturnType<typeof vi.fn>;
 let ensureReady: ReturnType<typeof vi.fn>;
+let onResync: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   localStorage.clear();
@@ -34,6 +35,7 @@ beforeEach(() => {
   onNavigate = vi.fn();
   onBusyChange = vi.fn();
   ensureReady = vi.fn(async () => 'asst1');
+  onResync = vi.fn();
   delete (window as any).SpeechRecognition;
   delete (window as any).webkitSpeechRecognition;
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -56,6 +58,7 @@ const mount = (over: Partial<CopilotChatProps> = {}) =>
       onStatePatch={onStatePatch as any}
       onNavigate={onNavigate as any}
       onBusyChange={onBusyChange as any}
+      onResync={onResync as any}
       {...over}
     />,
   );
@@ -316,6 +319,42 @@ describe('quand quelque chose ne va pas', () => {
     mount();
     await say('salut');
     expect(await screen.findByText(/Pas de connexion internet/)).toBeTruthy();
+    globalThis.fetch = real;
+  });
+
+  it('réponse perdue en route (coupure réseau) : le tableau de bord est invité à relire la base ; une vraie réponse d’erreur du serveur, non', async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: any, init?: any) => {
+      if (String(input).startsWith('/api/copilot')) throw new TypeError('Failed to fetch');
+      return real(input, init);
+    }) as any;
+    mount();
+    await say('ajoute la coque');
+    expect(await screen.findByText(/Pas de connexion internet/)).toBeTruthy();
+    expect(onResync).toHaveBeenCalledTimes(1);
+    globalThis.fetch = real;
+
+    // le serveur a bien répondu (panne de l'IA) : rien à resynchroniser
+    gemini.fallback = () => httpError(500, 'boom');
+    fireEvent.click(screen.getByRole('button', { name: /Réessayer/ }));
+    expect(await screen.findByText(/momentanément indisponible/)).toBeTruthy();
+    expect(onResync).toHaveBeenCalledTimes(1);
+  });
+
+  it('« Annuler » dont la réponse se perd en route : même resynchronisation, et le bouton reste utilisable', async () => {
+    addNoteTurn();
+    mount();
+    await say('ajoute la coque');
+    await screen.findByText(/C’est ajouté/);
+    const real = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: any, init?: any) => {
+      if (String(input).startsWith('/api/copilot')) throw new TypeError('Failed to fetch');
+      return real(input, init);
+    }) as any;
+    fireEvent.click(screen.getByRole('button', { name: /Annuler/ }));
+    expect(await screen.findByText(/Pas de connexion internet/)).toBeTruthy();
+    expect(onResync).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /Annuler/ })).toBeTruthy();
     globalThis.fetch = real;
   });
 
