@@ -133,9 +133,12 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
   // ── Parcours en 3 étapes (hooks tout en haut : avant tout « return » anticipé) ──
   const [step, setStep] = useState(0);
+  const [connectionJustVerified, setConnectionJustVerified] = useState(false);
   useEffect(() => {
-    if (integrationData.connected) setStep((cur) => (cur === 0 ? 1 : cur));
-  }, [integrationData.connected]);
+    // Un compte déjà lié s’ouvre directement sur ses réglages. Après une nouvelle
+    // connexion OAuth, on reste au contraire sur Connexion pour montrer la preuve.
+    if (integrationData.connected && !connectionJustVerified) setStep((cur) => (cur === 0 ? 1 : cur));
+  }, [integrationData.connected, connectionJustVerified]);
   const maxReachable = integrationData.connected ? 2 : 0;
 
   // Simulator / Test State for Instagram DM
@@ -304,7 +307,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         console.warn('Exchange API network notice (static hosting environment):', netErr);
       }
 
-      if (!serverResult?.success || !serverResult?.accessToken || !serverResult?.instagramUserId) {
+      if (!serverResult?.success || !serverResult?.accessToken || !serverResult?.instagramUserId || !serverResult?.instagramUsername) {
         setIsConnecting(false);
         const rawOauthError = String(serverResult?.error || '');
         const alreadyUsed = /authorization code has been used/i.test(rawOauthError);
@@ -329,7 +332,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       }
 
       // Seules les données confirmées par Meta peuvent activer l’intégration.
-      const finalUsername = serverResult.instagramUsername || '@compte_instagram';
+      const finalUsername = String(serverResult.instagramUsername).trim();
       const finalUserId = String(serverResult.instagramUserId);
       const finalPageName = serverResult.accountName || finalUsername;
       const finalAccessToken = serverResult.accessToken;
@@ -368,6 +371,8 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       }
 
       setIntegrationData(updatedPayload);
+      setConnectionJustVerified(true);
+      setStep(0);
       setIsConnecting(false);
 
       if (!serverSaved) {
@@ -514,6 +519,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       };
 
       saveLocalCache(user.uid, disconnectedPayload);
+      setConnectionJustVerified(false);
       setIntegrationData(disconnectedPayload);
 
       try {
