@@ -18,7 +18,7 @@
 import { supabaseConfigured, supabaseRequest } from './supabase.ts';
 import { appendLinks, byteLength, LIMITS, truncateToBytes, type LinkButton } from './ig-automation-core.ts';
 
-export const IG_GRAPH_VERSION = 'v26.0';
+export const IG_GRAPH_VERSION = 'v23.0';
 export const IG_GRAPH_BASE = `https://graph.instagram.com/${IG_GRAPH_VERSION}`;
 
 /** Notifications que JawebFlow demande à Meta (du plus complet au plus prudent). */
