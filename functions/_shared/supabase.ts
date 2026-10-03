@@ -73,6 +73,13 @@ export async function supabasePatchAssistant(env: SupabaseEnv, assistantId: stri
   if ('businessName' in configPatch) { mapped.business_name = configPatch.businessName; delete configPatch.businessName; }
   if ('websiteUrl' in configPatch) { mapped.website_url = configPatch.websiteUrl; delete configPatch.websiteUrl; }
   const existing = await supabaseGetAssistant(env, assistantId);
+  // Les écritures partielles utilisent aussi un upsert. Préserver le
+  // propriétaire existant est nécessaire car assistants.user_id est NOT NULL ;
+  // sans lui, même une mise à jour de knowledge_notes est rejetée par Postgres.
+  if (!mapped.user_id && existing.data?.user_id) mapped.user_id = existing.data.user_id;
+  if (!mapped.user_id) {
+    return { ok: false, status: existing.status || 400, error: existing.error || 'user_id de l’assistant introuvable' };
+  }
   mapped.config = { ...(existing.data?.config || {}), ...configPatch };
   if (patch.knowledgeNotes !== undefined) { mapped.knowledge_notes = patch.knowledgeNotes; delete mapped.config.knowledgeNotes; }
   if (!existing.ok) mapped.created_at = new Date().toISOString();
