@@ -16,7 +16,7 @@ import { extractLeadFacts } from '../_shared/lead-facts.ts';
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
 const geminiVisionUrl = (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/${'gemini-3.1-flash-lite'}:generateContent?key=${apiKey}`;
 import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached, monthlyCostBlock } from '../_shared/limits.ts';
-import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, localGreeting, compactKnowledgeNotes } from '../_shared/prompt.ts';
+import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, localGreeting, compactKnowledgeNotes, selectKnowledgeDocuments } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite, siteShoppingPromptBlock } from '../_shared/site-search.ts';
 import { notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from '../_shared/merchant-notify.ts';
@@ -218,7 +218,7 @@ export async function onRequestPost(context) {
       systemPrompt += compactKnowledgeNotes(config.knowledgeNotes, message);
     }
     if (supabaseConfigured(env)) {
-      const documents = await supabaseListKnowledge(env, assistantId);
+      const documents = selectKnowledgeDocuments(await supabaseListKnowledge(env, assistantId), message, 8);
       if (documents.length > 0) {
         systemPrompt += `\n\n### 📚 DOCUMENTS INDEXÉS DU SITE (les liens sont des sources à citer) :\n`;
         for (const doc of documents) {
