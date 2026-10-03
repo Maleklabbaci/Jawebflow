@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus, Search, Trash2, Copy, Sparkles, Check,
   FileText, Globe, HelpCircle, Truck, DollarSign,
@@ -39,6 +39,19 @@ const CATEGORY_CONFIG: Record<string, { label: string; bg: string; text: string;
   learned: { label: 'Appris', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: <Sparkles className="w-3 h-3 text-purple-600" /> },
   custom: { label: 'Autre', bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', icon: <FileText className="w-3 h-3 text-slate-600" /> },
 };
+
+// 5 groupes simples pour tout type de business (e-commerce, grossiste, agence de voyage, immobilier...).
+// Les anciennes catégories sont rangées automatiquement dans un groupe.
+const GROUPS: { key: string; label: string; rep: string; cats: string[]; icon: React.ReactNode }[] = [
+  { key: 'produits', label: 'Produits & services', rep: 'services', cats: ['services', 'produits', 'general', 'custom'], icon: <Layers className="w-3.5 h-3.5" /> },
+  { key: 'prix', label: 'Prix & promos', rep: 'tarifs', cats: ['tarifs'], icon: <DollarSign className="w-3.5 h-3.5" /> },
+  { key: 'livraison', label: 'Livraison & paiement', rep: 'livraison', cats: ['livraison'], icon: <Truck className="w-3.5 h-3.5" /> },
+  { key: 'infos', label: 'Infos pratiques', rep: 'contact', cats: ['contact', 'liens'], icon: <Phone className="w-3.5 h-3.5" /> },
+  { key: 'faq', label: 'Questions fréquentes & garanties', rep: 'faq', cats: ['faq', 'garanties', 'politiques', 'learned'], icon: <HelpCircle className="w-3.5 h-3.5" /> },
+];
+const groupOf = (category: string) => (GROUPS.find(g => g.cats.includes(category)) || GROUPS[0]);
+
+interface SiteDoc { id: string; title: string; excerpt: string; sourceUrl: string; }
 
 // ---------------------------------------------------------------------------
 // Modal Import Universel
@@ -300,6 +313,25 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   onOpenCopilot,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [siteDocs, setSiteDocs] = useState<SiteDoc[]>([]);
+  const authHeaders = async () => {
+    const token = (await supabase.auth.getSession()).data.session?.access_token || null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  const loadSiteDocs = async () => {
+    if (!assistantId) return;
+    try {
+      const res = await fetch(`/api/knowledge/documents?assistantId=${encodeURIComponent(assistantId)}`, { headers: await authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      setSiteDocs(Array.isArray(data.documents) ? data.documents : []);
+    } catch { /* silencieux : la liste reste vide */ }
+  };
+  useEffect(() => { loadSiteDocs(); /* eslint-disable-next-line */ }, [assistantId, isScanning]);
+  const deleteSiteDoc = async (id: string) => {
+    setSiteDocs(d => d.filter(x => x.id !== id));
+    try { await fetch(`/api/knowledge/documents?assistantId=${encodeURIComponent(assistantId || '')}&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() }); } catch { loadSiteDocs(); }
+  };
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -427,11 +459,14 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   const filteredNotes = notes.filter(n => {
     const q = searchQuery.toLowerCase();
     const matchSearch = n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
-    const matchCat = selectedCategory === 'all' || n.category === selectedCategory;
+    const matchCat = selectedCategory === 'all' || groupOf(n.category).key === selectedCategory;
     return matchSearch && matchCat;
   });
 
-  const activeCount = notes.filter(n => n.enabled).length;
+  const activeCount = notes.filter(n => n.enabled).length + siteDocs.length;
+  const totalCount = notes.length + siteDocs.length;
+  const q = searchQuery.toLowerCase();
+  const visibleDocs = siteDocs.filter(d => (selectedCategory === 'all' || selectedCategory === 'site') && (d.title.toLowerCase().includes(q) || d.excerpt.toLowerCase().includes(q)));
 
   return (
     <div className="space-y-4">
@@ -450,7 +485,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-bold text-slate-900">Mes informations</h3>
             <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-              {activeCount} / {notes.length} actives
+              {activeCount} / {totalCount} actives
             </span>
             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
               <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
@@ -576,13 +611,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
               onChange={e => setNewCategory(e.target.value as any)}
               className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none"
             >
-              <option value="services">Services</option>
-              <option value="tarifs">Tarifs</option>
-              <option value="livraison">Livraison</option>
-              <option value="faq">FAQ</option>
-              <option value="garanties">Garanties</option>
-              <option value="contact">Contact</option>
-              <option value="general">Général</option>
+              <option value="services">Produits &amp; services</option><option value="tarifs">Prix &amp; promos</option><option value="livraison">Livraison &amp; paiement</option><option value="contact">Infos pratiques</option><option value="faq">Questions &amp; garanties</option>
             </select>
           </div>
           <textarea
@@ -620,27 +649,35 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             onClick={() => setSelectedCategory('all')}
             className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap ${selectedCategory === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
           >
-            Toutes ({notes.length})
+            Toutes ({totalCount})
           </button>
-          {Object.entries(CATEGORY_CONFIG).map(([key, val]) => {
-            const count = notes.filter(n => n.category === key).length;
+          {GROUPS.map(g => {
+            const count = notes.filter(n => groupOf(n.category).key === g.key).length;
             if (!count) return null;
             return (
               <button
-                key={key}
-                onClick={() => setSelectedCategory(key)}
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap flex items-center gap-1 ${selectedCategory === key ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
+                key={g.key}
+                onClick={() => setSelectedCategory(g.key)}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap flex items-center gap-1 ${selectedCategory === g.key ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
               >
-                {val.icon}
-                {val.label} ({count})
+                {g.icon}
+                {g.label} ({count})
               </button>
             );
           })}
+          {siteDocs.length > 0 && (
+            <button
+              onClick={() => setSelectedCategory('site')}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap flex items-center gap-1 ${selectedCategory === 'site' ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
+            >
+              <Globe className="w-3.5 h-3.5" />Pages du site ({siteDocs.length})
+            </button>
+          )}
         </div>
       </div>
 
       {/* Notes */}
-      {filteredNotes.length === 0 ? (
+      {filteredNotes.length === 0 && visibleDocs.length === 0 ? (
         <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
           <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mx-auto">
             <FileText className="w-5 h-5 text-purple-600" />
@@ -657,8 +694,25 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
           </div>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredNotes.map(note => {
+        <div className="space-y-3">
+          {GROUPS.map(g => {
+            const items = filteredNotes.filter(n => groupOf(n.category).key === g.key);
+            if (!items.length) return null;
+            const open = openGroups[g.key] ?? (searchQuery !== '' || items.length <= 5);
+            return (
+              <div key={g.key} className="bg-slate-50/60 rounded-2xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroups(o => ({ ...o, [g.key]: !open }))}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                >
+                  <span className="text-purple-600">{g.icon}</span>
+                  <span className="flex-1 text-xs font-bold text-slate-800">{g.label}</span>
+                  <span className="text-[11px] font-semibold text-slate-500">{items.length} fiche{items.length > 1 ? 's' : ''}</span>
+                  {open ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                </button>
+                {open && <div className="space-y-2 px-2 pb-2">
+          {items.map(note => {
             const cat = CATEGORY_CONFIG[note.category] || CATEGORY_CONFIG.custom;
             const isExpanded = Boolean(expandedNotes[note.id]);
 
@@ -741,17 +795,11 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
                     <div className="flex items-center justify-between text-[10px] text-slate-400">
                       <span>{note.content.length} caractères</span>
                       <select
-                        value={note.category}
+                        value={groupOf(note.category).rep}
                         onChange={e => handleUpdateNoteField(note.id, 'category', e.target.value)}
                         className="text-[10px] bg-slate-100 border-0 rounded px-1 py-0.5 text-slate-600 focus:outline-none"
                       >
-                        <option value="services">Services</option>
-                        <option value="tarifs">Tarifs</option>
-                        <option value="livraison">Livraison</option>
-                        <option value="faq">FAQ</option>
-                        <option value="garanties">Garanties</option>
-                        <option value="contact">Contact</option>
-                        <option value="general">Général</option>
+                        <option value="services">Produits &amp; services</option><option value="tarifs">Prix &amp; promos</option><option value="livraison">Livraison &amp; paiement</option><option value="contact">Infos pratiques</option><option value="faq">Questions &amp; garanties</option>
                       </select>
                     </div>
                   </div>
@@ -759,6 +807,40 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
               </div>
             );
           })}
+                </div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {visibleDocs.length > 0 && (
+        <div className="bg-slate-50/60 rounded-2xl border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setOpenGroups(o => ({ ...o, site: !(o.site ?? searchQuery !== '') }))}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+          >
+            <Globe className="w-3.5 h-3.5 text-purple-600" />
+            <span className="flex-1 text-xs font-bold text-slate-800">Pages de mon site <span className="font-normal text-slate-400">(scan automatique)</span></span>
+            <span className="text-[11px] font-semibold text-slate-500">{visibleDocs.length} page{visibleDocs.length > 1 ? 's' : ''}</span>
+            {(openGroups.site ?? searchQuery !== '') ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+          </button>
+          {(openGroups.site ?? searchQuery !== '') && (
+            <div className="space-y-2 px-2 pb-2">
+              {visibleDocs.map(d => (
+                <div key={d.id} className="bg-white rounded-xl border border-slate-200 flex items-center gap-2 px-3 py-2.5">
+                  <span className="hidden sm:inline text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">Site</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 truncate">{d.title}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{d.excerpt.slice(0, 90)}</p>
+                  </div>
+                  {d.sourceUrl && <a href={d.sourceUrl} target="_blank" rel="noreferrer" className="p-1 text-slate-400 hover:text-purple-600"><Link2 className="w-3 h-3" /></a>}
+                  <button onClick={() => deleteSiteDoc(d.id)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
