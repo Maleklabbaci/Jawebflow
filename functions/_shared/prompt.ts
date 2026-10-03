@@ -184,3 +184,25 @@ export function compactKnowledgeNotes(notes: any[], message: string): string {
   }
   return block;
 }
+
+/**
+ * Sélectionne les documents du scan les plus pertinents pour la question
+ * (au lieu d'envoyer les 100 derniers à chaque message).
+ * Question floue ou sans mot-clé -> quelques documents récents seulement.
+ */
+export function selectKnowledgeDocuments<T extends { title?: string; content?: string }>(
+  docs: T[], message: string, max = 8,
+): T[] {
+  const list = (docs || []).filter(d => d && String(d.content || "").trim());
+  if (!list.length) return [];
+  const words = String(message || "").toLowerCase().replace(/[^a-zà-ÿ0-9 ]/gi, " ").split(/\s+/).filter(w => w.length >= 3);
+  if (!words.length) return list.slice(0, 4);
+  const scored = list.map((d, i) => {
+    const title = String(d.title || "").toLowerCase();
+    const body = String(d.content || "").toLowerCase();
+    const score = words.reduce((s, w) => s + (title.includes(w) ? 3 : 0) + (body.includes(w) ? 1 : 0), 0);
+    return { d, score, i };
+  });
+  const hits = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score || a.i - b.i).slice(0, max).map(s => s.d);
+  return hits.length ? hits : list.slice(0, 4);
+}
