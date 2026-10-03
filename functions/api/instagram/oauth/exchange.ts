@@ -232,8 +232,9 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     }
 
     if (!profile) {
+      const metaReason = profileErrors.find((reason) => reason && !/^HTTP \d+$/.test(reason));
       return json({
-        error: "Meta n’a pas renvoyé le vrai compte Instagram. Vérifie que l’utilisateur est un compte professionnel, que les autorisations sont accordées et reconnecte-le.",
+        error: `Meta n’a pas renvoyé le vrai compte Instagram${metaReason ? ` : ${metaReason}` : ". Vérifie que l’utilisateur est un compte professionnel, que les autorisations sont accordées et reconnecte-le."}`,
         step: "profile",
         details: { attempts: profileErrors, tokenUserId: tokenUserId || undefined },
       }, 400);
