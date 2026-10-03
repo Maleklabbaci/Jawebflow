@@ -114,10 +114,11 @@ describe('onglet Instagram — compte connecté', () => {
 });
 
 describe('onglet Instagram — commentaires', () => {
-  it('« Ouvrir les automatisations » mène à l’onglet des automatisations', async () => {
+  it('ne propose pas de redirection automatique vers les automatisations', async () => {
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir les automatisations' }));
-    expect(openAutomations).toHaveBeenCalledTimes(1);
+    await screen.findByText(/Compte Connecté/);
+    expect(screen.queryByRole('button', { name: /automatisation/i })).toBeNull();
+    expect(openAutomations).not.toHaveBeenCalled();
   });
 
   it('« Autoriser les commentaires » ouvre Instagram avec la permission en plus — la connexion normale reste inchangée', async () => {

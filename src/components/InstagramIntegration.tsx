@@ -62,7 +62,6 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   websiteUrl = '',
   knowledgeNotes = [],
   onGoToSimulator,
-  onGoToAutomations,
   highlightCommentsAuth = false
 }) => {
   const { user } = useAuth();
@@ -545,7 +544,6 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   const handleSaveSettings = async () => {
     if (!user) return;
     setSaveLoading(true);
-    saveLocalCache(user.uid, integrationData);
     const ok = await saveRemoteIntegration({
       autoReplyEnabled: integrationData.autoReplyEnabled,
       respondToStories: integrationData.respondToStories,
@@ -554,6 +552,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
     });
     setSaveLoading(false);
     if (ok) {
+      saveLocalCache(user.uid, integrationData);
       setNotification({ type: 'success', message: 'Tes réglages Instagram sont enregistrés.' });
       setTimeout(() => setNotification(null), 4000);
     } else {
@@ -727,8 +726,16 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           <p className="mt-1 text-[15px] text-slate-500">En un clic. Ton assistant pourra alors répondre à tes messages privés.</p>
 
           {integrationData.connected ? (
-            <div className="mt-6 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-              <CheckCircle2 className="h-4 w-4" /> C’est fait : ton compte est relié.
+            <div className="mt-6 space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" /> Connexion Instagram vérifiée
+              </div>
+              <div className="grid gap-1 text-xs text-emerald-800 sm:grid-cols-2">
+                <span>Compte : <strong>{igHandle}</strong></span>
+                <span>Identifiant professionnel : <strong>{integrationData.instagramUserId || 'confirmé'}</strong></span>
+                <span>Compte enregistré sur le serveur : <strong>Oui</strong></span>
+                <span>Messages privés : <strong>{integrationData.webhookStatus === 'active' ? 'Réception active' : 'À terminer'}</strong></span>
+              </div>
             </div>
           ) : (
             <button type="button" id="btn-instagram-oauth-connect" onClick={handleConnectInstagram} disabled={isConnecting} className={`${primary} mt-6`}>
@@ -768,10 +775,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
                 <p className="text-sm font-semibold text-[#1b1647]">Répondre aux commentaires</p>
                 <p className="text-xs text-slate-500">Quelqu’un commente « prix » ? Il reçoit la réponse en message privé.</p>
               </div>
-              <span className="flex gap-2">
-                <button type="button" onClick={handleAuthorizeComments} disabled={isConnecting} className="rounded-full border border-purple-200 bg-white px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-50 cursor-pointer">Autoriser les commentaires</button>
-                <button type="button" onClick={() => onGoToAutomations?.()} disabled={!onGoToAutomations} className="rounded-full bg-[#1b1647] px-4 py-2 text-xs font-semibold text-white disabled:opacity-40 cursor-pointer">Ouvrir les automatisations</button>
-              </span>
+              <button type="button" onClick={handleAuthorizeComments} disabled={isConnecting} className="rounded-full border border-purple-200 bg-white px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-50 cursor-pointer">Autoriser les commentaires</button>
             </div>
           </div>
 
@@ -855,7 +859,6 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
             <button type="button" onClick={() => setStep(1)} className={ghost}><ArrowLeft className="h-4 w-4" /> Retour</button>
             <span className="flex flex-wrap gap-2">
               {onGoToSimulator && <button type="button" onClick={onGoToSimulator} className={ghost}><MessageSquare className="h-4 w-4" /> Test complet</button>}
-              {onGoToAutomations && <button type="button" onClick={onGoToAutomations} className={primary}>Créer une automatisation <ArrowRight className="h-4 w-4" /></button>}
             </span>
           </div>
         </div>
