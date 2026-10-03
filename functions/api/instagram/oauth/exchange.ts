@@ -189,13 +189,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     }
     
     // ✅ Use GET with query parameters only
+    const tk = encodeURIComponent(accessToken);
     const profileCandidates: ProfileCandidate[] = [
-      {
-        url: `https://graph.instagram.com/${IG_GRAPH_VERSION}/me?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`
-      },
-      {
-        url: `https://graph.instagram.com/${IG_GRAPH_VERSION}/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`
-      }
+      { url: `https://graph.instagram.com/${IG_GRAPH_VERSION}/me?fields=${profileFields}&access_token=${tk}` },
+      { url: `https://graph.instagram.com/me?fields=${profileFields}&access_token=${tk}` },
+      { url: `https://graph.instagram.com/me?fields=user_id,username&access_token=${tk}` },
+      ...(tokenUserId ? [{ url: `https://graph.instagram.com/${IG_GRAPH_VERSION}/${tokenUserId}?fields=username,name&access_token=${tk}` }] : []),
     ];
 
     let profile: any = null;
@@ -313,7 +312,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     // ✅ FIXED: For merchant mode, we don't strictly require profile data
     // because we have user_id from token. But if profile failed for all endpoints,
     // we should handle it gracefully.
-    if (!igProfessionalId || !igUsername) {
+    if (!igProfessionalId) {
       console.error("[instagram][exchange] FAIL: No identity data available");
       return json({ 
         error: "Impossible de récupérer l'identifiant du compte Instagram.",
