@@ -31,6 +31,16 @@ const SETUP_REQUIRED = { setupRequired: true, automations: [] as unknown[], even
 
 type Ctx = { request: Request; env: any };
 
+async function requireConnectedInstagram(env: any, userId: string): Promise<Response | null> {
+  const res = await supabaseRequest(env, `instagram_integrations?user_id=eq.${enc(userId)}&select=connected&limit=1`);
+  if (!res.ok) return json({ error: 'Impossible de vérifier la connexion Instagram.' }, 502);
+  const rows = await res.json().catch(() => []) as Array<{ connected?: boolean }>;
+  if (!rows[0]?.connected) {
+    return json({ error: 'Connecte et vérifie ton compte Instagram avant de configurer les automatisations.' }, 409);
+  }
+  return null;
+}
+
 async function readBody(request: Request): Promise<any> {
   try { return await request.json(); } catch { return {}; }
 }
@@ -90,6 +100,8 @@ function failure(f: StoreFailure): Response {
 export async function onRequestPost(context: Ctx) {
   const user = await requireUser(context);
   if (user instanceof Response) return user;
+  const connectionError = await requireConnectedInstagram(context.env, user.uid);
+  if (connectionError) return connectionError;
   const body = await readBody(context.request);
 
   const made = body?.duplicateOf
@@ -102,6 +114,8 @@ export async function onRequestPost(context: Ctx) {
 export async function onRequestPatch(context: Ctx) {
   const user = await requireUser(context);
   if (user instanceof Response) return user;
+  const connectionError = await requireConnectedInstagram(context.env, user.uid);
+  if (connectionError) return connectionError;
   const body = await readBody(context.request);
   const id = String(body?.id || '');
 
@@ -116,6 +130,8 @@ export async function onRequestPatch(context: Ctx) {
 export async function onRequestDelete(context: Ctx) {
   const user = await requireUser(context);
   if (user instanceof Response) return user;
+  const connectionError = await requireConnectedInstagram(context.env, user.uid);
+  if (connectionError) return connectionError;
   const id = new URL(context.request.url).searchParams.get('id') || '';
   const removed = await deleteAutomation(context.env, user.uid, id);
   if (removed.ok === false) return failure(removed);

@@ -82,7 +82,110 @@ export async function supabasePatchAssistant(env: SupabaseEnv, assistantId: stri
     method: 'POST', body: JSON.stringify(mapped), headers: { Prefer: 'resolution=merge-duplicates,return=representation' }
   });
   if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
+  if (Array.isArray(patch.knowledgeNotes)) {
+    // Le JSONB historique reste un miroir pour les versions qui n'ont pas
+    // encore basculé, tandis que la table normalisée devient la source durable.
+    const synced = await supabaseSyncKnowledgeNotes(env, assistantId, patch.knowledgeNotes);
+    if (!synced.ok) console.warn('[knowledge] miroir relationnel indisponible:', synced.error || synced.status);
+  }
   return { ok: true, status: 200 };
+}
+
+function normalizeKnowledgeCategory(rawCategory: unknown, context = ''): string {
+  const normalize = (value: unknown) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const category = normalize(rawCategory);
+  const text = normalize(`${String(rawCategory || '')} ${context}`);
+  if (/prix|tarif|price|pricing|promo|promotion|discount|remise|solde/.test(category)) return 'tarifs';
+  if (/livraison|shipping|paiement|payment|delivery|commande|expedition/.test(category)) return 'livraison';
+  if (/contact|liens|links|adresse|horaire|pratique|info|social/.test(category)) return 'contact';
+  if (/faq|garantie|warranty|politique|learned|appris|condition|retour|annulation/.test(category)) return 'faq';
+  if (/produit|service|catalogue|catalog|offre|general|custom|immobili|voyage/.test(category)) return 'services';
+  if (/prix|tarif|price|promo|promotion|remise|discount/.test(text)) return 'tarifs';
+  if (/livraison|shipping|paiement|payment|expedition|commande/.test(text)) return 'livraison';
+  if (/contact|adresse|horaire|telephone|whatsapp|email|lien|instagram/.test(text)) return 'contact';
+  if (/faq|question|garantie|warranty|politique|condition|retour|remboursement|visa|annulation/.test(text)) return 'faq';
+  return 'services';
+}
+
+function normalizeKnowledgeSource(note: Record<string, any>): string {
+  const source = String(note.source || '').toLowerCase();
+  if (/learn|appris|conversation|auto/.test(source) || String(note.category || '').toLowerCase() === 'learned') return 'learned';
+  if (/quick/.test(source)) return 'quick_add';
+  if (['scanned', 'scan', 'site'].includes(source)) return 'site';
+  if (source === 'extracted') return String(note.id || '').startsWith('imported_') ? 'imported' : 'site';
+  if (/import/.test(source)) return 'imported';
+  return 'manual';
+}
+
+function normalizedKnowledgeEntry(assistantId: string, raw: Record<string, any>) {
+  const source = normalizeKnowledgeSource(raw);
+  const rawStatus = String(raw.approvalStatus || raw.status || '').toLowerCase();
+  const isLearned = source === 'learned';
+  const pending = rawStatus === 'pending_review' || rawStatus === 'pending' || (isLearned && !['approved', 'active'].includes(rawStatus));
+  return {
+    assistant_id: assistantId,
+    id: String(raw.id || `knowledge_${crypto.randomUUID()}`),
+    title: String(raw.title || 'Information').trim().slice(0, 180),
+    content: String(raw.content || '').trim().slice(0, 12000),
+    category: normalizeKnowledgeCategory(raw.category, `${raw.title || ''} ${raw.content || ''}`),
+    source,
+    source_url: raw.sourceUrl || raw.source_url || null,
+    enabled: pending ? false : raw.enabled !== false,
+    status: pending ? 'pending_review' : 'active',
+    metadata: { ...(raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {}), legacySource: raw.source || null },
+    created_at: raw.createdAt || raw.created_at || new Date().toISOString(),
+    updated_at: raw.updatedAt || raw.updated_at || new Date().toISOString(),
+  };
+}
+
+/** Copie la liste de fiches de compatibilité vers la table relationnelle. */
+export async function supabaseSyncKnowledgeNotes(env: SupabaseEnv, assistantId: string, rawNotes: unknown) {
+  const notes = Array.isArray(rawNotes) ? rawNotes.filter((n: any) => n && typeof n === 'object' && String(n.content || '').trim()) : [];
+  const entries = notes.map((n: Record<string, any>) => normalizedKnowledgeEntry(assistantId, n));
+  const current = await request(env, `knowledge_entries?assistant_id=eq.${encodeURIComponent(assistantId)}&select=id`);
+  if (!current.ok) return { ok: false, status: current.status, error: await current.text() };
+
+  if (entries.length) {
+    const write = await request(env, 'knowledge_entries?on_conflict=assistant_id,id', {
+      method: 'POST',
+      body: JSON.stringify(entries),
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    });
+    if (!write.ok) return { ok: false, status: write.status, error: await write.text() };
+  }
+
+  const rows = await current.json() as Array<{ id: string }>;
+  const keep = new Set(entries.map((entry) => entry.id));
+  const removed = rows.map((row) => row.id).filter((id) => !keep.has(id));
+  for (const id of removed) {
+    const del = await request(env, `knowledge_entries?assistant_id=eq.${encodeURIComponent(assistantId)}&id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!del.ok) return { ok: false, status: del.status, error: await del.text() };
+  }
+  return { ok: true, status: 200, count: entries.length };
+}
+
+/** Lit les fiches normalisées (y compris les demandes en attente de revue). */
+export async function supabaseListKnowledgeEntries(env: SupabaseEnv, assistantId: string) {
+  const res = await request(env, `knowledge_entries?assistant_id=eq.${encodeURIComponent(assistantId)}&select=id,title,content,category,source,source_url,enabled,status,metadata,created_at,updated_at&order=updated_at.desc&limit=500`);
+  if (!res.ok) return { available: false, entries: [] as Record<string, any>[], error: await res.text() };
+  const rows = await res.json() as Array<Record<string, any>>;
+  return {
+    available: true,
+    entries: rows.map((row) => ({
+      id: row.id,
+      title: row.title || 'Information',
+      content: row.content || '',
+      category: normalizeKnowledgeCategory(row.category, row.title || ''),
+      source: row.source || 'manual',
+      sourceUrl: row.source_url || undefined,
+      enabled: row.enabled !== false,
+      approvalStatus: row.status || 'active',
+      status: row.status || 'active',
+      metadata: row.metadata || {},
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
+  };
 }
 
 export async function supabaseUpsertKnowledge(env: SupabaseEnv, assistantId: string, documentId: string, data: Record<string, any>) {
@@ -314,27 +417,35 @@ export async function supabaseResolveLearningQuestion(env: SupabaseEnv, id: stri
 export async function supabaseAddKnowledgeNote(
   env: SupabaseEnv,
   assistantId: string,
-  note: { title: string; content: string }
+  note: { title: string; content: string; status?: 'active' | 'pending_review'; source?: string; category?: string }
 ): Promise<boolean> {
   const readRes = await request(env, `assistants?id=eq.${encodeURIComponent(assistantId)}&select=knowledge_notes`);
   if (!readRes.ok) return false;
   const rows = (await readRes.json()) as Array<{ knowledge_notes: any[] }>;
   if (!rows[0]) return false;
   const notes = Array.isArray(rows[0].knowledge_notes) ? rows[0].knowledge_notes : [];
+  const createdAt = new Date().toISOString();
+  const pending = note.status === 'pending_review';
   notes.push({
-    id: `learned_${Date.now()}`,
+    id: `learned_${crypto.randomUUID()}`,
     title: note.title.slice(0, 120),
     content: note.content.slice(0, 4000),
-    category: 'learned',
-    enabled: true,
-    source: 'learning',
-    createdAt: new Date().toISOString(),
+    category: note.category || 'faq',
+    enabled: !pending,
+    source: note.source || 'learned_conversation',
+    approvalStatus: pending ? 'pending_review' : 'approved',
+    status: pending ? 'pending_review' : 'active',
+    createdAt,
+    updatedAt: createdAt,
   });
   const res = await request(env, `assistants?id=eq.${encodeURIComponent(assistantId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ knowledge_notes: notes, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ knowledge_notes: notes, updated_at: createdAt }),
   });
-  return res.ok;
+  if (!res.ok) return false;
+  const synced = await supabaseSyncKnowledgeNotes(env, assistantId, notes);
+  if (!synced.ok) console.warn('[knowledge] ajout appris stocké en JSON, table en attente:', synced.error || synced.status);
+  return true;
 }
 
 export async function supabaseInsertFeedback(

@@ -114,6 +114,9 @@ ${transcript.slice(0, 12000)}`;
         const ok = await supabaseAddKnowledgeNote(env, assistant.id, {
           title: `Auto : ${String(note.title).slice(0, 100)}`,
           content: String(note.content),
+          category: 'faq',
+          source: 'learned_conversation',
+          status: 'pending_review',
         });
         if (ok) { added++; existingTitles.push(note.title); }
       }

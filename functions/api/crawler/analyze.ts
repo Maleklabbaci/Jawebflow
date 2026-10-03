@@ -35,13 +35,11 @@ const MAX_RAW_TEXT_LENGTH = 50000;
 const ASSISTANT_ID_REGEX = /^[a-zA-Z0-9_-]{10,40}$/;
 
 const ALLOWED_CATEGORIES = [
-  "services",
-  "tarifs",
-  "livraison",
-  "garanties",
-  "contact",
-  "faq",
-  "general",
+  "services", // produits, biens, séjours, prestations et catalogue
+  "tarifs", // prix, remises et promotions
+  "livraison", // livraison, paiement et commande
+  "contact", // coordonnées, horaires, adresse et liens utiles
+  "faq", // questions, garanties, politiques et conditions
 ] as const;
 
 type AllowedCategory = (typeof ALLOWED_CATEGORIES)[number];
@@ -160,6 +158,19 @@ function fillIfEmpty(
     : existing;
 }
 
+function inferPageCategory(page: PageData): AllowedCategory {
+  const labels = `${page.title || ''} ${page.type || ''} ${page.url || ''}`
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const excerpt = String(page.rawText || '').slice(0, 1600)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const text = `${labels} ${excerpt}`;
+  if (/livraison|shipping|paiement|payment|commande|delivery|expedition/.test(labels) || /livraison|expedition|frais de port|modes de paiement|payment methods/.test(excerpt)) return 'livraison';
+  if (/contact|coordonnees|horaires|adresse/.test(labels) || /contactez-nous|contact us|telephone|whatsapp|e-mail|email|adresse|horaires d'ouverture/.test(excerpt)) return 'contact';
+  if (/faq|garantie|retour|condition|politique|annulation/.test(labels) || /questions frequentes|faq|garantie|conditions generales|politique de retour/.test(excerpt)) return 'faq';
+  if (/prix|tarif|price|pricing|promo|promotion|remise|solde/.test(labels) || /prix|tarif|price|promo|promotion|remise|discount/.test(excerpt)) return 'tarifs';
+  return 'services';
+}
+
 /**
  * FIX #3 — mergeKnowledgeNotes : plusieurs notes par catégorie autorisées
  * FIX #7 — IDs via crypto.randomUUID() pour éviter les race conditions
@@ -179,7 +190,7 @@ function mergeKnowledgeNotes(
       rawCat as AllowedCategory
     )
       ? (rawCat as AllowedCategory)
-      : "general";
+      : "services";
 
     const content = (note.content || "").trim();
     if (!content) continue; // Ignore les notes vides
@@ -439,7 +450,7 @@ RETOURNE UNIQUEMENT un JSON valide sans markdown :
   "knowledgeNotes": [
     {
       "title": "titre précis",
-      "category": "services|tarifs|livraison|garanties|contact|faq|produits|liens|general",
+      "category": "services|tarifs|livraison|contact|faq",
       "content": "contenu détaillé (pour les produits : liste ligne par ligne au format \"Nom du produit — prix — URL\")"
     }
   ]
@@ -448,21 +459,14 @@ RETOURNE UNIQUEMENT un JSON valide sans markdown :
 RÈGLES :
 - Utilise UNIQUEMENT les infos présentes dans le contenu
 - Ne jamais inventer — champ vide si absent
-- knowledgeNotes : 5-15 fiches couvrant TOUT ce qui est trouvé
-- Crée une fiche par thème trouvé (services, prix, livraison, contact, FAQ, etc.)
-- Plusieurs fiches peuvent avoir la même catégorie si les thèmes sont distincts
-- Si tu trouves des produits avec prix → fiche tarifs détaillée
-- 🔗 LIENS PRODUITS = VITAL : recopie chaque URL de produit EXACTEMENT telle
-  quelle (https://... complète, jamais abrégée ni reformulée) dans la fiche,
-  au format \"Nom — prix — URL\". Le bot doit pouvoir envoyer le lien au client
-  directement depuis ces fiches, SANS re-scanner le site.
-- 💵 Recopie les prix et promos EXACTEMENT (« 1900 DA (au lieu de 2500) »).
-- 🔖 CRÉE TOUJOURS une fiche « Liens » (catégorie liens) listant TOUS les liens
-  utiles trouvés, ligne par ligne au format "[type] Titre — URL" avec l'URL
-  EXACTE : liens produits, collections/catégories, réseaux sociaux (Facebook,
-  Instagram, TikTok…), formulaires (devis, commande), pages utiles (livraison,
-  retours, contact, à propos). Le bot pêche ses liens DANS CETTE FICHE.
-- Si tu trouves des contacts → fiche contact avec tous les liens
+- knowledgeNotes : 5-15 fiches couvrant TOUT ce qui est trouvé, sans supposer un secteur unique.
+- Les cinq catégories sont universelles : services (produits, catalogue, lots grossistes, séjours, biens immobiliers, prestations), tarifs (prix/promos), livraison (livraison, paiement, commande), contact (coordonnées, horaires, adresse, liens) et faq (questions, garanties, politiques, conditions).
+- Plusieurs fiches peuvent avoir la même catégorie si les thèmes sont distincts.
+- Si tu trouves des produits, offres, séjours ou biens avec prix → fiche services avec leurs détails ET fiche tarifs si utile.
+- 🔗 Recopie chaque URL de produit, offre, bien ou formulaire EXACTEMENT telle quelle (https://... complète, jamais abrégée ni reformulée), au format « Nom — prix — URL ». Le bot doit pouvoir envoyer le lien au client directement depuis ces fiches, SANS re-scanner le site.
+- 💵 Recopie les prix, tarifs grossistes et promos EXACTEMENT (« 1900 DA (au lieu de 2500) »). Ne déduis pas de stock, disponibilité, visa, lot minimum ou conditions absents du contenu.
+- 🔖 Regroupe TOUS les liens utiles dans une fiche contact, ligne par ligne au format « [type] Titre — URL » avec l'URL EXACTE : produits, collections, réseaux sociaux, devis/commande, livraison, retours, contact et à propos.
+- Si tu trouves des contacts → fiche contact avec les coordonnées et liens utiles.
 - confidence élevé car données fournies directement par l'utilisateur
 - faqText/suggestedTone/welcomeMessage : déduits du contenu et du secteur — jamais inventés hors du contenu
 
@@ -850,7 +854,7 @@ export async function onRequestPost(context: {
         contactLinks: pages.flatMap(page => page.links || []).filter(link => /contact|whatsapp|instagram|facebook|tel:/i.test(link)).slice(0, 20),
         knowledgeNotes: pages.slice(0, 20).map((page, index) => ({
           title: page.title || `Page ${index + 1}`,
-          category: /prix|tarif|price/i.test(`${page.title} ${page.rawText}`) ? "tarifs" : "general",
+          category: inferPageCategory(page),
           content: `${page.description || ""}\n${page.rawText?.slice(0, 3500) || ""}\nSource : ${page.url}`,
           enabled: true,
           source: "extracted"
@@ -866,7 +870,7 @@ export async function onRequestPost(context: {
           businessDescription: pages[0]?.description || "",
           knowledgeNotes: pages.slice(0, 20).map((page, index) => ({
             title: page.title || `Page ${index + 1}`,
-            category: "general",
+            category: inferPageCategory(page),
             content: `${page.rawText || ""}\nSource : ${page.url}`,
             enabled: true,
             source: "extracted"

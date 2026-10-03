@@ -10,7 +10,7 @@
  */
 
 import { adminGetDocument } from '../_shared/google.ts';
-import { supabaseConfigured, supabaseListKnowledge, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
+import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
@@ -210,12 +210,18 @@ export async function onRequestPost(context) {
     //    la base de connaissance ensuite, les règles strictes du client en tout dernier.
     let systemPrompt = `${buildIdentityBlock(config)}\n\n${BASE_SYSTEM_PROMPT}`;
 
-    // Notes de connaissance (issues du scan automatique ET des ajouts manuels)
-    // 🧮 ÉCONOMIE : fiches VITALES toujours incluses, PERTINENTES selon la
-    // question, coupées court — avec filet de sécurité (question floue = base
-    // entière). Voir compactKnowledgeNotes (prompt.ts).
-    if (Array.isArray(config.knowledgeNotes) && config.knowledgeNotes.length > 0) {
-      systemPrompt += compactKnowledgeNotes(config.knowledgeNotes, message);
+    // Base normalisée en priorité (notes manuelles, scan, imports, ajout éclair,
+    // apprentissage validé). Le JSON historique reste un repli tant que la
+    // migration n'a pas été exécutée ou que l'assistant n'a pas encore été sync.
+    let knowledgeNotes = Array.isArray(config.knowledgeNotes) ? config.knowledgeNotes : [];
+    if (supabaseConfigured(env)) {
+      const knowledge = await supabaseListKnowledgeEntries(env, assistantId);
+      if (knowledge.available && knowledge.entries.length > 0) knowledgeNotes = knowledge.entries;
+    }
+    // Fiches VITALES toujours incluses, autres fiches choisies selon la question.
+    // Les brouillons « Appris » sont explicitement exclus par compactKnowledgeNotes.
+    if (knowledgeNotes.length > 0) {
+      systemPrompt += compactKnowledgeNotes(knowledgeNotes, message);
     }
     if (supabaseConfigured(env)) {
       const documents = selectKnowledgeDocuments(await supabaseListKnowledge(env, assistantId), message, 8);
