@@ -62,6 +62,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   websiteUrl = '',
   knowledgeNotes = [],
   onGoToSimulator,
+  onGoToAutomations,
   highlightCommentsAuth = false
 }) => {
   const { user } = useAuth();
@@ -133,6 +134,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
   // ── Parcours en 3 étapes (hooks tout en haut : avant tout « return » anticipé) ──
   const [step, setStep] = useState(0);
   const [connectionJustVerified, setConnectionJustVerified] = useState(false);
+  const connectionJustVerifiedRef = useRef(false);
   useEffect(() => {
     // Un compte déjà lié s’ouvre directement sur ses réglages. Après une nouvelle
     // connexion OAuth, on reste au contraire sur Connexion pour montrer la preuve.
@@ -231,6 +233,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           ...prev,
           ...cached
         }));
+        if (cached.connected && !connectionJustVerifiedRef.current) setStep(1);
       }
 
       // Step 2: Sync with Supabase (via l'API, RLS service_role) avec repli local
@@ -241,6 +244,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
           // L'ancien texte pré-rempli n'a jamais été un choix du marchand : le serveur l'ignore, donc on ne l'affiche pas.
           if (merged.customGreeting === LEGACY_DEFAULT_GREETING) merged.customGreeting = '';
           setIntegrationData(merged);
+          if (merged.connected && !connectionJustVerifiedRef.current) setStep(1);
           saveLocalCache(user.uid, merged);
           if (assistantId && (data as any).assistantId !== assistantId) {
             await saveRemoteIntegration({ assistantId });
@@ -347,6 +351,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
         instagramUserId: finalUserId,
         instagramUsername: finalUsername,
         pageName: finalPageName,
+        profilePictureUrl: String(serverResult.profilePictureUrl || integrationData.profilePictureUrl || ''),
         accessToken: finalAccessToken || integrationData.accessToken || '',
         // Première connexion : tout est activé. Reconnexion : on GARDE les choix du marchand.
         autoReplyEnabled: integrationData.connected ? integrationData.autoReplyEnabled : true,
@@ -370,6 +375,7 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       }
 
       setIntegrationData(updatedPayload);
+      connectionJustVerifiedRef.current = true;
       setConnectionJustVerified(true);
       setStep(0);
       setIsConnecting(false);
@@ -699,13 +705,23 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
       {integrationData.connected && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(27,22,71,0.04)]">
           <span className="flex items-center gap-2 text-sm font-medium text-emerald-700">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Compte Connecté : {igHandle || 'ton compte Instagram'}
-            {integrationData.webhookStatus === 'active' && <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">Connexion confirmée</span>}
+            {integrationData.profilePictureUrl ? (
+              <img src={integrationData.profilePictureUrl} alt="Photo de profil Instagram" className="h-8 w-8 rounded-full object-cover ring-2 ring-emerald-100" />
+            ) : (
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            )}
+            <span className="font-bold">Compte Connecté : {igHandle || 'ton compte Instagram'}</span>
+            {integrationData.webhookStatus === 'active' && <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">Connexion confirmée · Réception active</span>}
           </span>
           <span className="flex flex-wrap items-center gap-3">
             {integrationData.webhookStatus !== 'active' && (
               <button type="button" onClick={handleRepairSubscription} disabled={repairingSubscription} className="inline-flex items-center gap-1.5 rounded-full bg-amber-600 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer">
                 {repairingSubscription ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Terminer la connexion
+              </button>
+            )}
+            {onGoToAutomations && (
+              <button type="button" onClick={onGoToAutomations} className="inline-flex items-center gap-1.5 rounded-full bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 cursor-pointer">
+                Ouvrir les automatisations <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
             <button type="button" onClick={handleConnectInstagram} disabled={isConnecting} className="text-xs font-medium text-slate-500 underline cursor-pointer">Reconnecter</button>
@@ -727,8 +743,9 @@ export const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({
 
           {integrationData.connected ? (
             <div className="mt-6 space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-              <div className="flex items-center gap-2 font-semibold">
-                <CheckCircle2 className="h-4 w-4" /> Connexion Instagram vérifiée
+              <div className="flex items-center gap-3 font-semibold">
+                {integrationData.profilePictureUrl && <img src={integrationData.profilePictureUrl} alt="Photo de profil Instagram" className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-200" />}
+                <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Instagram est bien connecté</span>
               </div>
               <div className="grid gap-1 text-xs text-emerald-800 sm:grid-cols-2">
                 <span>Compte : <strong>{igHandle}</strong></span>

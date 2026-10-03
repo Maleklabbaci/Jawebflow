@@ -31,6 +31,7 @@ import {
   supabaseConfigured,
   supabaseGetAssistant,
   supabaseAssistantRowToConfig,
+  supabaseListKnowledgeEntries,
   supabaseUpsertProspect,
   supabaseRequest,
 } from "../../_shared/supabase.ts";
@@ -853,6 +854,13 @@ async function handleDirectMessage(env: Env, event: any) {
     }
   } else {
     console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
+  }
+
+  // Même base normalisée que le widget : le webhook Instagram ne doit pas
+  // continuer à lire une ancienne copie JSON qui contournerait les validations.
+  if (integration.assistantId && supabaseConfigured(env)) {
+    const knowledge = await supabaseListKnowledgeEntries(env, integration.assistantId);
+    if (knowledge.available && knowledge.entries.length > 0) config.knowledgeNotes = knowledge.entries;
   }
 
   let webMemory = "";

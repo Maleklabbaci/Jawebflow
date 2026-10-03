@@ -65,7 +65,7 @@ import { AccountProfileView } from './AccountProfileView';
 import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
 import { InstagramAutomations } from './InstagramAutomations';
-import { CopilotChat } from './CopilotChat';
+import { CopilotChat, CopilotLauncher } from './CopilotChat';
 import { StatCard } from './dashboard/StatCard';
 import type { CopilotSection } from './CopilotChat';
 import type { CopilotStatePatch } from '../lib/copilot-api';
@@ -791,7 +791,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return () => { cancelled = true; clearInterval(interval); };
   }, [assistantId]);
 
-  const handleSaveToDatabase = async (rawNotesOverride?: KnowledgeNote[], rawMetadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; }>): Promise<string | undefined> => {
+  const handleSaveToDatabase = async (rawNotesOverride?: KnowledgeNote[], rawMetadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; businessInfo: { address?: string; phone?: string; hours?: string; closedDays?: string; } }>): Promise<string | undefined> => {
     if (!user) return undefined;
     // 🛡️ Les boutons « Enregistrer » branchés directement (onClick={handleSaveToDatabase}) transmettent
     // l'ÉVÉNEMENT du clic en premier argument. Il était enregistré À LA PLACE des fiches « Mes informations »
@@ -821,7 +821,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         languages,
         autoLeadCapture,
         whatsappEscalation: whatsappEscalation.trim(),
-        businessInfo,
+        businessInfo: metadataOverride?.businessInfo ?? businessInfo,
         siteShopping,
         webhookUrl: webhookUrl.trim(),
         widgetId: effectiveWidgetId,
@@ -3742,7 +3742,19 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               ================================================================= */}
           {currentSection === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <AccountProfileView />
+              <AccountProfileView
+                onAssistantProfileUpdate={async ({ companyName: nextCompanyName, phoneNumber }) => {
+                  if (!assistantLoaded) throw new Error('Votre assistant se charge encore. Réessayez dans quelques instants.');
+                  const nextBusinessInfo = { ...businessInfo, phone: phoneNumber };
+                  setBusinessName(nextCompanyName);
+                  setBusinessInfo(nextBusinessInfo);
+                  const savedId = await handleSaveToDatabase(undefined, {
+                    businessName: nextCompanyName,
+                    businessInfo: nextBusinessInfo,
+                  });
+                  if (!savedId) throw new Error('Les informations du profil n’ont pas pu être enregistrées dans l’assistant.');
+                }}
+              />
             </div>
           )}
 
@@ -3756,6 +3768,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           ================================================================= */}
       {user && (
         <>
+          {currentSection !== 'overview' && !copilotOpen && (
+            <CopilotLauncher onClick={openCopilot} unread={copilotUnread} />
+          )}
           <CopilotChat
             mode={currentSection === 'overview' ? 'page' : 'drawer'}
             homeHost={copilotHost}

@@ -38,8 +38,10 @@ const mount = (props: Record<string, unknown> = {}) =>
 const integrationPosts = () => be.api.filter((c) => c.method === 'POST' && c.url === '/api/instagram/integration');
 
 describe('onglet Instagram — compte connecté', () => {
-  it('affiche le vrai compte, un seul bouton « Reconnecter », plus de faux boutons', async () => {
+  it('affiche la photo du profil, le vrai compte et son statut connecté', async () => {
+    be.supabase.tables.instagram_integrations[0].profile_picture_url = 'https://cdn.example.test/instagram.jpg';
     mount();
+    expect(await screen.findByAltText('Photo de profil Instagram')).toBeTruthy();
     expect(await screen.findByText(/Compte Connecté : @boutique_nour/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Reconnecter/ })).toBeTruthy();
     expect(screen.queryByText(/Modifier @pseudo/)).toBeNull();
@@ -114,11 +116,12 @@ describe('onglet Instagram — compte connecté', () => {
 });
 
 describe('onglet Instagram — commentaires', () => {
-  it('ne propose pas de redirection automatique vers les automatisations', async () => {
+  it('ne redirige pas automatiquement vers les automatisations, mais laisse le marchand les ouvrir volontairement', async () => {
     mount();
     await screen.findByText(/Compte Connecté/);
-    expect(screen.queryByRole('button', { name: /automatisation/i })).toBeNull();
     expect(openAutomations).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir les automatisations' }));
+    expect(openAutomations).toHaveBeenCalledTimes(1);
   });
 
   it('« Autoriser les commentaires » ouvre Instagram avec la permission en plus — la connexion normale reste inchangée', async () => {

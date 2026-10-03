@@ -35,7 +35,25 @@ export function businessPackBlock(config: any): string {
 - Allergènes ou ingrédients précis : ne devine JAMAIS, propose de vérifier par téléphone.
 - Mets en avant les spécialités et prix présents dans ta base de connaissance.`;
   }
-  if (has('vêtement', 'vetement', 'boutique', 'mode', 'prêt-à-porter', 'pret-a-porter', 'chaussure', 'textile', 'habillement')) {
+  if (has('agence de voyage', 'voyage', 'tourisme', 'touristique', 'sejour', 'séjour', 'hotel', 'hôtel', 'billet', 'circuit', 'croisiere', 'croisière')) {
+    return `\n\n### ✈️ COMPORTEMENT MÉTIER (VOYAGES / TOURISME)
+- Pour préparer une proposition, demande la destination, les dates et le nombre de voyageurs si ces détails manquent.
+- Ne promets jamais une place, un prix, un visa ou une disponibilité qui ne figure pas dans la base ; propose de vérifier auprès de l'agence.
+- Présente clairement ce qui est inclus, les conditions d'annulation et les documents uniquement s'ils sont renseignés.`;
+  }
+  if (has('grossiste', 'grossistes', 'wholesale', 'fournisseur', 'distributeur', 'b2b', 'vente en gros')) {
+    return `\n\n### 📦 COMPORTEMENT MÉTIER (GROSSISTE / B2B)
+- Demande la référence et la quantité souhaitée avant de conseiller ; oriente vers un devis si nécessaire.
+- N'invente jamais de minimum de commande, de remise par volume, de stock ou de tarif professionnel : utilise uniquement les informations de la base.
+- Distingue clairement prix unitaire, lot et conditions grossiste lorsqu'ils sont précisés.`;
+  }
+  if (has('e-commerce', 'ecommerce', 'commerce en ligne', 'boutique en ligne', 'vente en ligne', 'catalogue en ligne')) {
+    return `\n\n### 🛍️ COMPORTEMENT MÉTIER (COMMERCE EN LIGNE)
+- Aide le client à choisir une référence ou une variante, puis fournis le lien exact de la fiche produit ou du catalogue.
+- Ne confirme pas un stock, un délai, un prix ou une possibilité de retour qui n'est pas indiquée dans la base.
+- Explique simplement comment commander et quels moyens de paiement sont acceptés lorsqu'ils sont documentés.`;
+  }
+  if (has('vêtement', 'vetement', 'mode', 'prêt-à-porter', 'pret-a-porter', 'chaussure', 'textile', 'habillement', 'fashion', 'clothing')) {
     return `\n\n### 👗 COMPORTEMENT MÉTIER (BOUTIQUE / MODE)
 - Conseille comme un vendeur : tailles disponibles, nouvelles collections, essayage en magasin.
 - Si une pièce ou une taille n'est pas dans ta base, propose de vérifier en boutique ou par téléphone.`;
@@ -155,7 +173,14 @@ const NOTE_VITAL_CAP = 1200;
  * la question, coupées court. Filet de sécurité : si le tri n'est pas assez
  * sûr (moins de 2 fiches pertinentes trouvées), on renvoie TOUT comme avant. */
 export function compactKnowledgeNotes(notes: any[], message: string): string {
-  const valid = (notes || []).filter(n => n && n.enabled !== false && (n.content || "").trim());
+  const valid = (notes || []).filter(n => {
+    if (!n || n.enabled === false || !(n.content || "").trim()) return false;
+    const status = String(n.approvalStatus || n.status || '').toLowerCase();
+    if (status === 'pending_review' || status === 'rejected') return false;
+    const source = String(n.source || '').toLowerCase();
+    const learned = /learn|appris|conversation|auto/.test(source) || String(n.category || '').toLowerCase() === 'learned';
+    return !learned || status === 'approved' || status === 'active';
+  });
   if (!valid.length) return "";
 
   const msgWords = String(message || "").toLowerCase().replace(/[^a-zà-ÿ0-9 ]/gi, " ").split(/\s+/).filter(w => w.length >= 4);

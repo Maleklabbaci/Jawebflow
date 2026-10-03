@@ -10,9 +10,14 @@ export interface KnowledgeNote {
   id: string;
   title: string;
   content: string;
-  category: 'general' | 'services' | 'tarifs' | 'livraison' | 'faq' | 'politiques' | 'contact' | 'custom' | 'learned';
+  /** Catégorie canonique, ou ancienne catégorie conservée durant la migration. */
+  category: string;
   enabled: boolean;
-  source?: 'scanned' | 'manual' | 'learned_conversation';
+  source?: string;
+  approvalStatus?: 'approved' | 'pending_review' | 'rejected' | string;
+  /** Alias lu pendant la transition depuis les anciennes fiches. */
+  status?: 'active' | 'pending_review' | 'rejected' | string;
+  sourceUrl?: string;
   confidenceScore?: number;
   occurrencesCount?: number;
   lastReinforcedAt?: string;

@@ -50,6 +50,7 @@ interface AuthContextType {
   loginWithEmail: (email: string, pass: string) => Promise<UserProfile>;
   registerWithEmail: (email: string, pass: string, fullName: string, companyName: string) => Promise<UserProfile>;
   logout: () => Promise<void>;
+  updateProfile?: (updates: Partial<UserProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -152,6 +153,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(null);
   };
 
+  const updateProfileState = (updates: Partial<UserProfile>) => {
+    setProfile((current) => current ? { ...current, ...updates } : current);
+    setUser((current) => current ? {
+      ...current,
+      ...(updates.displayName !== undefined ? { displayName: updates.displayName } : {}),
+      ...(updates.photoURL !== undefined ? { photoURL: updates.photoURL } : {}),
+    } : current);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -162,6 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithEmail: handleLoginWithEmail,
         registerWithEmail: handleRegisterWithEmail,
         logout: handleLogout,
+        updateProfile: updateProfileState,
       }}
     >
       {children}

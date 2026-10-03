@@ -52,14 +52,15 @@ export async function onRequestPost(context: { request: Request; env: any }) {
 FICHES EXISTANTES (titres) : ${titles.length ? titles.join(" | ") : "(aucune)"}
 
 Réponds UNIQUEMENT en JSON :
-{"action":"add|update|delete","title":"...","category":"produits|liens|tarifs|livraison|contact|garanties|faq|services|general","content":"..."}
+{"action":"add|update|delete","title":"...","category":"services|tarifs|livraison|contact|faq","content":"..."}
 
 RÈGLES :
-- Produit ajouté ou modifié → action "add" (nouveau) ou "update" (un titre existant désigne le même produit) ; content = "Nom — variantes — prix — URL" (URL recopiée EXACTEMENT si donnée, prix exact).
-- « j'ai ajouté un produit spiderman case iphone 13 14 15 16 » → title "Spiderman Case (iPhone 13/14/15/16)", category "produits".
-- Lien (site, réseau social, formulaire, collection) → category "liens", URL EXACTE dans content.
+- Produits, lots grossistes, prestations, séjours ou biens immobiliers → catégorie "services" ; conserve les variantes et disponibilités fournies.
+- « j'ai ajouté un produit spiderman case iphone 13 14 15 16 » → title "Spiderman Case (iPhone 13/14/15/16)", category "services".
+- Tarifs, devis, remises, prix par quantité → "tarifs". Livraison, expédition, réservation/commande et paiement → "livraison".
+- Horaires, adresse, coordonnées et liens → "contact". Questions, garanties, retours et conditions → "faq".
+- Lien donné par le marchand : URL exacte dans content, jamais réécrite.
 - « supprime la fiche X » / « enlève le produit X » → action "delete" + title exact.
-- Livraison, contact, garanties, horaires, promo → la catégorie qui convient.
 - N'invente RIEN qui n'est pas dans la phrase. Prix, variantes et quantités EXACTS.`;
 
   const res = await fetch(

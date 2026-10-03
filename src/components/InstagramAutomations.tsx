@@ -46,7 +46,7 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
   const [historyFor, setHistoryFor] = useState<string | undefined>();
 
   const [diag, setDiag] = useState<Diagnostics | null>(null);
-  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(true);
   const [diagError, setDiagError] = useState('');
   const [repairing, setRepairing] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
@@ -196,6 +196,43 @@ export const InstagramAutomations: React.FC<Props> = ({ businessName, isAdmin = 
 
   const accountName = diag?.username || businessName || 'ton_compte';
   const activeCount = useMemo(() => automations.filter((a) => a.enabled).length, [automations]);
+
+  // La connexion Instagram est une étape préalable : aucune automatisation
+  // ne peut être créée, modifiée ou activée avant sa vérification.
+  if (diagLoading && !diag) {
+    return (
+      <div className="space-y-5">
+        <PageHeader title="Automatisations" subtitle="Connecte Instagram avant de configurer tes règles." />
+        <Card className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Vérification de la connexion Instagram…</Card>
+      </div>
+    );
+  }
+  if (!diag?.connected) {
+    return (
+      <div className="space-y-5">
+        <PageHeader title="Automatisations" subtitle="La connexion Instagram est une étape distincte, à effectuer avant la configuration." />
+        <HealthPanel
+          diag={diag}
+          loading={diagLoading}
+          error={diagError}
+          repairing={repairing}
+          repairMessage={repairMessage}
+          onRefresh={loadHealth}
+          onRepair={repair}
+          onGoToInstagram={(why) => onGoToInstagram(why)}
+        />
+        <Card className="border-amber-300 bg-amber-50/60 p-6">
+          <h2 className="text-base font-semibold text-slate-900">Connecte Instagram pour continuer</h2>
+          <p className="mt-1 text-sm text-slate-600">Aucune règle ne sera modifiée. Une fois le compte professionnel lié et vérifié, reviens ici pour créer et enregistrer tes automatisations.</p>
+          {diagError && <p role="alert" className="mt-3 text-xs text-rose-700">Vérification impossible : {diagError}</p>}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => onGoToInstagram('connect')} className={primaryBtn}>Lier mon compte Instagram</button>
+            <button type="button" onClick={loadHealth} disabled={diagLoading} className={secondaryBtn}>{diagLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Vérifier à nouveau</button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   // ── Écrans ────────────────────────────────────────────────────────────────
   if (view === 'edit' && draft) {
