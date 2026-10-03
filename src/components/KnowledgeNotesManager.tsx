@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { KnowledgeNote } from '../types';
 import { supabase } from '../lib/supabase';
+import { knowledgeGroupId, isKnowledgePending, knowledgeSourceLabel, normalizeKnowledgeCategory } from '../lib/knowledge';
 
 interface KnowledgeNotesManagerProps {
   notes: KnowledgeNote[];
@@ -25,33 +26,21 @@ interface KnowledgeNotesManagerProps {
   onOpenCopilot?: () => void;
 }
 
-const CATEGORY_CONFIG: Record<string, { label: string; bg: string; text: string; border: string; icon: React.ReactNode }> = {
-  general: { label: 'Présentation', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', icon: <Globe className="w-3 h-3 text-blue-600" /> },
-  services: { label: 'Services', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: <Layers className="w-3 h-3 text-purple-600" /> },
-  tarifs: { label: 'Tarifs', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: <DollarSign className="w-3 h-3 text-emerald-600" /> },
-  livraison: { label: 'Livraison', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: <Truck className="w-3 h-3 text-amber-600" /> },
-  faq: { label: 'FAQ', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', icon: <HelpCircle className="w-3 h-3 text-indigo-600" /> },
-  garanties: { label: 'Garanties', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: <ShieldCheck className="w-3 h-3 text-rose-600" /> },
-  politiques: { label: 'Garanties', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: <ShieldCheck className="w-3 h-3 text-rose-600" /> },
-  contact: { label: 'Contact', bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', icon: <Phone className="w-3 h-3 text-teal-600" /> },
-  produits: { label: 'Produits', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: <Layers className="w-3 h-3 text-orange-600" /> },
-  liens: { label: 'Liens', bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', icon: <Link2 className="w-3 h-3 text-cyan-600" /> },
-  learned: { label: 'Appris', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: <Sparkles className="w-3 h-3 text-purple-600" /> },
-  custom: { label: 'Autre', bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', icon: <FileText className="w-3 h-3 text-slate-600" /> },
+// Catégories lisibles et communes à tous les métiers : les catégories
+// historiques sont normalisées vers ces cinq groupes à l'affichage.
+const GROUPS: { key: string; label: string; rep: string; icon: React.ReactNode }[] = [
+  { key: 'products', label: 'Produits & services', rep: 'services', icon: <Layers className="w-3.5 h-3.5" /> },
+  { key: 'pricing', label: 'Prix & promos', rep: 'tarifs', icon: <DollarSign className="w-3.5 h-3.5" /> },
+  { key: 'delivery', label: 'Livraison & paiement', rep: 'livraison', icon: <Truck className="w-3.5 h-3.5" /> },
+  { key: 'practical', label: 'Infos pratiques', rep: 'contact', icon: <Phone className="w-3.5 h-3.5" /> },
+  { key: 'faq', label: 'Questions fréquentes & garanties', rep: 'faq', icon: <HelpCircle className="w-3.5 h-3.5" /> },
+];
+const groupOf = (category: string, context = '') => {
+  const key = knowledgeGroupId(category, context);
+  return GROUPS.find(group => group.key === key) || GROUPS[0];
 };
 
-// 5 groupes simples pour tout type de business (e-commerce, grossiste, agence de voyage, immobilier...).
-// Les anciennes catégories sont rangées automatiquement dans un groupe.
-const GROUPS: { key: string; label: string; rep: string; cats: string[]; icon: React.ReactNode }[] = [
-  { key: 'produits', label: 'Produits & services', rep: 'services', cats: ['services', 'produits', 'general', 'custom'], icon: <Layers className="w-3.5 h-3.5" /> },
-  { key: 'prix', label: 'Prix & promos', rep: 'tarifs', cats: ['tarifs'], icon: <DollarSign className="w-3.5 h-3.5" /> },
-  { key: 'livraison', label: 'Livraison & paiement', rep: 'livraison', cats: ['livraison'], icon: <Truck className="w-3.5 h-3.5" /> },
-  { key: 'infos', label: 'Infos pratiques', rep: 'contact', cats: ['contact', 'liens'], icon: <Phone className="w-3.5 h-3.5" /> },
-  { key: 'faq', label: 'Questions fréquentes & garanties', rep: 'faq', cats: ['faq', 'garanties', 'politiques', 'learned'], icon: <HelpCircle className="w-3.5 h-3.5" /> },
-];
-const groupOf = (category: string) => (GROUPS.find(g => g.cats.includes(category)) || GROUPS[0]);
-
-interface SiteDoc { id: string; title: string; excerpt: string; sourceUrl: string; }
+interface SiteDoc { id: string; title: string; excerpt: string; sourceUrl: string; category?: string; type?: string; }
 
 // ---------------------------------------------------------------------------
 // Modal Import Universel
@@ -135,9 +124,10 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, assistantI
         id: `imported_${Date.now()}_${i}`,
         title: n.title || 'Information importée',
         content: n.content || '',
-        category: n.category || 'general',
+        category: normalizeKnowledgeCategory(n.category, `${n.title || ''} ${n.content || ''}`),
         enabled: true,
-        source: 'extracted',
+        source: 'imported',
+        approvalStatus: 'approved',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }));
@@ -315,22 +305,47 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [siteDocs, setSiteDocs] = useState<SiteDoc[]>([]);
+  const [serverNotes, setServerNotes] = useState<KnowledgeNote[] | null>(null);
+  const currentNotes = serverNotes ?? notes;
   const authHeaders = async () => {
     const token = (await supabase.auth.getSession()).data.session?.access_token || null;
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
   const loadSiteDocs = async () => {
-    if (!assistantId) return;
+    if (!assistantId) { setSiteDocs([]); return; }
     try {
       const res = await fetch(`/api/knowledge/documents?assistantId=${encodeURIComponent(assistantId)}`, { headers: await authHeaders() });
       const data = await res.json().catch(() => ({}));
       setSiteDocs(Array.isArray(data.documents) ? data.documents : []);
-    } catch { /* silencieux : la liste reste vide */ }
+    } catch { /* les fiches manuelles restent accessibles */ }
   };
-  useEffect(() => { loadSiteDocs(); /* eslint-disable-next-line */ }, [assistantId, isScanning]);
+  const loadNotes = async () => {
+    if (!assistantId) { setServerNotes(null); return; }
+    try {
+      const res = await fetch(`/api/knowledge/entries?assistantId=${encodeURIComponent(assistantId)}`, { headers: await authHeaders() });
+      if (!res.ok) { setServerNotes(null); return; }
+      const data = await res.json().catch(() => ({}));
+      if (Array.isArray(data.entries)) {
+        setServerNotes(data.entries.map((entry: any) => ({
+          ...entry,
+          id: String(entry.id || `kb_${Math.random().toString(36).slice(2, 9)}`),
+          title: String(entry.title || 'Information'),
+          content: String(entry.content || ''),
+          category: normalizeKnowledgeCategory(entry.category, `${entry.title || ''} ${entry.content || ''}`),
+          enabled: entry.enabled !== false,
+          source: entry.source || 'manual',
+          approvalStatus: entry.approvalStatus || entry.status,
+        })));
+      } else setServerNotes(null);
+    } catch { setServerNotes(null); }
+  };
+  useEffect(() => { void loadSiteDocs(); void loadNotes(); /* eslint-disable-next-line */ }, [assistantId, isScanning]);
   const deleteSiteDoc = async (id: string) => {
-    setSiteDocs(d => d.filter(x => x.id !== id));
-    try { await fetch(`/api/knowledge/documents?assistantId=${encodeURIComponent(assistantId || '')}&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() }); } catch { loadSiteDocs(); }
+    try {
+      const res = await fetch(`/api/knowledge/documents?assistantId=${encodeURIComponent(assistantId || '')}&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() });
+      if (!res.ok) throw new Error('Suppression refusée');
+      setSiteDocs(d => d.filter(x => x.id !== id));
+    } catch { await loadSiteDocs(); }
   };
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isAddingNote, setIsAddingNote] = useState(false);
@@ -347,6 +362,10 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   const [quickLog, setQuickLog] = useState<{ role: 'user' | 'bot'; text: string }[]>([]);
   const [listening, setListening] = useState(false);
   const quickLogRef = useRef<HTMLDivElement | null>(null);
+  const commitNotes = (updated: KnowledgeNote[]) => {
+    setServerNotes(updated);
+    onUpdateNotes(updated);
+  };
 
   const sendQuickAdd = async () => {
     const msg = quickMsg.trim();
@@ -366,9 +385,10 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
         setQuickLog((l) => [...l, { role: 'bot', text: '❌ ' + (data.error || 'Échec — réessaie.') }]);
       } else {
         if (Array.isArray(data.notes)) {
-          onUpdateNotes(data.notes.map((n: any) => ({
+          commitNotes(data.notes.map((n: any) => ({
             ...n,
             id: n.id || 'qa_' + Math.random().toString(36).slice(2, 9),
+            category: normalizeKnowledgeCategory(n.category, `${n.title || ''} ${n.content || ''}`),
             updatedAt: n.updatedAt || new Date().toISOString(),
           })));
         }
@@ -404,26 +424,45 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
   };
 
   const handleToggleNote = (id: string) => {
-    onUpdateNotes(notes.map(n => n.id === id ? { ...n, enabled: !n.enabled } : n));
+    commitNotes(currentNotes.map(n => n.id === id ? { ...n, enabled: !n.enabled, updatedAt: new Date().toISOString() } : n));
   };
 
   const handleUpdateNoteField = (id: string, field: 'title' | 'content' | 'category', value: any) => {
-    onUpdateNotes(notes.map(n => n.id === id ? { ...n, [field]: value, updatedAt: new Date().toISOString() } : n));
+    commitNotes(currentNotes.map(n => n.id === id ? {
+      ...n,
+      [field]: field === 'category' ? normalizeKnowledgeCategory(value, `${n.title} ${n.content}`) : value,
+      updatedAt: new Date().toISOString(),
+    } : n));
   };
 
   const handleDeleteNote = (id: string) => {
-    onUpdateNotes(notes.filter(n => n.id !== id));
+    commitNotes(currentNotes.filter(n => n.id !== id));
   };
+
+  const handleApproveNote = (id: string) => {
+    commitNotes(currentNotes.map(n => n.id === id ? {
+      ...n,
+      enabled: true,
+      approvalStatus: 'approved',
+      status: 'active',
+      updatedAt: new Date().toISOString(),
+    } : n));
+  };
+
+  const handleRejectNote = (id: string) => handleDeleteNote(id);
 
   const handleDuplicateNote = (note: KnowledgeNote) => {
     const dup: KnowledgeNote = {
       ...note,
       id: 'note_' + Math.random().toString(36).slice(2, 9),
       title: `${note.title} (Copie)`,
+      source: 'manual',
+      approvalStatus: 'approved',
+      status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    onUpdateNotes([dup, ...notes]);
+    commitNotes([dup, ...currentNotes]);
   };
 
   const handleCreateNewNote = (e: React.FormEvent) => {
@@ -436,37 +475,43 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
       category: newCategory,
       enabled: true,
       source: 'manual',
+      approvalStatus: 'approved',
+      status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    onUpdateNotes([newNote, ...notes]);
+    commitNotes([newNote, ...currentNotes]);
     setNewTitle(''); setNewContent(''); setNewCategory('services');
     setIsAddingNote(false);
   };
 
   const handleImport = (newNotes: KnowledgeNote[]) => {
-    // Expand les nouvelles notes importées
     const newExpanded: Record<string, boolean> = {};
     newNotes.forEach(n => { if (n.id) newExpanded[n.id] = true; });
     setExpandedNotes(prev => ({ ...prev, ...newExpanded }));
-    onUpdateNotes([...newNotes, ...notes]);
+    commitNotes([...newNotes, ...currentNotes]);
   };
 
   const toggleExpand = (id: string) => {
     setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const filteredNotes = notes.filter(n => {
+  const filteredNotes = currentNotes.filter(n => {
     const q = searchQuery.toLowerCase();
     const matchSearch = n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
-    const matchCat = selectedCategory === 'all' || groupOf(n.category).key === selectedCategory;
+    const matchCat = selectedCategory === 'all' || groupOf(n.category, `${n.title} ${n.content}`).key === selectedCategory;
     return matchSearch && matchCat;
   });
 
-  const activeCount = notes.filter(n => n.enabled).length + siteDocs.length;
-  const totalCount = notes.length + siteDocs.length;
+  const activeCount = currentNotes.filter(n => n.enabled && !isKnowledgePending(n)).length + siteDocs.length;
+  const pendingCount = currentNotes.filter(n => isKnowledgePending(n)).length;
+  const totalCount = currentNotes.length + siteDocs.length;
   const q = searchQuery.toLowerCase();
-  const visibleDocs = siteDocs.filter(d => (selectedCategory === 'all' || selectedCategory === 'site') && (d.title.toLowerCase().includes(q) || d.excerpt.toLowerCase().includes(q)));
+  const visibleDocs = siteDocs.filter(d => {
+    const context = `${d.type || ''} ${d.title} ${d.excerpt}`;
+    const matchCategory = selectedCategory === 'all' || groupOf(d.category || d.type || '', context).key === selectedCategory;
+    return matchCategory && (d.title.toLowerCase().includes(q) || d.excerpt.toLowerCase().includes(q));
+  });
 
   return (
     <div className="space-y-4">
@@ -487,13 +532,17 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
               {activeCount} / {totalCount} actives
             </span>
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-              Apprentissage actif
+            {pendingCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5" />{pendingCount} fiche{pendingCount > 1 ? 's' : ''} à valider
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Source du bot synchronisée
             </span>
           </div>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Prix, horaires, livraison, garanties — tout ce que votre assistant doit savoir.
+            Fiches et contenus scannés, regroupés par thème et attribués à leur source, pour tout type d’activité.
           </p>
         </div>
 
@@ -552,7 +601,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             value={quickMsg}
             onChange={(e) => setQuickMsg(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendQuickAdd(); } }}
-            placeholder="Ex : j'ai ajouté le produit spiderman case iphone 13 14 15 16 à 1900 DA"
+            placeholder="Ex : ajout d'une prestation à 90 €, d'un lot grossiste ou d'un séjour de 5 nuits"
             className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
             disabled={quickBusy}
           />
@@ -575,7 +624,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
           </button>
         </div>
         <p className="text-[10px] text-slate-400">
-          Produit, prix, promo, lien, livraison, contact… une phrase = une fiche dans la base. Pour supprimer : « supprime la fiche … ».
+          Produits, prestations, biens, séjours, tarifs, conditions ou coordonnées : une phrase suffit pour enrichir la base. Pour supprimer : « supprime la fiche … ».
           {onOpenCopilot && (
             <>
               {' '}Besoin de plus (modifier, régler le comportement, répondre aux commentaires…) ?{' '}
@@ -632,7 +681,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
         </form>
       )}
 
-      {/* Search + Filtres */}
+      {/* Recherche + filtres communs à tous les secteurs */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -640,7 +689,7 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Rechercher..."
+            placeholder="Rechercher dans les fiches et documents..."
             className="w-full pl-8 pr-4 py-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 focus:border-purple-500 focus:outline-none shadow-sm"
           />
         </div>
@@ -649,11 +698,12 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
             onClick={() => setSelectedCategory('all')}
             className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap ${selectedCategory === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
           >
-            Toutes ({totalCount})
+            Tout ({totalCount})
           </button>
           {GROUPS.map(g => {
-            const count = notes.filter(n => groupOf(n.category).key === g.key).length;
-            if (!count) return null;
+            const noteCount = currentNotes.filter(n => groupOf(n.category, `${n.title} ${n.content}`).key === g.key).length;
+            const docCount = siteDocs.filter(d => groupOf(d.category || d.type || '', `${d.type || ''} ${d.title} ${d.excerpt}`).key === g.key).length;
+            const count = noteCount + docCount;
             return (
               <button
                 key={g.key}
@@ -665,30 +715,27 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
               </button>
             );
           })}
-          {siteDocs.length > 0 && (
-            <button
-              onClick={() => setSelectedCategory('site')}
-              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap flex items-center gap-1 ${selectedCategory === 'site' ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
-            >
-              <Globe className="w-3.5 h-3.5" />Pages du site ({siteDocs.length})
-            </button>
+          {pendingCount > 0 && (
+            <span className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-200">
+              {pendingCount} à valider
+            </span>
           )}
         </div>
       </div>
 
-      {/* Notes */}
+      {/* Les fiches et les éléments du scan partagent les cinq groupes. */}
       {filteredNotes.length === 0 && visibleDocs.length === 0 ? (
         <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
           <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mx-auto">
             <FileText className="w-5 h-5 text-purple-600" />
           </div>
-          <h4 className="font-bold text-slate-800 text-sm">Aucune note</h4>
-          <p className="text-xs text-slate-500">Importez vos informations ou créez une note manuellement.</p>
+          <h4 className="font-bold text-slate-800 text-sm">Aucune information ici</h4>
+          <p className="text-xs text-slate-500">Ajoutez une fiche, importez un document ou scannez un site pour alimenter votre assistant.</p>
           <div className="flex items-center justify-center gap-2">
-            <button onClick={() => setIsImporting(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">
+            <button type="button" onClick={() => setIsImporting(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">
               <Upload className="w-3 h-3" />Importer
             </button>
-            <button onClick={() => setIsAddingNote(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold">
+            <button type="button" onClick={() => setIsAddingNote(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold">
               <Plus className="w-3 h-3" />Ajouter
             </button>
           </div>
@@ -696,11 +743,13 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
       ) : (
         <div className="space-y-3">
           {GROUPS.map(g => {
-            const items = filteredNotes.filter(n => groupOf(n.category).key === g.key);
-            if (!items.length) return null;
-            const open = openGroups[g.key] ?? (searchQuery !== '' || items.length <= 5);
+            const items = filteredNotes.filter(n => groupOf(n.category, `${n.title} ${n.content}`).key === g.key);
+            const docs = visibleDocs.filter(d => groupOf(d.category || d.type || '', `${d.type || ''} ${d.title} ${d.excerpt}`).key === g.key);
+            const count = items.length + docs.length;
+            if (!count) return null;
+            const open = openGroups[g.key] ?? (searchQuery !== '' || count <= 5);
             return (
-              <div key={g.key} className="bg-slate-50/60 rounded-2xl border border-slate-200">
+              <section key={g.key} aria-label={`Groupe ${g.label}`} className="bg-slate-50/60 rounded-2xl border border-slate-200">
                 <button
                   type="button"
                   onClick={() => setOpenGroups(o => ({ ...o, [g.key]: !open }))}
@@ -708,139 +757,114 @@ export const KnowledgeNotesManager: React.FC<KnowledgeNotesManagerProps> = ({
                 >
                   <span className="text-purple-600">{g.icon}</span>
                   <span className="flex-1 text-xs font-bold text-slate-800">{g.label}</span>
-                  <span className="text-[11px] font-semibold text-slate-500">{items.length} fiche{items.length > 1 ? 's' : ''}</span>
+                  <span className="text-[11px] font-semibold text-slate-500">{count} élément{count > 1 ? 's' : ''}</span>
                   {open ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
                 </button>
                 {open && <div className="space-y-2 px-2 pb-2">
-          {items.map(note => {
-            const cat = CATEGORY_CONFIG[note.category] || CATEGORY_CONFIG.custom;
-            const isExpanded = Boolean(expandedNotes[note.id]);
-
-            return (
-              <div
-                key={note.id}
-                className={`bg-white rounded-xl border transition-all ${
-                  note.enabled ? 'border-slate-200' : 'border-slate-200/50 opacity-55'
-                }`}
-              >
-                {/* Row compact */}
-                <div className="flex items-center gap-2 px-3 py-2.5">
-                  {/* Toggle */}
-                  <button
-                    type="button"
-                    onClick={() => handleToggleNote(note.id)}
-                    aria-pressed={note.enabled}
-                    aria-label={`${note.enabled ? 'Désactiver' : 'Activer'} la fiche ${note.title}`}
-                    title={note.enabled ? 'Lue par l’assistant — cliquer pour la mettre de côté' : 'Mise de côté — cliquer pour la réactiver'}
-                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors cursor-pointer ${note.enabled ? 'bg-purple-600' : 'bg-slate-300'}`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${note.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </button>
-
-                  {/* Badge catégorie */}
-                  <span className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${cat.bg} ${cat.text} ${cat.border}`}>
-                    {cat.icon}
-                    {cat.label}
-                  </span>
-
-                  {/* Titre inline */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 truncate">{note.title}</p>
-                    {!isExpanded && (
-                      <p className="text-[11px] text-slate-400 truncate">{note.content.slice(0, 80)}</p>
-                    )}
-                  </div>
-
-                  {/* Source badge */}
-                  {note.source === 'extracted' && (
-                    <span className="hidden sm:inline text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
-                      Importé
-                    </span>
-                  )}
-                  {note.source === 'scanned' && (
-                    <span className="hidden sm:inline text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-                      Scanné
-                    </span>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => handleDuplicateNote(note)} className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors">
-                      <Copy className="w-3 h-3" />
-                    </button>
-                    <button onClick={() => handleDeleteNote(note.id)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                    <button onClick={() => toggleExpand(note.id)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
-                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Contenu expandé */}
-                {isExpanded && (
-                  <div className="px-3 pb-3 space-y-2 border-t border-slate-100 pt-2">
-                    <input
-                      type="text"
-                      value={note.title}
-                      onChange={e => handleUpdateNoteField(note.id, 'title', e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none"
-                    />
-                    <textarea
-                      value={note.content}
-                      onChange={e => handleUpdateNoteField(note.id, 'content', e.target.value)}
-                      rows={Math.min(6, Math.max(2, note.content.split('\n').length + 1))}
-                      className="w-full px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-purple-500 focus:outline-none leading-relaxed"
-                    />
-                    <div className="flex items-center justify-between text-[10px] text-slate-400">
-                      <span>{note.content.length} caractères</span>
-                      <select
-                        value={groupOf(note.category).rep}
-                        onChange={e => handleUpdateNoteField(note.id, 'category', e.target.value)}
-                        className="text-[10px] bg-slate-100 border-0 rounded px-1 py-0.5 text-slate-600 focus:outline-none"
+                  {items.map(note => {
+                    const pending = isKnowledgePending(note);
+                    const enabled = note.enabled !== false && !pending;
+                    const isExpanded = Boolean(expandedNotes[note.id]);
+                    return (
+                      <article
+                        key={note.id}
+                        className={`bg-white rounded-xl border transition-all ${pending ? 'border-amber-300 bg-amber-50/30' : enabled ? 'border-slate-200' : 'border-slate-200/60 opacity-70'}`}
                       >
-                        <option value="services">Produits &amp; services</option><option value="tarifs">Prix &amp; promos</option><option value="livraison">Livraison &amp; paiement</option><option value="contact">Infos pratiques</option><option value="faq">Questions &amp; garanties</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                        <div className="flex items-center gap-2 px-3 py-2.5">
+                          {pending ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0" title="Cette fiche ne sera pas utilisée par l'assistant avant validation.">
+                              <Sparkles className="w-3 h-3" />À valider
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleNote(note.id)}
+                              aria-pressed={enabled}
+                              aria-label={`${enabled ? 'Désactiver' : 'Activer'} la fiche ${note.title}`}
+                              title={enabled ? 'Utilisée par l’assistant — cliquer pour la mettre de côté' : 'Mise de côté — cliquer pour la réactiver'}
+                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors cursor-pointer ${enabled ? 'bg-purple-600' : 'bg-slate-300'}`}
+                            >
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
+                          )}
+                          <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-slate-200 bg-slate-50 text-slate-600 shrink-0">
+                            {g.label}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{note.title}</p>
+                            {!isExpanded && <p className="text-[11px] text-slate-400 truncate">{note.content.slice(0, 100)}</p>}
+                          </div>
+                          <span className={`hidden md:inline text-[10px] px-1.5 py-0.5 rounded shrink-0 ${pending ? 'text-amber-800 bg-amber-100' : 'text-slate-500 bg-slate-100'}`}>
+                            {knowledgeSourceLabel(note)}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {pending && <>
+                              <button type="button" onClick={() => handleApproveNote(note.id)} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md" title="Valider et rendre cette fiche disponible au bot">
+                                <Check className="w-3 h-3" />Valider
+                              </button>
+                              <button type="button" onClick={() => handleRejectNote(note.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded" title="Refuser cette fiche">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>}
+                            {!pending && <button type="button" onClick={() => handleDuplicateNote(note)} className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors" title="Dupliquer cette fiche"><Copy className="w-3 h-3" /></button>}
+                            <button type="button" onClick={() => handleDeleteNote(note.id)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors" title={pending ? 'Refuser cette fiche' : 'Supprimer cette fiche'}><Trash2 className="w-3 h-3" /></button>
+                            <button type="button" onClick={() => toggleExpand(note.id)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" aria-label={isExpanded ? 'Réduire' : 'Modifier la fiche'}>
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="px-3 pb-3 space-y-2 border-t border-slate-100 pt-2">
+                            <input
+                              type="text"
+                              value={note.title}
+                              onChange={e => handleUpdateNoteField(note.id, 'title', e.target.value)}
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:border-purple-500 focus:outline-none"
+                            />
+                            <textarea
+                              value={note.content}
+                              onChange={e => handleUpdateNoteField(note.id, 'content', e.target.value)}
+                              rows={Math.min(6, Math.max(2, note.content.split('\n').length + 1))}
+                              className="w-full px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:bg-white focus:border-purple-500 focus:outline-none leading-relaxed"
+                            />
+                            <div className="flex items-center justify-between text-[10px] text-slate-400">
+                              <span>{note.content.length} caractères · {knowledgeSourceLabel(note)}</span>
+                              <select
+                                value={groupOf(note.category, `${note.title} ${note.content}`).rep}
+                                onChange={e => handleUpdateNoteField(note.id, 'category', e.target.value)}
+                                className="text-[10px] bg-slate-100 border-0 rounded px-1.5 py-1 text-slate-600 focus:outline-none"
+                                aria-label="Groupe de la fiche"
+                              >
+                                <option value="services">Produits &amp; services</option>
+                                <option value="tarifs">Prix &amp; promos</option>
+                                <option value="livraison">Livraison &amp; paiement</option>
+                                <option value="contact">Infos pratiques</option>
+                                <option value="faq">Questions &amp; garanties</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                  {docs.map(doc => (
+                    <article key={doc.id} className="bg-white rounded-xl border border-slate-200 flex items-center gap-2 px-3 py-2.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-cyan-50 border border-cyan-100 text-cyan-800 text-[10px] font-semibold shrink-0">
+                        <Globe className="w-3 h-3" />Site scanné
+                      </span>
+                      <span className="hidden sm:inline text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">{g.label}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{doc.title}</p>
+                        <p className="text-[11px] text-slate-400 truncate">{doc.excerpt.slice(0, 120)}</p>
+                      </div>
+                      {doc.sourceUrl && <a href={doc.sourceUrl} target="_blank" rel="noreferrer" aria-label="Ouvrir la page source" className="p-1 text-slate-400 hover:text-purple-600"><Link2 className="w-3 h-3" /></a>}
+                      <button type="button" onClick={() => deleteSiteDoc(doc.id)} aria-label="Supprimer ce document scanné" className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3 h-3" /></button>
+                    </article>
+                  ))}
                 </div>}
-              </div>
+              </section>
             );
           })}
-        </div>
-      )}
-
-      {visibleDocs.length > 0 && (
-        <div className="bg-slate-50/60 rounded-2xl border border-slate-200">
-          <button
-            type="button"
-            onClick={() => setOpenGroups(o => ({ ...o, site: !(o.site ?? searchQuery !== '') }))}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
-          >
-            <Globe className="w-3.5 h-3.5 text-purple-600" />
-            <span className="flex-1 text-xs font-bold text-slate-800">Pages de mon site <span className="font-normal text-slate-400">(scan automatique)</span></span>
-            <span className="text-[11px] font-semibold text-slate-500">{visibleDocs.length} page{visibleDocs.length > 1 ? 's' : ''}</span>
-            {(openGroups.site ?? searchQuery !== '') ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
-          </button>
-          {(openGroups.site ?? searchQuery !== '') && (
-            <div className="space-y-2 px-2 pb-2">
-              {visibleDocs.map(d => (
-                <div key={d.id} className="bg-white rounded-xl border border-slate-200 flex items-center gap-2 px-3 py-2.5">
-                  <span className="hidden sm:inline text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">Site</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 truncate">{d.title}</p>
-                    <p className="text-[11px] text-slate-400 truncate">{d.excerpt.slice(0, 90)}</p>
-                  </div>
-                  {d.sourceUrl && <a href={d.sourceUrl} target="_blank" rel="noreferrer" className="p-1 text-slate-400 hover:text-purple-600"><Link2 className="w-3 h-3" /></a>}
-                  <button onClick={() => deleteSiteDoc(d.id)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3 h-3" /></button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>

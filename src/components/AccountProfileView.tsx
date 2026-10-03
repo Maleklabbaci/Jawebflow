@@ -26,8 +26,12 @@ const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80'
 ];
 
-export const AccountProfileView: React.FC = () => {
-  const { user, profile, logout } = useAuth();
+interface AccountProfileViewProps {
+  onAssistantProfileUpdate?: (updates: { companyName: string; phoneNumber: string }) => Promise<void>;
+}
+
+export const AccountProfileView: React.FC<AccountProfileViewProps> = ({ onAssistantProfileUpdate }) => {
+  const { user, profile, logout, updateProfile } = useAuth();
 
   const [displayName, setDisplayName] = useState(profile?.displayName || user?.displayName || '');
   const [companyName, setCompanyName] = useState(profile?.companyName || '');
@@ -53,13 +57,21 @@ export const AccountProfileView: React.FC = () => {
     setSaveMessage(null);
 
     try {
+      const profileUpdates = { companyName: companyName.trim(), phoneNumber: phoneNumber.trim() };
+      // Enregistre d'abord les champs métier de l'assistant pour éviter d'afficher
+      // un succès si la mise à jour côté assistant échoue.
+      await onAssistantProfileUpdate?.(profileUpdates);
       await updateUserAccountProfile(user.uid, {
         displayName: displayName.trim(),
-        companyName: companyName.trim(),
-        phoneNumber: phoneNumber.trim(),
+        ...profileUpdates,
         photoURL: photoURL.trim(),
       });
-      setSaveMessage({ type: 'success', text: 'Profil et informations entreprise mis à jour avec succès !' });
+      updateProfile?.({
+        displayName: displayName.trim(),
+        ...profileUpdates,
+        photoURL: photoURL.trim(),
+      });
+      setSaveMessage({ type: 'success', text: 'Profil et informations de l’assistant mis à jour avec succès !' });
       setTimeout(() => setSaveMessage(null), 4000);
     } catch (err: any) {
       setSaveMessage({ type: 'error', text: err.message || 'Erreur lors de la mise à jour.' });
@@ -165,10 +177,11 @@ export const AccountProfileView: React.FC = () => {
 
           {/* Company Name */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Nom de l'Entreprise</label>
+            <label htmlFor="profile-company-name" className="block text-xs font-semibold text-slate-700">Nom de l'Entreprise</label>
             <div className="relative">
               <Building className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
+                id="profile-company-name"
                 type="text"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
@@ -197,10 +210,11 @@ export const AccountProfileView: React.FC = () => {
 
           {/* Phone Number / WhatsApp */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">Téléphone / WhatsApp</label>
+            <label htmlFor="profile-phone-number" className="block text-xs font-semibold text-slate-700">Téléphone / WhatsApp</label>
             <div className="relative">
               <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
+                id="profile-phone-number"
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}

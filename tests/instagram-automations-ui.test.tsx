@@ -474,6 +474,8 @@ describe('Automatisations — « est-ce que ça marche ? »', () => {
     be.supabase.tables.instagram_integrations = [];
     mount();
     expect((await screen.findByTestId('health-title')).textContent).toBe('Instagram n’est pas encore connecté');
+    expect(screen.getByRole('heading', { name: 'Connecte Instagram pour continuer' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Nouvelle automatisation/ })).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: 'Connecter Instagram' }));
     expect(goToInstagram).toHaveBeenCalledWith('connect');
   });

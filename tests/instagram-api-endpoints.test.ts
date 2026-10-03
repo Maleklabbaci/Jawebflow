@@ -57,6 +57,14 @@ describe('/api/instagram/automations', () => {
     expect(create.json.setupRequired).toBe(true);
   });
 
+  it('refuse de créer une automatisation avant la connexion Instagram', async () => {
+    fx.supabase.tables.instagram_integrations = [];
+    const res = await call(automations.onRequestPost, 'POST', '/api/instagram/automations', { body: { automation: validComment() } });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toMatch(/Connecte et vérifie ton compte Instagram/);
+    expect(fx.supabase.rows('ig_automations')).toHaveLength(0);
+  });
+
   it('crée, liste, active, modifie, duplique et supprime', async () => {
     const created = await call(automations.onRequestPost, 'POST', '/api/instagram/automations', { body: { automation: validComment() } });
     expect(created.status).toBe(201);

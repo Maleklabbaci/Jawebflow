@@ -104,9 +104,8 @@ describe('où trouver « Parler à mon IA »', () => {
     expect(screen.getByRole('textbox', { name: 'Ton message pour mon IA' })).toBeTruthy();
     expect(document.getElementById('copilot-launcher')).toBeNull();
     expect(screen.queryByRole('dialog', { name: 'Discussion avec mon IA' })).toBeNull();
-    // l'entrée du menu met le curseur dans le champ de texte
-    fireEvent.click(document.getElementById('nav-copilot')!);
-    expect(document.activeElement).toBe(chatBox());
+    // Sur l’Accueil, le chat est déjà ouvert dans la page : aucun bouton ni ouverture séparée.
+    expect(document.getElementById('nav-copilot')).toBeNull();
 
     // Sur un autre écran : bouton flottant → fenêtre
     goTo('behavior');
@@ -121,14 +120,14 @@ describe('où trouver « Parler à mon IA »', () => {
     expect(screen.queryByRole('dialog', { name: 'Discussion avec mon IA' })).toBeNull();
     expect(document.getElementById('copilot-launcher')).toBeTruthy();
 
-    fireEvent.click(document.getElementById('nav-copilot')!);
+    fireEvent.click(document.getElementById('copilot-launcher')!);
     expect(await screen.findByRole('dialog', { name: 'Discussion avec mon IA' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
 
-    // L'ancien Accueil s'appelle « Résumé » : son bouton « Parler à mon IA » ouvre la fenêtre
+    // Le bouton flottant reste accessible depuis le Résumé.
     fireEvent.click(document.getElementById('nav-summary')!);
     await settle(60);
-    fireEvent.click(within(document.querySelector('main')!).getByRole('button', { name: /Parler à mon IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Parler à mon IA/ }));
     expect(await screen.findByRole('dialog', { name: 'Discussion avec mon IA' })).toBeTruthy();
     expect(errors, errors.join('\n')).toEqual([]);
   });
@@ -234,7 +233,7 @@ describe('« Mes informations » : l’ajout éclair marche, et mène au chat po
     await settle();
     gemini.next({ candidates: [{ content: { parts: [{ text: JSON.stringify({ action: 'add', title: 'Coque Spiderman', category: 'produits', content: 'Coque Spiderman — iPhone 13 à 16 — 1900 DA' }) }] } }] });
 
-    const input = await screen.findByPlaceholderText(/Ex : j'ai ajouté le produit spiderman/);
+    const input = await screen.findByPlaceholderText(/Ex : ajout d'une prestation/);
     const card = input.closest('div.space-y-2') as HTMLElement; // la carte « Ajout éclair »
     fireEvent.change(input, { target: { value: 'j’ai ajouté la coque spiderman à 1900 DA' } });
     fireEvent.click(within(card).getByRole('button', { name: 'Enregistrer' }));

@@ -195,7 +195,7 @@ describe('barre latérale épurée, abonnement et profil en haut à droite', () 
       if (gone === 'Espace client') continue; // la légende du logo reste
       expect(side.textContent, `« ${gone} » ne doit plus être dans la barre latérale`).not.toContain(gone);
     }
-    expect(side.textContent).toContain('JawebFlow');
+    expect(side.querySelector('img[alt="JawebFlow"]')).toBeTruthy();
     expect(side.querySelectorAll('nav button').length).toBe(6); // 6 entrées : une seule plateforme
   });
 
