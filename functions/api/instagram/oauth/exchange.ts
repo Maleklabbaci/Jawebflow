@@ -209,7 +209,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
         const profileResponse = await fetch(candidate.url, {
           method: "GET"
         });
-        const pData = await profileResponse.json().catch(() => ({})) as any;
+        const pRaw = await profileResponse.json().catch(() => ({})) as any;
+        // Meta peut renvoyer {data:[{...}]} selon la version de l'API
+        const pData = Array.isArray(pRaw?.data) ? (pRaw.data[0] || {}) : pRaw;
+        if (!profileResponse.ok || !(pData.id || pData.user_id)) {
+          console.warn("[instagram][exchange] Profile raw:", JSON.stringify(pRaw).slice(0, 300));
+        }
         
         console.log("[instagram][exchange] Profile response:", {
           status: profileResponse.status,
@@ -229,6 +234,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
         const pErr = pFetchErr?.message || "Network error";
         profileErrors.push(pErr);
       }
+    }
+
+    // Repli : le token contient déjà l'ID professionnel (user_id) ; on ne bloque pas si /me échoue
+    if (!profile && tokenUserId) {
+      console.warn("[instagram][exchange] /me failed, fallback on token user_id", profileErrors);
+      profile = { user_id: tokenUserId, username: "" };
     }
 
     if (!profile) {
