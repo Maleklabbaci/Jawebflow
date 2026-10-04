@@ -73,7 +73,6 @@ import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
-import { SubTabs } from './dashboard/SubTabs';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
@@ -132,13 +131,15 @@ const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: Dashboar
 const groupOf = (id: DashboardSectionId): string | null =>
   Object.keys(SECTION_GROUPS).find((g) => SECTION_GROUPS[g].tabs.some((t) => t.id === id)) || null;
 
+const menuGroupOf = (id: DashboardSectionId): string | null => groupOf(id) || (id === 'leads' ? 'clients' : null);
+
 const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
   { id: 'summary', label: 'Résumé', icon: TrendingUp },
   { id: 'knowledge', label: 'Mon assistant', icon: Bot, group: 'assistant' },
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
   { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
-  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true },
+  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true, group: 'clients' },
   { id: 'orders', label: 'Commandes', icon: ShoppingCart, pro: true },
 ];
 
@@ -187,7 +188,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [currentSection, setCurrentSection] = useState<DashboardSectionId>(
     (initialSection as DashboardSectionId) || 'overview'
   );
-  const [channelsMenuOpen, setChannelsMenuOpen] = useState(() => groupOf(initialSection as DashboardSectionId) === 'channels');
+  const [openGroup, setOpenGroup] = useState<string | null>(() => menuGroupOf(initialSection as DashboardSectionId));
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
   // Venue des Automatisations : l'onglet Instagram met en avant « Autoriser les commentaires ».
   const [instagramFocus, setInstagramFocus] = useState<'comments' | null>(null);
@@ -202,7 +203,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   useEffect(() => {
     if (initialSection && initialSection !== currentSection) {
       setCurrentSection(initialSection as DashboardSectionId);
-      setChannelsMenuOpen(groupOf(initialSection as DashboardSectionId) === 'channels');
+      setOpenGroup(menuGroupOf(initialSection as DashboardSectionId));
     }
   }, [initialSection]);
 
@@ -232,7 +233,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
-    setChannelsMenuOpen(groupOf(section) === 'channels');
+    setOpenGroup(menuGroupOf(section));
     setMobileMenuOpen(false);
     setAccountMenuOpen(false);
     if (onNavigate) {
@@ -1428,6 +1429,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return null;
   })();
 
+  const renewalDate = (usageInfo as any)?.daysLeft != null ? new Date(Date.now() + (usageInfo as any).daysLeft * 86400000) : null;
+  const renewalShort = renewalDate ? renewalDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null;
+  const renewalLong = renewalDate ? renewalDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
   return (
     <div className="dash-theme min-h-screen bg-white text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
       
@@ -1474,74 +1479,81 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             <div className="space-y-1">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
-                const isActive = item.group ? groupOf(currentSection) === item.group : currentSection === item.id;
-                const badge = item.id === 'leads' ? String(leadsList.length) : item.id === 'orders' ? String(leadsList.reduce((count, lead) => count + (lead.orders?.length || 0), 0)) : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length) : null;
+                const group = item.group;
+                const isActive = group ? menuGroupOf(currentSection) === group : currentSection === item.id;
+                const isOpen = !!group && openGroup === group;
+                const orderCount = leadsList.reduce((count, lead) => count + (lead.orders?.length || 0), 0);
+                const badge = item.id === 'leads' && leadsList.length > 0
+                  ? String(leadsList.length)
+                  : item.id === 'orders' && orderCount > 0
+                    ? String(orderCount)
+                    : item.id === 'knowledge'
+                      ? String(knowledgeNotes.filter((n) => n.enabled).length)
+                      : null;
+                const subItems: Array<{ key: string; label: string; selected: boolean; onSelect: () => void }> = !group ? [] : group === 'clients'
+                  ? [
+                      { key: 'analytics', label: "Vue d'ensemble", selected: currentSection === 'leads' && insightsTab === 'analytics', onSelect: () => { setInsightsTab('analytics'); handleSectionChange('leads'); } },
+                      { key: 'prospects', label: 'Mes clients', selected: currentSection === 'leads' && insightsTab === 'prospects', onSelect: () => { setInsightsTab('prospects'); handleSectionChange('leads'); } },
+                    ]
+                  : SECTION_GROUPS[group].tabs.map((tab) => ({ key: tab.id, label: tab.label, selected: currentSection === tab.id, onSelect: () => handleSectionChange(tab.id) }));
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    id={`nav-${item.id}`}
-                    title={item.label}
-                    aria-current={isActive && item.group !== 'channels' ? 'page' : undefined}
-                    aria-expanded={item.group === 'channels' ? channelsMenuOpen : undefined}
-                    aria-controls={item.group === 'channels' ? 'channels-submenu' : undefined}
-                    onClick={() => {
-                      if (item.group === 'channels') {
-                        if (groupOf(currentSection) !== 'channels') {
-                          const keepDrawerOpen = mobileMenuOpen;
-                          handleSectionChange('integration');
-                          if (keepDrawerOpen) setMobileMenuOpen(true);
-                        } else setChannelsMenuOpen((open) => !open);
-                      } else handleSectionChange(item.id);
-                    }}
-                    className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
-                        : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="relative shrink-0">
-                      <Icon className={`h-[19px] w-[19px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
-                      {badge && badge !== '0' && (
-                        <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
+                  <div key={item.id}>
+                    <button
+                      type="button"
+                      id={`nav-${item.id}`}
+                      title={item.label}
+                      aria-current={isActive && !group ? 'page' : undefined}
+                      aria-expanded={group ? isOpen : undefined}
+                      aria-controls={group ? `submenu-${group}` : undefined}
+                      onClick={() => {
+                        if (!group) { handleSectionChange(item.id); return; }
+                        setOpenGroup((g) => (g === group ? null : group));
+                      }}
+                      className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] outline-none transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 focus-visible:ring-offset-2 ${
+                        isActive
+                          ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                          : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon className={`h-[19px] w-[19px] shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                      <span className="flex-1 truncate text-left">{item.label}</span>
+                      {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
+                      {badge && (
+                        <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${isActive ? 'bg-white/25 text-white' : 'bg-[#efe9ff] text-[#5a2cff]'}`}>
                           {badge}
                         </span>
                       )}
-                    </span>
-                    <span className="flex-1 truncate text-left">{item.label}</span>
-                    {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
-                    {item.group === 'channels' && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${channelsMenuOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
-                  </button>
+                      {group && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
+                    </button>
+                    {group && (
+                      <div
+                        id={`submenu-${group}`}
+                        aria-hidden={!isOpen}
+                        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          <div className="ml-[25px] mt-1 space-y-0.5 border-l border-slate-200 pl-[10px] pb-1">
+                            {subItems.map((sub, index) => (
+                              <button
+                                key={sub.key}
+                                type="button"
+                                tabIndex={isOpen ? 0 : -1}
+                                onClick={sub.onSelect}
+                                data-tab={sub.key}
+                                aria-current={sub.selected ? 'page' : undefined}
+                                className={`flex h-9 w-full items-center rounded-full px-[11px] text-left text-[13px] outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 ${sub.selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-[#f7f5ff] hover:text-slate-900'}`}
+                                style={{ transitionDelay: isOpen ? `${index * 35}ms` : '0ms', transform: isOpen ? 'translateY(0)' : 'translateY(-4px)' }}
+                              >
+                                <span className="truncate">{sub.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-              <div
-                id="channels-submenu"
-                aria-hidden={!channelsMenuOpen}
-                className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out ${channelsMenuOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-3 pb-1">
-                    {SECTION_GROUPS.channels.tabs.map((tab, index) => {
-                      const selected = currentSection === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          tabIndex={channelsMenuOpen ? 0 : -1}
-                          onClick={() => handleSectionChange(tab.id)}
-                          data-tab={tab.id}
-                          aria-current={selected ? 'page' : undefined}
-                          className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-[13px] transition-all duration-200 ${selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
-                          style={{ transitionDelay: channelsMenuOpen ? `${index * 35}ms` : '0ms', transform: channelsMenuOpen ? 'translateY(0)' : 'translateY(-4px)' }}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#5a2cff]' : 'bg-slate-300'}`} />
-                          {tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
             </div>
           </nav>
         </div>
@@ -1563,7 +1575,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       <div className={`flex-1 min-w-0 lg:ml-64 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
         
         {/* Sticky Top Header Bar */}
-        <header className="sticky top-0 z-20 flex h-[72px] shrink-0 items-center justify-between gap-4 bg-white/95 px-4 backdrop-blur sm:px-8">
+        <header className="sticky top-0 z-20 h-[72px] shrink-0 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex h-full w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -1577,17 +1590,17 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               <h1 className="dash-title truncate text-lg sm:text-2xl">
                 {currentSection === 'overview' && 'Accueil'}
                 {currentSection === 'summary' && 'Résumé'}
-                {groupOf(currentSection) === 'assistant' && SECTION_GROUPS.assistant.title}
-                {groupOf(currentSection) === 'channels' && SECTION_GROUPS.channels.title}
                 {currentSection === 'simulator' && 'Tester mon assistant'}
-                {currentSection === 'leads' && 'Mes clients'}
-                {currentSection === 'orders' && 'Commandes'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
+                {currentSection === 'orders' && 'Commandes'}
+                {currentSection === 'leads' && (insightsTab === 'prospects' ? 'Mes clients' : "Vue d'ensemble")}
+                {groupOf(currentSection) && SECTION_GROUPS[groupOf(currentSection) as string].tabs.find((t) => t.id === currentSection)?.label}
               </h1>
-              {currentSection !== 'overview' && (
-                <p className="dash-subtitle truncate text-xs">{businessName || 'Assistant en configuration'}</p>
-              )}
+              <p className="dash-subtitle truncate text-xs">
+                {groupOf(currentSection) ? `${SECTION_GROUPS[groupOf(currentSection) as string].title} · ` : currentSection === 'leads' ? 'Clients · ' : ''}
+                {businessName || 'Assistant en configuration'}
+              </p>
             </div>
           </div>
 
@@ -1690,6 +1703,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               )}
             </div>
           </div>
+        </div>
         </header>
 
         {/* Feuille lavande aux grands angles arrondis (comme les plateformes modernes) */}
@@ -1700,14 +1714,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
-          {groupOf(currentSection) === 'assistant' && (
-            <SubTabs
-              tabs={SECTION_GROUPS[groupOf(currentSection) as string].tabs}
-              active={currentSection}
-              onChange={(id) => handleSectionChange(id)}
-            />
-          )}
-
           {currentSection === 'overview' && (
             // « Bonjour {prénom} » + grand champ de texte : le chat « Mon IA » s'affiche ici (voir <CopilotChat mode="page" />).
             <div ref={setCopilotHost} className="h-full" data-testid="copilot-home-host" />
@@ -2622,42 +2628,22 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
             return (
               <div className="space-y-6 animate-in fade-in duration-200">
-                {/* Insights vs CRM Tabs */}
-                <div className="flex w-full gap-2 sm:w-max">
-                  <button
-                    onClick={() => setInsightsTab('analytics')}
-                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
-                      insightsTab === 'analytics' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
-                    }`}
-                  >
-                    Vue d'ensemble
-                  </button>
-                  <button
-                    onClick={() => setInsightsTab('prospects')}
-                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
-                      insightsTab === 'prospects' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
-                    }`}
-                  >
-                    Mes clients
-                  </button>
-                </div>
-
                 {insightsTab === 'analytics' ? (
                   <InsightsDashboard user={user} />
                 ) : (
                   <>
                     {/* Export : une carte simple, deux boutons */}
                 <div className="flex flex-col gap-4 rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(27,22,71,0.04)] sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="text-base">Mes clients intéressés</h3>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base">Exporter mes contacts</h3>
                     <p className="mt-0.5 text-sm text-slate-500">{totalTracked} client{totalTracked > 1 ? 's' : ''} enregistré{totalTracked > 1 ? 's' : ''}. Télécharge la liste pour l’ouvrir dans Excel ou l’importer dans tes contacts.</p>
                   </div>
-                  <div className="flex flex-wrap gap-2.5">
+                  <div className="flex shrink-0 flex-wrap gap-2.5 sm:flex-nowrap">
                     <button
                       type="button"
                       onClick={handleExportCSV}
                       disabled={leadsList.length === 0}
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
+                      className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
                     >
                       <Download className="h-4 w-4" /> Télécharger la liste
                     </button>
@@ -2665,7 +2651,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       type="button"
                       onClick={handleExportAdsCSV}
                       disabled={leadsList.length === 0}
-                      className="inline-flex items-center gap-2 rounded-full bg-[#f1eaff] px-5 py-2.5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
+                      className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[#f1eaff] px-5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
                     >
                       <Target className="h-4 w-4" /> Pour mes publicités
                     </button>
@@ -3462,7 +3448,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               SECTION: BILLING & PLAN (Professional SaaS Billing Dashboard)
               ================================================================= */}
           {currentSection === 'billing' && (
-            <div className="p-4 sm:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-200">
+            <div className="space-y-8 animate-in fade-in duration-200">
               
               {/* Notification Banner */}
               {billingNotification && (
@@ -3524,28 +3510,25 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   {/* Page Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-2">
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
-                      Abonnement Actif
+                      {activePlan === 'free' ? 'Formule gratuite' : 'Abonnement actif'}
                     </span>
-                    <span className="text-xs text-slate-400">· Renouvellement le 28/09/2026</span>
+                    {renewalShort && <span className="text-xs text-slate-400">· Renouvellement le {renewalShort}</span>}
                   </div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    Mon Plan & Facturation
-                  </h1>
-                  <p className="text-sm text-slate-500 mt-1">
+                  <p className="text-sm text-slate-500">
                     Gérez vos crédits de conversation, votre abonnement et accédez à vos factures.
                   </p>
                 </div>
 
                 {/* Billing Cycle Toggle */}
-                <div className="inline-flex items-center p-1 rounded-xl bg-slate-200/70 border border-slate-300 shrink-0 self-start sm:self-auto">
+                <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white shadow-[0_1px_2px_rgba(27,22,71,0.06)] shrink-0 self-start sm:self-auto">
                   <button
                     type="button"
                     onClick={() => setBillingCycle('monthly')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
                       billingCycle === 'monthly'
-                        ? 'bg-white text-slate-900 shadow-sm'
+                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -3554,9 +3537,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   <button
                     type="button"
                     onClick={() => setBillingCycle('yearly')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
                       billingCycle === 'yearly'
-                        ? 'bg-purple-600 text-white shadow-sm'
+                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -3572,7 +3555,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* Active Plan Overview Card */}
-                <div className="lg:col-span-1 bg-slate-900 rounded-xl p-6 text-white flex flex-col justify-between">
+                <div className="lg:col-span-1 bg-[#1b1647] rounded-[24px] p-6 text-white flex flex-col justify-between">
                   
                   <div>
                     <div className="flex items-center justify-between mb-4">
@@ -3610,11 +3593,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     <div className="space-y-2.5 pt-4 border-t border-white/10 text-xs text-purple-100">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-400">Prochain paiement</span>
-                        <span className="font-semibold">28 Sept. 2026</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Statut</span>
-                        <span className="font-medium text-emerald-300">Actif</span>
+                        <span className="font-semibold">{renewalLong}</span>
                       </div>
                     </div>
                   </div>
@@ -3633,8 +3612,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 </div>
 
                 {/* Mon utilisation : deux chiffres, pas plus */}
-                <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-200 flex flex-col justify-between">
-                  <div>
+                <div className="lg:col-span-2 bg-white rounded-[24px] p-6 shadow-[0_1px_2px_rgba(27,22,71,0.04)] flex flex-col">
+                  <div className="flex flex-1 flex-col">
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <h2 className="text-base font-semibold text-slate-900">Mon utilisation</h2>
@@ -3645,8 +3624,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div className="p-4 rounded-lg border border-slate-200 space-y-3">
+                    <div className="grid flex-1 grid-cols-1 gap-4">
+                      <div className="flex flex-col justify-center gap-3 rounded-2xl bg-[#f7f8fd] p-5">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-slate-600">Clients intéressés</span>
                           <span className="font-semibold text-slate-900 tabular-nums">
@@ -3657,9 +3636,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </span>
                           </span>
                         </div>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="w-full h-2 bg-white rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-slate-900 rounded-full"
+                            className="h-full bg-[#5a2cff] rounded-full"
                             style={{
                               width: `${activePlan === 'free' ? 0 : activePlan === 'basic' ? Math.min(100, Math.round((leadsList.length / 1000) * 100)) : activePlan === 'pro' ? Math.min(100, Math.round((leadsList.length / 5000) * 100)) : 4}%`
                             }}
@@ -3668,7 +3647,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         <p className="text-xs text-slate-400">Depuis le début de votre abonnement</p>
                       </div>
 
-                      <div className="p-4 rounded-lg border border-slate-200 space-y-3">
+                      <div className="flex flex-col justify-center gap-3 rounded-2xl bg-[#f7f8fd] p-5">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-slate-600">Informations enregistrées</span>
                           <span className="font-semibold text-slate-900 tabular-nums">
@@ -3679,9 +3658,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </span>
                           </span>
                         </div>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="w-full h-2 bg-white rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-slate-900 rounded-full"
+                            className="h-full bg-[#5a2cff] rounded-full"
                             style={{ width: `${Math.min(100, (knowledgeNotes.filter(n => n.enabled).length / (activePlan === 'free' ? 3 : activePlan === 'basic' ? 10 : 50)) * 100)}%` }}
                           />
                         </div>
@@ -3694,7 +3673,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
               {/* Plans Comparison Section */}
               <div className="space-y-6 pt-4">
-                <div className="text-center max-w-xl mx-auto">
+                <div>
                   <h2 className="text-xl font-extrabold text-slate-900">Changer de formule</h2>
                   <p className="text-xs text-slate-500 mt-1">
                     Vous pouvez changer de formule ou arrêter à tout moment.
