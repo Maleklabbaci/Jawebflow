@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import {
   Check,
+  X,
   ShieldCheck,
   HelpCircle,
   ArrowRight,
   Zap,
   FileText,
   Lock,
-  RefreshCw
+  RefreshCw,
+  Info
 } from 'lucide-react';
 import { PaymentPlanId } from '../types';
+import { PLAN_TRUTH, conversationsLabel, QUOTA_EXPLAINER } from '../lib/plans';
 
 interface PricingPageProps {
   onOpenAssistantModal: () => void;
@@ -20,11 +23,15 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [showFaq, setShowFaq] = useState(false);
 
+  // ⚠️ Chaque ligne ci-dessous correspond à quelque chose que le code fait
+  // réellement (voir src/lib/plans.ts → PLAN_TRUTH). Ne jamais y ajouter une
+  // promesse non implémentée : WhatsApp, par exemple, est annoncé comme
+  // « en préparation », jamais comme inclus.
   const plans = [
     {
       id: 'free' as PaymentPlanId,
       name: 'Découverte',
-      subtitle: 'Pour tester la plateforme et préparer votre intégration sans risque.',
+      subtitle: 'Pour tout préparer et voir l’outil de l’intérieur, sans dépenser un dinar.',
       priceUsdMonthly: 0,
       priceDzdMonthly: 0,
       priceUsdYearly: 0,
@@ -32,10 +39,15 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       badge: 'Gratuit',
       isPopular: false,
       features: [
-        'Accès complet au tableau de bord et à la configuration',
-        'Installation du widget sur votre site web',
-        'Connexion à Instagram & canaux externes',
-        'Aucun crédit de réponse IA inclus (pour tester la mise en place)',
+        'Tout le tableau de bord : informations, apparence, tests, statistiques',
+        'Installation de la bulle sur votre site',
+        'Connexion Instagram possible',
+        'Vous voyez exactement ce que verront vos visiteurs',
+      ],
+      notIncluded: [
+        'Réponses automatiques de l’IA',
+        'Coordonnées des clients enregistrées',
+        'Import automatique de votre site',
       ],
       ctaText: 'Commencer gratuitement',
       action: 'signup' as const,
@@ -43,7 +55,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
     {
       id: 'basic' as PaymentPlanId,
       name: 'Basic',
-      subtitle: 'Pour installer votre premier assistant et ne plus perdre une demande.',
+      subtitle: 'Pour arrêter de perdre les demandes qui arrivent en dehors de vos horaires.',
       priceUsdMonthly: 29,
       priceDzdMonthly: 6850,
       priceUsdYearly: 23,
@@ -51,19 +63,23 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       badge: '100% Web',
       isPopular: false,
       features: [
-        'Widget web universel (Shopify, WordPress, Webflow, site sur mesure)',
-        'Jusqu’à 1 000 conversations par mois',
-        'Base de connaissances : FAQ, catalogue, consignes',
+        `Jusqu’à ${conversationsLabel('basic')} conversations par mois`,
+        `Bulle de discussion sur votre site (WordPress, Shopify, Wix, Webflow, sur mesure)`,
+        'Vos informations : prix, horaires, livraison, FAQ, catalogues',
+        `${PLAN_TRUTH.basic.scans} imports / analyses de votre site par mois`,
+        'Coordonnées des clients intéressés enregistrées automatiquement (nom, téléphone, ville)',
         'Français, darija et anglais compris automatiquement',
-        'Facture d’entreprise conforme (NIF, NIS, RC) sur demande'
+        'Connexion Instagram : réponses dans vos DM',
+        'Facture d’entreprise conforme (NIF, NIS, RC) sur demande',
       ],
+      notIncluded: ['WhatsApp (en préparation)'],
       ctaText: 'Choisir Basic',
       action: 'checkout' as const,
     },
     {
       id: 'pro' as PaymentPlanId,
       name: 'Pro / Business',
-      subtitle: 'Pour vendre plus, avec les clients intéressés livrés dans votre espace.',
+      subtitle: 'Pour vendre plus : cinq fois le volume, et tout ce que Basic contient déjà.',
       priceUsdMonthly: 79,
       priceDzdMonthly: 18700,
       priceUsdYearly: 63,
@@ -71,19 +87,23 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       badge: 'Le plus choisi',
       isPopular: true,
       features: [
-        'Widget web illimité pour tous vos sites',
-        'Jusqu’à 5 000 conversations par mois',
-        'Détection automatique des clients intéressés (nom, téléphone, ville)',
-        'Accès anticipé WhatsApp & réseaux sociaux (prochainement)',
-        'Support prioritaire et IA optimisée pour la conversion'
+        `Jusqu’à ${conversationsLabel('pro')} conversations par mois (5× Basic)`,
+        `Tous vos sites et tous vos assistants, sans supplément`,
+        `Connexion Instagram : réponses dans vos DM`,
+        `Coordonnées des clients intéressés enregistrées automatiquement`,
+        `${PLAN_TRUTH.pro.scans} imports / analyses de votre site par mois (2× Basic)`,
+        'Marge de volume plus large avant la pause automatique de fin de forfait',
+        'Assistance prioritaire',
+        'Nouveaux canaux en avant-première (WhatsApp en préparation)',
       ],
+      notIncluded: [],
       ctaText: 'Choisir Pro',
       action: 'checkout' as const,
     },
     {
       id: 'enterprise' as PaymentPlanId,
       name: 'Enterprise',
-      subtitle: 'Pour les réseaux, franchises et architectures sur mesure.',
+      subtitle: 'Pour les réseaux, les franchises et les besoins particuliers.',
       priceUsdMonthly: 199,
       priceDzdMonthly: 47100,
       priceUsdYearly: 159,
@@ -91,12 +111,14 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       badge: 'Sur-mesure & API',
       isPopular: false,
       features: [
-        'Volume élevé ou conversations illimitées',
-        'Tous les canaux dès leur disponibilité (web, WhatsApp, réseaux)',
+        'Volume très élevé : au-delà de 5 000 conversations par mois',
+        `${PLAN_TRUTH.enterprise.scans} imports / analyses de votre site par mois`,
+        'Tous vos sites, tous vos assistants, plusieurs langues',
         'Intégrations sur mesure (CRM, outils de gestion, Google Sheets)',
         'Accompagnement dédié et configuration sur site',
-        'Devis proforma et convention annuelle adaptés à vos procédures'
+        'Devis proforma et convention annuelle adaptés à vos procédures',
       ],
+      notIncluded: ['WhatsApp (en préparation)'],
       ctaText: 'Demander une étude',
       action: 'contact' as const,
     }
@@ -111,23 +133,27 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
   const faqs = [
     {
       q: 'Comment se règle l’abonnement ?',
-      a: 'Par carte bancaire, virement ou selon les procédures de facturation de votre entreprise, avec devis proforma et reçu conforme (NIF, NIS, RC, RIB) si vous le souhaitez.'
+      a: 'Par carte bancaire, virement ou selon les procédures de facturation de votre entreprise, avec devis proforma et facture conforme (NIF, NIS, RC, RIB) si vous le souhaitez.'
     },
     {
-      q: 'Puis-je essayer avant de payer ?',
-      a: 'Oui. La formule Découverte est gratuite et vous permet de tout configurer et de tester l’installation. Vous ne payez que lorsque vous voulez activer les réponses automatiques.'
+      q: 'Le plan gratuit répond-il vraiment à mes clients ?',
+      a: 'Non, et c’est volontaire : le plan Découverte sert à tout préparer (informations, apparence, tests, installation) sans payer. Les réponses automatiques de l’IA s’activent dès que vous passez sur Basic, Pro ou Enterprise. Un visiteur qui écrit reçoit alors un message l’informant que l’assistant n’est pas encore activé — jamais une erreur technique.'
     },
     {
-      q: 'Que signifie « conversations par mois » ?',
-      a: 'Une conversation correspond à un échange suivi avec un même visiteur. Les questions répétées d’un même client dans la même discussion ne comptent pas plusieurs fois.'
+      q: 'Comment se compte une « conversation » ?',
+      a: QUOTA_EXPLAINER + ' Le quota se remet à zéro le 1er de chaque mois.'
     },
     {
-      q: 'Quand arrivent WhatsApp et les réseaux sociaux ?',
-      a: 'Le déploiement est en phase finale. Les abonnés Pro et Enterprise seront automatiquement activés dès la mise à disposition, sans changement de prix.'
+      q: 'Que se passe-t-il si j’atteins la limite du mois ?',
+      a: 'L’assistant se met en pause automatiquement et le visiteur reçoit un message courtois. Aucune facture surprise : vous êtes prévenu dans votre tableau de bord, et tout reprend le 1er du mois suivant. Vous pouvez aussi passer à la formule supérieure en un clic.'
+    },
+    {
+      q: 'Instagram et WhatsApp sont-ils inclus ?',
+      a: 'Instagram est disponible dès la formule Basic : vous connectez votre compte et l’assistant répond dans vos DM avec vos informations. WhatsApp Business est encore en préparation : les abonnés Pro et Enterprise seront activés dès sa sortie, sans changement de prix.'
     },
     {
       q: 'Puis-je commencer en Basic et passer en Pro ensuite ?',
-      a: 'Oui, à tout moment et en un clic, pour augmenter votre volume ou activer les nouveaux canaux dès leur sortie.'
+      a: 'Oui, à tout moment et en un clic, sans perdre vos informations ni votre historique.'
     },
     {
       q: 'Faut-il des compétences techniques pour installer le widget ?',
@@ -203,52 +229,67 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
                 plan.isPopular ? 'border-purple-400/35 bg-purple-500/[0.07]' : 'lux-card-hover'
               }`}
             >
-              {plan.isPopular && (
-                <div className="mb-4 self-start rounded-full border border-purple-400/35 bg-purple-500/15 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-purple-100">
-                  {plan.badge}
-                </div>
-              )}
-              {!plan.isPopular && (
-                <div className="mb-4 self-start text-[0.6rem] font-medium uppercase tracking-[0.14em] text-neutral-500">
-                  {plan.badge}
-                </div>
-              )}
+              <div>
+                {plan.isPopular ? (
+                  <div className="mb-4 self-start rounded-full border border-purple-400/35 bg-purple-500/15 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-purple-100">
+                    {plan.badge}
+                  </div>
+                ) : (
+                  <div className="mb-4 text-[0.6rem] font-medium uppercase tracking-[0.14em] text-neutral-500">
+                    {plan.badge}
+                  </div>
+                )}
 
-              <div className="space-y-5">
-                <div>
-                  <h3 className="lux-h3 text-[1.15rem]">{plan.name}</h3>
-                  <p className="lux-sub mt-1.5 min-h-[42px] text-[0.8rem]">{plan.subtitle}</p>
-                </div>
-
-                <div className="space-y-1.5 border-b border-white/[0.07] pb-5">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[2rem] font-extrabold tracking-[-0.04em] text-white">
-                      {priceUsd} $
-                    </span>
-                    <span className="text-[0.72rem] font-light text-neutral-500">/ mois</span>
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="lux-h3 text-[1.15rem]">{plan.name}</h3>
+                    <p className="lux-sub mt-1.5 min-h-[42px] text-[0.8rem]">{plan.subtitle}</p>
                   </div>
 
-                  <div className="text-[0.76rem] font-light text-purple-200">
-                    {priceDzd === 0 ? 'Gratuit — pour toujours' : `≈ ${priceDzd.toLocaleString('fr-FR')} DZD / mois`}
-                  </div>
-
-                  {isYearly && priceUsd > 0 && (
-                    <span className="block text-[0.7rem] font-light text-neutral-500">
-                      Facturé annuellement (-20% de remise)
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <span className="block text-[0.66rem] font-medium uppercase tracking-[0.14em] text-neutral-500">
-                    Ce que vous obtenez
-                  </span>
-                  {plan.features.map((feat) => (
-                    <div key={feat} className="flex items-start gap-2.5 text-[0.8rem] font-light leading-relaxed text-neutral-300">
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
-                      <span>{feat}</span>
+                  <div className="space-y-1.5 border-b border-white/[0.07] pb-5">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[2rem] font-extrabold tracking-[-0.04em] text-white">
+                        {priceUsd} $
+                      </span>
+                      <span className="text-[0.72rem] font-light text-neutral-500">/ mois</span>
                     </div>
-                  ))}
+
+                    <div className="text-[0.76rem] font-light text-purple-200">
+                      {priceDzd === 0 ? 'Gratuit — pour toujours' : `≈ ${priceDzd.toLocaleString('fr-FR')} DZD / mois`}
+                    </div>
+
+                    {isYearly && priceUsd > 0 && (
+                      <span className="block text-[0.7rem] font-light text-neutral-500">
+                        Facturé annuellement (-20% de remise)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <span className="block text-[0.66rem] font-medium uppercase tracking-[0.14em] text-neutral-500">
+                      Ce que vous obtenez
+                    </span>
+                    {plan.features.map((feat) => (
+                      <div key={feat} className="flex items-start gap-2.5 text-[0.8rem] font-light leading-relaxed text-neutral-300">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
+                        <span>{feat}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {plan.notIncluded.length > 0 && (
+                    <div className="space-y-2.5 border-t border-white/[0.07] pt-4">
+                      <span className="block text-[0.66rem] font-medium uppercase tracking-[0.14em] text-neutral-600">
+                        Non inclus
+                      </span>
+                      {plan.notIncluded.map((item) => (
+                        <div key={item} className="flex items-start gap-2.5 text-[0.78rem] font-light leading-relaxed text-neutral-500">
+                          <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-600" />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -264,6 +305,19 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
             </div>
           );
         })}
+      </div>
+
+      {/* Comment le compteur marche vraiment : la transparence évite les litiges */}
+      <div className="lux-card flex items-start gap-3.5 p-5 sm:p-6">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-purple-300" />
+        <div className="space-y-1.5">
+          <h2 className="text-[0.86rem] font-semibold text-white">Comment se compte une conversation ?</h2>
+          <p className="lux-sub text-[0.82rem]">{QUOTA_EXPLAINER}</p>
+          <p className="lux-note text-[0.76rem]">
+            Le compteur se remet à zéro le 1er de chaque mois. Quand la limite est atteinte, l’assistant
+            se met en pause proprement et reprend tout seul le mois suivant — sans facture surprise.
+          </p>
+        </div>
       </div>
 
       {/* Réassurance juste sous les prix */}
@@ -283,9 +337,9 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
             <FileText className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="lux-h3 text-[1rem] sm:text-[1.15rem]">
+            <h2 className="lux-h3 text-[1rem] sm:text-[1.15rem]">
               Besoin d’un bon de commande ou d’une convention annuelle ?
-            </h3>
+            </h2>
             <p className="lux-sub mt-1 text-[0.84rem]">
               Nous établissons des devis proforma officiels et des contrats adaptés aux procédures de votre entreprise.
             </p>
@@ -322,7 +376,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
                   <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-purple-300" />
                   <span>{faq.q}</span>
                 </h3>
-                <p className="lux-sub mt-2.5 pl-6 text-[0.82rem]">{faq.a}</p>
+                <p className="lux-sub mt-2.5 whitespace-pre-line pl-6 text-[0.82rem]">{faq.a}</p>
               </div>
             ))}
           </div>

@@ -3741,7 +3741,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Connexion possible à Instagram</span>
+                          <span>Connexion à Instagram (réponses IA désactivées)</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
@@ -3814,6 +3814,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                           <span>Réponses en français et en darija</span>
                         </li>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                          <span>Coordonnées des clients intéressés enregistrées</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                          <span>Instagram : réponses dans vos DM</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                          <span><strong>3</strong> imports / analyses de votre site par mois</span>
+                        </li>
                       </ul>
                     </div>
 
@@ -3867,11 +3879,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       <ul className="space-y-2.5 text-xs text-slate-600 mb-6">
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                          <span>Installation sur tous vos sites</span>
+                          <span>Tous vos sites et assistants, sans supplément</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                          <span>WhatsApp et réseaux sociaux (bientôt)</span>
+                          <span>Instagram inclus · WhatsApp en préparation</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                          <span><strong>6</strong> imports / analyses de votre site par mois</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
@@ -3942,11 +3958,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Tous les canaux inclus (Web actif + WhatsApp/Réseaux dès disponibilité)</span>
+                          <span>Web + Instagram aujourd'hui · WhatsApp dès sa disponibilité</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Conversations <strong>illimitées</strong> / volume élevé</span>
+                          <span>Volume très élevé : au-delà de <strong>5 000</strong> conversations par mois</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                          <span><strong>12</strong> imports / analyses de votre site par mois</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
