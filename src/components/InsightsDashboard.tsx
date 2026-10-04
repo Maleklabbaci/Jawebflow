@@ -105,12 +105,7 @@ export const InsightsDashboard = ({ user }: { user: any }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Clients & statistiques</h2>
-          <p className="text-sm text-slate-500">Ce que fait votre assistant et ce que vos visiteurs recherchent.</p>
-        </div>
-      </div>
+      <p className="text-sm text-slate-500">Ce que fait votre assistant et ce que vos visiteurs recherchent.</p>
 
       {/* Main KPIs Bento Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
