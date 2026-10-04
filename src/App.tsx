@@ -16,20 +16,25 @@ const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default:
 const DashboardPlatform = lazy(() => import('./components/DashboardPlatform').then((m) => ({ default: m.DashboardPlatform })));
 
 function RouteFallback() {
-  return <div className="flex min-h-[40vh] items-center justify-center text-sm text-neutral-400">Chargement…</div>;
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" />
+      <p className="text-[0.78rem] font-light tracking-[0.14em] text-neutral-500 uppercase">Chargement…</p>
+    </div>
+  );
 }
 
 /** Écran d'attente affiché pendant la restauration de la session. */
 function SplashScreen() {
+  // Même univers que le site vitrine : l'écran d'attente ne « flashe » plus en blanc
+  // avant l'ouverture d'une page publique ou de l'espace client.
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-base font-bold text-white">
-        J
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#08070f]">
+      <img src="/logo.jpg" alt="JawebFlow" className="h-11 w-11 rounded-xl object-cover" />
+      <div className="h-1 w-28 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-purple-500 to-indigo-400" />
       </div>
-      <div className="h-1 w-28 overflow-hidden rounded-full bg-slate-200">
-        <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-900" />
-      </div>
-      <p className="text-xs text-slate-400">Chargement…</p>
+      <p className="text-[0.7rem] font-light tracking-[0.16em] text-neutral-500 uppercase">Chargement…</p>
     </div>
   );
 }
