@@ -34,7 +34,7 @@ interface Message {
   verifiedSource?: string;
 }
 
-export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
+export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal, onNavigate }) => {
   const [activeSector, setActiveSector] = useState<SectorId>('services');
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -71,6 +71,12 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         'Wach takhadmou sur site w à distance ?',
         'Kifech nchoufou un créneau pour une réunion visio ?',
         'Quels sont les délais de livraison d\'un projet ?'
+      ],
+      quickAnswers: [
+        'Notre audit SEO complet (technique, contenu, concurrence) est livré sous 48h avec un rapport détaillé : 45 000 DA pour un site vitrine, 75 000 DA pour une boutique en ligne. Je vous prépare un devis proforma avec vos mentions fiscales si vous le souhaitez.',
+        'Nous travaillons partout en Algérie : 100% à distance depuis Alger, et en présentiel pour le cadrage et les ateliers à Alger, Oran et Constantine. Souhaitez-vous une réunion visio de 30 minutes ?',
+        'Voici les créneaux libres cette semaine : demain 10h00, jeudi 14h30 ou dimanche 09h30. Laissez-moi votre nom et votre numéro, je réserve le créneau et je vous envoie l\'invitation.',
+        'Un site vitrine demande 10 à 15 jours, une boutique en ligne 3 à 4 semaines et un audit SEO 48h. Dites-moi votre besoin, je vous confirme le planning exact avant toute commande.'
       ]
     },
     ecommerce: {
@@ -104,6 +110,12 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         'Est-ce que l\'huile de figue de barbarie est en stock ?',
         'Kifech nbadal si le produit ma 3ajabnich ?',
         'Je veux commander par WhatsApp direct.'
+      ],
+      quickAnswers: [
+        'Oui : -10% dès 2 produits et -15% dès 3 produits, et la livraison est offerte à partir de 7 000 DA d\'achat. Souhaitez-vous que je prépare votre panier ?',
+        'Oui, il reste 12 flacons d\'huile de figue de barbarie à 2 900 DA. Je vous en réserve un ? Donnez-moi votre nom, votre ville et votre numéro.',
+        'Vous avez 7 jours après réception pour demander un échange, si le produit n\'a pas été ouvert. Donnez-moi votre numéro de commande et je lance la procédure tout de suite.',
+        'Avec plaisir ! Laissez-moi votre numéro et le produit souhaité : notre équipe vous envoie le lien de paiement, ou le montant à régler à la livraison.'
       ]
     },
     immo: {
@@ -137,6 +149,12 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         'Y a-t-il des facilités de paiement par tranches ?',
         'Quels sont les délais de remise des clés ?',
         'Je veux réserver une visite pour ce samedi.'
+      ],
+      quickAnswers: [
+        'Sur nos résidences neuves, le prix au m² démarre à 165 000 DA, et à 210 000 DA pour les biens avec vue dégagée. Je vous envoie la grille détaillée par typologie (F2 à F5) ?',
+        'Oui : apport de 30%, puis le solde échelonné jusqu\'à 36 mois avec notre partenaire bancaire. Le livret foncier et l\'acte notarié individuel sont remis à la livraison.',
+        'Pour la résidence Les Jardins, la livraison est prévue au 2e trimestre 2027, avec un suivi de chantier envoyé chaque trimestre.',
+        'Samedi 10h00 ou 15h30 ? Notre conseiller vous confirme par téléphone. Donnez-moi votre nom et votre numéro, je bloque le créneau.'
       ]
     },
     resto: {
@@ -170,6 +188,12 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         'Quel est le menu dégustation du chef ?',
         'Est-il possible de privatiser la salle haute ?',
         'Avez-vous un espace enfants / parking ?'
+      ],
+      quickAnswers: [
+        'Oui : 4 plats certifiés sans gluten et 5 plats végétariens, préparés à la commande. Si vous avez une autre allergie, dites-le-moi, je le note sur votre réservation.',
+        'Le menu dégustation se compose de 5 services à 4 500 DA par personne (entrée, poisson, viande, fromage, dessert), du jeudi au samedi sur réservation.',
+        'Oui, la salle haute accueille jusqu\'à 40 personnes, à partir de 60 000 DA. Je vous prépare le devis et je bloque la date dès votre accord.',
+        'Oui : un espace enfants avec animateur le week-end, et un parking gratuit de 25 places pour les tables réservées.'
       ]
     },
     formation: {
@@ -203,6 +227,12 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         'Kifech ndir l\'inscription ?',
         'Quels sont les prérequis pour ce cursus ?',
         'Puis-je avoir le programme détaillé par email ?'
+      ],
+      quickAnswers: [
+        'Oui, nos cours du soir ont lieu de 18h30 à 21h00 en direct en ligne, et chaque séance est disponible en replay pendant 12 mois.',
+        'L\'inscription prend 2 minutes : une pièce d\'identité et le premier versement d\'acompte. Je peux vous envoyer le dossier prérempli dès maintenant.',
+        'Pour ce cursus, il faut un niveau bac ou une expérience professionnelle équivalente, ainsi qu\'un ordinateur pour les exercices pratiques.',
+        'Bien sûr. Laissez-moi votre adresse email : vous recevez le programme détaillé, le planning des sessions et les tarifs en PDF.'
       ]
     },
     cabinet: {
@@ -236,6 +266,12 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         'Wach kayen parking disponible ?',
         'Quels sont les documents à ramener ?',
         'Je souhaite prendre un rendez-vous pour demain.'
+      ],
+      quickAnswers: [
+        'Le cabinet se trouve au 12 rue Didouche Mourad, Alger Centre, au 3e étage (ascenseur), à 5 minutes de la station de métro Tafourah.',
+        'Oui, un parking gratuit est disponible derrière l\'immeuble, avec 10 places pour les patients.',
+        'Pour la première consultation : votre carte d\'identité ou Chifa, votre carte de mutuelle si vous en avez une, et vos analyses ou ordonnances précédentes.',
+        'Demain il reste deux créneaux : 09h30 et 15h00. Donnez-moi votre nom et votre numéro, le secrétariat vous confirme par SMS.'
       ]
     }
   };
@@ -251,6 +287,9 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
     const text = textToSend || inputValue;
     if (!text.trim()) return;
 
+    const sector = sectorConfigs[activeSector];
+    const presetIndex = sector.quickQuestions.findIndex((q) => q === text.trim());
+
     const userMsg: Message = {
       id: Date.now().toString(),
       sender: 'user',
@@ -263,6 +302,20 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
     setIsTyping(true);
 
     setTimeout(() => {
+      // 1) Une question d'exemple reçoit LA réponse du secteur concerné.
+      if (presetIndex >= 0) {
+        const presetReply: Message = {
+          id: (Date.now() + 1).toString(),
+          sender: 'bot',
+          text: sector.quickAnswers[presetIndex],
+          timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          verifiedSource: `Base de connaissances : ${sector.badge} (données du commerçant)`
+        };
+        setMessages(prev => [...prev, presetReply]);
+        setIsTyping(false);
+        return;
+      }
+
       let replyText = "Parfait ! Cette information est bien validée dans notre base de connaissances d'entreprise. Souhaitez-vous que nous passions à l'étape suivante ?";
       let source = "Base de connaissances d'entreprise : Données certifiées";
 
@@ -293,24 +346,26 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
   return (
     <div className="pt-28 pb-20 px-6 sm:px-10 lg:px-16 max-w-[1440px] mx-auto space-y-12">
       {/* Header */}
-      <div className="text-center max-w-3xl mx-auto space-y-4">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-semibold backdrop-blur-xl">
-          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-          <span>Simulateur interactif multi-métiers</span>
-        </div>
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-neutral-100">
-          Testez l'assistant en conditions réelles <br />
-          <span className="bg-gradient-to-r from-purple-300 via-fuchsia-200 to-indigo-300 bg-clip-text text-transparent">
-            sur différents profils d'entreprise.
-          </span>
+      <div className="mx-auto max-w-3xl space-y-5 text-center">
+        <span className="lux-eyebrow">
+          <Sparkles className="h-3.5 w-3.5 text-purple-300" />
+          Démo en direct · sans inscription
+        </span>
+        <h1 className="lux-h1">
+          Posez la question comme un client. <br />
+          <span className="lux-accent">Voyez la réponse qu’il recevrait.</span>
         </h1>
-        <p className="text-neutral-300 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
-          Ces scénarios démontrent la flexibilité de l'IA : elle s'adapte instantanément à votre vocabulaire, vos tarifs et vos règles de gestion.
+        <p className="lux-lead mx-auto max-w-2xl">
+          Six entreprises types, un seul assistant. Il s’adapte instantanément à votre vocabulaire,
+          vos tarifs et vos règles — en français et en darija.
+        </p>
+        <p className="lux-note text-[0.82rem]">
+          Cliquez sur un secteur, puis sur une question d’exemple : la réponse s’affiche avec sa source, comme dans votre espace client.
         </p>
       </div>
 
       {/* Sector Switcher Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 max-w-5xl mx-auto">
+      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {(Object.keys(sectorConfigs) as SectorId[]).map((key) => {
           const cfg = sectorConfigs[key];
           const Icon = cfg.icon;
@@ -319,21 +374,22 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
             <button
               key={key}
               onClick={() => handleSelectSector(key)}
-              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between backdrop-blur-xl ${
+              aria-pressed={isSelected}
+              className={`lux-card flex cursor-pointer flex-col justify-between p-3.5 text-left transition-colors ${
                 isSelected
-                  ? 'bg-purple-600/30 border-purple-500 text-white shadow-lg shadow-purple-950/50 scale-[1.02]'
-                  : 'bg-neutral-950/40 border-white/10 text-neutral-300 hover:border-white/20'
+                  ? 'border-purple-400/40 bg-purple-500/[0.09] text-white'
+                  : 'hover:border-white/20'
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <div className={`p-2 rounded-xl ${isSelected ? 'bg-purple-500 text-white' : 'bg-neutral-900 text-neutral-400'}`}>
-                  <Icon className="w-4 h-4" />
+              <div className="mb-2.5 flex items-center justify-between">
+                <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${isSelected ? 'bg-purple-600 text-white' : 'bg-white/[0.05] text-neutral-400'}`}>
+                  <Icon className="h-4 w-4" />
                 </div>
-                {isSelected && <span className="w-2 h-2 rounded-full bg-emerald-400"></span>}
+                {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>}
               </div>
               <div className="min-w-0">
-                <span className="font-semibold text-xs block truncate text-neutral-100">{cfg.badge}</span>
-                <span className="text-[10px] text-neutral-400 block truncate mt-0.5">Exemple configuré</span>
+                <span className="block truncate text-[0.76rem] font-semibold text-neutral-100">{cfg.badge}</span>
+                <span className="mt-0.5 block truncate text-[0.65rem] font-light text-neutral-500">Exemple configuré</span>
               </div>
             </button>
           );
@@ -341,73 +397,74 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
       </div>
 
       {/* Interactive Chat Playground Card */}
-      <div className="max-w-4xl mx-auto rounded-3xl bg-neutral-950/50 border border-white/10 backdrop-blur-2xl shadow-2xl shadow-purple-950/40 overflow-hidden">
+      <div className="lux-card mx-auto max-w-4xl overflow-hidden">
         {/* Chat Top Bar */}
-        <div className="p-4 sm:p-5 border-b border-white/10 bg-neutral-900/40 flex items-center justify-between">
+        <div className="flex items-center justify-between border-b border-white/[0.07] bg-white/[0.02] p-4 sm:p-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-purple-600/30">
-              <Bot className="w-5 h-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-b from-purple-500 to-purple-700 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
+              <Bot className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-neutral-100">{sectorConfigs[activeSector].name}</h3>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <h3 className="text-[0.85rem] font-semibold text-neutral-100">{sectorConfigs[activeSector].name}</h3>
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400"></span>
               </div>
-              <p className="text-[11px] text-neutral-400">{sectorConfigs[activeSector].description}</p>
+              <p className="lux-sub text-[0.72rem]">{sectorConfigs[activeSector].description}</p>
             </div>
           </div>
 
           <button
             onClick={() => setMessages(sectorConfigs[activeSector].initialMessages)}
-            className="p-2 rounded-xl bg-neutral-900/60 border border-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+            className="btn btn-sm btn-glass"
             title="Réinitialiser la conversation"
+            aria-label="Réinitialiser la conversation"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="h-3.5 w-3.5" />
           </button>
         </div>
 
         {/* Messages Stream */}
-        <div className="p-4 sm:p-6 space-y-4 min-h-[380px] max-h-[460px] overflow-y-auto">
+        <div className="min-h-[380px] max-h-[460px] space-y-4 overflow-y-auto p-4 sm:p-6">
           {messages.map((m) => (
             <div
               key={m.id}
               className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} space-y-1`}
             >
               <div
-                className={`max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl text-xs sm:text-sm leading-relaxed backdrop-blur-md ${
+                className={`max-w-[85%] rounded-2xl p-4 text-[0.82rem] font-light leading-relaxed sm:max-w-[75%] ${
                   m.sender === 'user'
-                    ? 'bg-purple-600 text-white rounded-br-none shadow-lg shadow-purple-600/30'
-                    : 'bg-neutral-900/70 border border-white/10 text-neutral-200 rounded-bl-none'
+                    ? 'rounded-br-none bg-purple-600 font-normal text-white'
+                    : 'rounded-bl-none border border-white/[0.08] bg-white/[0.035] text-neutral-200'
                 }`}
               >
                 <p>{m.text}</p>
                 {m.verifiedSource && (
-                  <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center gap-1.5 text-[11px] text-purple-300 font-medium">
-                    <ShieldCheck className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                  <div className="mt-2.5 flex items-center gap-1.5 border-t border-white/[0.08] pt-2 text-[0.68rem] font-medium text-purple-200">
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-300" />
                     <span className="truncate">{m.verifiedSource}</span>
                   </div>
                 )}
               </div>
-              <span className="text-[10px] text-neutral-500 px-1">{m.timestamp}</span>
+              <span className="px-1 text-[0.62rem] text-neutral-500">{m.timestamp}</span>
             </div>
           ))}
 
           {isTyping && (
-            <div className="flex items-center gap-2 p-3 rounded-2xl bg-neutral-900/60 border border-white/10 text-neutral-400 text-xs w-fit animate-pulse">
-              <Bot className="w-3.5 h-3.5 text-purple-400" />
-              <span>L'assistant consulte vos données...</span>
+            <div className="flex w-fit animate-pulse items-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3 text-[0.75rem] text-neutral-400">
+              <Bot className="h-3.5 w-3.5 text-purple-300" />
+              <span>L’assistant consulte vos informations…</span>
             </div>
           )}
         </div>
 
         {/* Suggested Quick Questions */}
-        <div className="px-4 sm:px-6 py-3 border-t border-white/10 bg-neutral-900/30 flex items-center gap-2 overflow-x-auto">
-          <span className="text-[11px] text-neutral-400 flex-shrink-0 font-medium">Exemples :</span>
+        <div className="flex items-center gap-2 overflow-x-auto border-t border-white/[0.07] bg-white/[0.02] px-4 py-3 sm:px-6">
+          <span className="flex-shrink-0 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-neutral-500">Essayez</span>
           {sectorConfigs[activeSector].quickQuestions.map((q, idx) => (
             <button
               key={idx}
               onClick={() => handleSendMessage(q)}
-              className="text-[11px] px-3 py-1.5 rounded-full bg-neutral-900/60 hover:bg-purple-500/20 text-neutral-300 hover:text-purple-200 border border-white/10 hover:border-purple-500/40 transition-colors whitespace-nowrap cursor-pointer flex-shrink-0"
+              className="lux-chip shrink-0"
             >
               {q}
             </button>
@@ -415,45 +472,52 @@ export const DemoPage: React.FC<DemoPageProps> = ({ onOpenAssistantModal }) => {
         </div>
 
         {/* Input Bar */}
-        <div className="p-4 border-t border-white/10 bg-neutral-900/60 flex items-center gap-2">
+        <div className="flex items-center gap-2 border-t border-white/[0.07] bg-white/[0.02] p-4">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="Posez une question en Français ou en Darija..."
-            className="flex-grow bg-neutral-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-purple-500 transition-all"
+            placeholder="Écrivez votre question, en français ou en darija…"
+            aria-label="Votre question pour la démo"
+            className="lux-input flex-grow"
           />
           <button
             onClick={() => handleSendMessage()}
             disabled={!inputValue.trim()}
-            className="p-2.5 sm:px-4 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:hover:bg-purple-600 text-white font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-purple-600/30"
+            className="btn btn-primary shrink-0 px-4 py-2.5 text-[0.8rem]"
           >
-            <Send className="w-4 h-4" />
+            <Send className="h-4 w-4" />
             <span className="hidden sm:inline">Envoyer</span>
           </button>
         </div>
       </div>
 
-      {/* Universal Banner */}
-      <div className="p-6 rounded-2xl bg-neutral-950/40 border border-white/10 max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
-            <Layers className="w-4 h-4" />
-          </div>
-          <div>
-            <h4 className="text-xs sm:text-sm font-bold text-neutral-100">Votre activité est unique ?</h4>
-            <p className="text-[11px] sm:text-xs text-neutral-400">L'assistant s'adapte à n'importe quel domaine sans restriction.</p>
-          </div>
+      {/* Universal Banner — moment de décision : on transforme l’essai en action */}
+      <div className="lux-card mx-auto flex max-w-4xl flex-col items-center gap-6 p-7 text-center sm:p-9">
+        <div className="space-y-3">
+          <span className="lux-eyebrow">
+            <Layers className="h-3.5 w-3.5 text-purple-300" />
+            Votre activité est unique
+          </span>
+          <h2 className="lux-h3 text-[1.2rem] sm:text-[1.5rem]">
+            Ce que vous venez de lire, votre assistant le dira avec vos mots.
+          </h2>
+          <p className="lux-sub mx-auto max-w-xl text-[0.86rem]">
+            Vos tarifs, votre ton, vos conditions. Il ne reste qu’à déposer vos informations —
+            et votre assistant répond dès aujourd’hui, même quand vous dormez.
+          </p>
         </div>
 
-        <button
-          onClick={onOpenAssistantModal}
-          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-purple-600/30 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-        >
-          <span>Créer pour mon business</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+          <button onClick={onOpenAssistantModal} className="btn btn-primary">
+            <span>Créer mon assistant</span>
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          <button onClick={() => onNavigate('pricing')} className="btn btn-glass">
+            <span>Voir les tarifs</span>
+          </button>
+        </div>
       </div>
     </div>
   );

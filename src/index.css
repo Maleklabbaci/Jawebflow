@@ -16,10 +16,421 @@
     font-family: var(--font-sans);
     overflow-x: hidden;
   }
-  
+
   h1, h2, h3, .font-display {
     font-family: var(--font-sans);
     letter-spacing: -0.02em;
+  }
+
+  /* Aucun élément « machine à écrire » : tout parle la même langue (Poppins). */
+  code, pre, kbd, samp, .font-mono {
+    font-family: var(--font-sans);
+  }
+
+  /* Accessibilité : un anneau violet net au clavier, jamais au clic souris. */
+  :focus-visible {
+    outline: 2px solid rgba(167, 139, 250, 0.75);
+    outline-offset: 2px;
+  }
+}
+
+/* ==========================================================================
+   SITE VITRINE — SYSTÈME DE DESIGN « LUXE SOBRE »
+   --------------------------------------------------------------------------
+   Une seule famille (Poppins), trois niveaux de texte :
+     · titres    : grands, 800, interlignage serré  → .lux-h1 / .lux-h2 / .lux-h3
+     · sous-titres: 300 (Light), larges, respiration → .lux-sub / .lux-lead
+     · micro-texte: 500, très espacé, capitales      → .lux-eyebrow
+   Boutons volontairement plats (pas de 3D, pas de gros effets) : un dégradé
+   violet profond, un liseré clair d'un pixel et une ombre douce. Ils se
+   soulèvent d'un seul pixel au survol, jamais plus.
+   ========================================================================== */
+
+:root {
+  /* Fonds & contrastes */
+  --ink: #08070f;
+  --ink-2: #0c0a15;
+  --glass: rgba(255, 255, 255, 0.045);
+
+  /* Marque */
+  --brand: #7c3aed;
+  --brand-deep: #5b21b6;
+  --brand-light: #a78bfa;
+  --brand-wash: rgba(139, 92, 246, 0.14);
+
+  /* Textes */
+  --text: #f5f3fb;
+  --text-soft: #cdc9e4;
+  --text-dim: #a29ebb;
+  --text-faint: #7a7693;
+
+  /* Lignes */
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --line-brand: rgba(167, 139, 250, 0.38);
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- Titres */
+  .lux-h1,
+  .lux-h2,
+  .lux-h3 {
+    font-family: var(--font-sans);
+    color: var(--text);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.06;
+    text-wrap: balance;
+  }
+
+  .lux-h1 { font-size: clamp(2.25rem, 5.2vw, 4rem); }
+  .lux-h2 { font-size: clamp(1.9rem, 4vw, 3.1rem); }
+  .lux-h3 { font-size: clamp(1.15rem, 1.6vw, 1.45rem); letter-spacing: -0.025em; line-height: 1.25; }
+
+  /* Le mot mis en avant dans un titre : un dégradé violet discret, jamais criard. */
+  .lux-accent {
+    background-image: linear-gradient(102deg, #c4b5fd 0%, #a78bfa 42%, #8b5cf6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ------------------------------------------------- Sous-titres & paragraphes */
+  .lux-sub,
+  .lux-lead {
+    font-family: var(--font-sans);
+    font-weight: 300;
+    color: var(--text-dim);
+    line-height: 1.75;
+    letter-spacing: 0.002em;
+  }
+
+  .lux-sub { font-size: clamp(0.98rem, 1.15vw, 1.15rem); }
+  .lux-lead { font-size: clamp(1rem, 1.3vw, 1.2rem); color: var(--text-soft); }
+
+  .lux-note {
+    font-weight: 300;
+    font-size: 0.82rem;
+    color: var(--text-faint);
+    line-height: 1.6;
+  }
+
+  /* ------------------------------------------------------------ Micro-titre */
+  .lux-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(167, 139, 250, 0.28);
+    background: rgba(139, 92, 246, 0.09);
+    color: #d9d2fb;
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  /* --------------------------------------------------------------- Boutons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    line-height: 1;
+    padding: 0.78rem 1.35rem;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+      box-shadow 0.25s ease, transform 0.16s ease, opacity 0.2s ease;
+  }
+
+  .btn:disabled,
+  .btn[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none;
+  }
+
+  .btn-primary {
+    color: #fff;
+    background-image: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%);
+    border-color: rgba(196, 181, 253, 0.32);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 8px 20px -14px rgba(109, 40, 217, 0.95);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-image: linear-gradient(180deg, #9668ff 0%, #7c3aed 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 12px 26px -14px rgba(139, 92, 246, 1);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+    filter: brightness(0.96);
+  }
+
+  .btn-glass {
+    color: #edeafb;
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--line-strong);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .btn-glass:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.075);
+    border-color: var(--line-brand);
+    color: #fff;
+  }
+
+  .btn-quiet {
+    color: var(--text-dim);
+    background: transparent;
+    border-color: transparent;
+    padding-inline: 0.7rem;
+  }
+
+  .btn-quiet:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .btn-light {
+    color: #1e1b32;
+    background: #ffffff;
+    border-color: rgba(30, 27, 50, 0.08);
+    box-shadow: 0 8px 20px -16px rgba(0, 0, 0, 0.6);
+  }
+
+  .btn-light:hover:not(:disabled) {
+    background: #f4f2fb;
+    transform: translateY(-1px);
+  }
+
+  .btn-sm {
+    font-size: 0.8rem;
+    padding: 0.58rem 0.95rem;
+    border-radius: 10px;
+    gap: 0.4rem;
+  }
+
+  .btn-lg {
+    font-size: 0.95rem;
+    padding: 0.95rem 1.7rem;
+    border-radius: 14px;
+  }
+
+  .btn-block { width: 100%; }
+
+  /* Tarifs : sélecteur mensuel / annuel */
+  .lux-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .lux-switch button {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    padding: 0.55rem 0.95rem;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .lux-switch button:hover { color: #fff; }
+
+  .lux-switch button[aria-pressed='true'] {
+    color: #fff;
+    background-image: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  /* --------------------------------------------------------------- Cartes */
+  .lux-card {
+    position: relative;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.022) 100%);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    overflow: hidden;
+  }
+
+  .lux-card-hover {
+    transition: border-color 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+  }
+
+  .lux-card-hover:hover {
+    border-color: var(--line-brand);
+    transform: translateY(-2px);
+    box-shadow: 0 22px 44px -34px rgba(124, 58, 237, 0.9);
+  }
+
+  /* Filet lumineux en haut de carte : rappelle la lumière du hero. */
+  .lux-card-beam::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(196, 181, 253, 0.55), transparent);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .lux-divider {
+    height: 1px;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+  }
+
+  /* --------------------------------------------------------------- Champs */
+  .lux-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 0.45rem;
+  }
+
+  .lux-input {
+    width: 100%;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 300;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.72rem 0.9rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+
+  .lux-input::placeholder { color: #6c6885; }
+
+  .lux-input:hover { border-color: rgba(255, 255, 255, 0.18); }
+
+  .lux-input:focus {
+    outline: none;
+    border-color: rgba(167, 139, 250, 0.6);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 0 0 4px var(--brand-wash);
+  }
+
+  .lux-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  textarea.lux-input { resize: vertical; min-height: 7rem; line-height: 1.65; }
+
+  /* Les listes déroulantes natives gardent un fond sombre lisible sur PC. */
+  select.lux-input option {
+    background-color: #14111f;
+    color: #f5f3fb;
+  }
+
+  /* ------------------------------------------------- Onglets & pastilles */
+  .lux-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    padding: 0.62rem 0.95rem;
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+  }
+
+  .lux-tab:hover { color: #fff; border-color: var(--line-strong); background: rgba(255, 255, 255, 0.06); }
+
+  .lux-tab-active,
+  .lux-tab[aria-selected='true'] {
+    color: #fff;
+    border-color: var(--line-brand);
+    background: rgba(139, 92, 246, 0.18);
+  }
+
+  .lux-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-soft);
+    padding: 0.4rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.035);
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .lux-chip:hover {
+    color: #fff;
+    border-color: var(--line-brand);
+    background: rgba(139, 92, 246, 0.14);
+  }
+
+  .lux-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #cfc5fb;
+    padding: 0.3rem 0.6rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    background: rgba(139, 92, 246, 0.12);
+  }
+
+  /* ------------------------------------------------- Goutte d'ambiance */
+  .lux-orb {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(70px);
+    pointer-events: none;
+  }
+}
+
+/* --------------------------------------------------- Mouvement apaisé */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -56,9 +467,9 @@
 
 /* Premium interactive card with subtle tilt & intensified glassmorphism glow */
 .card-hover-tilt-glow {
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
-              box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
-              border-color 0.35s ease, 
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.35s ease,
               background-color 0.35s ease;
   will-change: transform, box-shadow;
   transform: translateZ(0);
