@@ -23,8 +23,6 @@
   }
 }
 
-html { scrollbar-gutter: stable; }
-
 /* Custom scrollbar with Purple accents */
 ::-webkit-scrollbar {
   width: 7px;

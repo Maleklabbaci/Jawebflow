@@ -288,6 +288,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     stopCommand: true,
     customRules: '',
   });
+  const [behaviorSaveMessage, setBehaviorSaveMessage] = useState<'success' | 'error' | null>(null);
+  const updateBehavior = (patch: Partial<typeof behavior>) => {
+    setBehavior((current) => ({ ...current, ...patch }));
+    setBehaviorSaveMessage(null);
+  };
 
   // Widget Customizer State
   const [widgetConfig, setWidgetConfig] = useState<WidgetCustomization>({
@@ -978,6 +983,12 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     }
   };
 
+  const handleSaveBehavior = async () => {
+    setBehaviorSaveMessage(null);
+    const savedId = await handleSaveToDatabase();
+    setBehaviorSaveMessage(savedId ? 'success' : 'error');
+  };
+
   // Autosave : les modifications ne doivent pas disparaître si l’utilisateur recharge ou se déconnecte.
   // La sauvegarde utilise TOUJOURS l'état le plus récent (handleSaveRef) et se met en attente pendant
   // que « Mon IA » travaille (sinon elle pourrait écraser ce que l'IA vient d'écrire en base).
@@ -994,7 +1005,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [user?.uid, assistantLoaded, assistantId, businessName, websiteUrl, siteType, siteTypeConfidence, businessCategory, businessDescription, knowledgeNotes, faqText, pricingServicesText, specialRulesText, assistantTone, languages, autoLeadCapture, whatsappEscalation, webhookUrl, widgetConfig, autosaveNonce]);
+  }, [user?.uid, assistantLoaded, assistantId, businessName, websiteUrl, siteType, siteTypeConfidence, businessCategory, businessDescription, knowledgeNotes, faqText, pricingServicesText, specialRulesText, behavior, assistantTone, languages, autoLeadCapture, whatsappEscalation, webhookUrl, widgetConfig, autosaveNonce]);
 
   // ------------------------------------------------------------------
   // « PARLER À MON IA » : le serveur écrit directement dans la base ;
@@ -1483,13 +1494,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 const isActive = group ? menuGroupOf(currentSection) === group : currentSection === item.id;
                 const isOpen = !!group && openGroup === group;
                 const orderCount = leadsList.reduce((count, lead) => count + (lead.orders?.length || 0), 0);
+                // KnowledgeNotesManager compte les fiches relationnelles et les pages scannées.
+                // `knowledgeNotes` seul est un miroir incomplet : ne pas afficher un badge trompeur.
                 const badge = item.id === 'leads' && leadsList.length > 0
                   ? String(leadsList.length)
                   : item.id === 'orders' && orderCount > 0
                     ? String(orderCount)
-                    : item.id === 'knowledge'
-                      ? String(knowledgeNotes.filter((n) => n.enabled).length)
-                      : null;
+                    : null;
                 const subItems: Array<{ key: string; label: string; selected: boolean; onSelect: () => void }> = !group ? [] : group === 'clients'
                   ? [
                       { key: 'analytics', label: "Vue d'ensemble", selected: currentSection === 'leads' && insightsTab === 'analytics', onSelect: () => { setInsightsTab('analytics'); handleSectionChange('leads'); } },
@@ -3272,7 +3283,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 <div className="space-y-5">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">🗣️ Langue de réponse</label>
-                    <select value={behavior.language} onChange={(e) => setBehavior({ ...behavior, language: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                    <select value={behavior.language} onChange={(e) => updateBehavior({ language: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
                       <option value="auto">Automatique — il répond dans la langue du client</option>
                       <option value="fr">Français uniquement</option>
                       <option value="darija_dz">100% algérien (darija algérienne)</option>
@@ -3284,7 +3295,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">📏 Quantité de parole</label>
                     <div className="flex flex-wrap gap-2">
                       {([['short', 'Bref — parle pas trop'], ['normal', 'Normal'], ['detailed', 'Détaillé']] as const).map(([v, l]) => (
-                        <button key={v} type="button" onClick={() => setBehavior({ ...behavior, length: v })}
+                        <button key={v} type="button" onClick={() => updateBehavior({ length: v })}
                           className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${behavior.length === v ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-purple-300'}`}>
                           {l}
                         </button>
@@ -3294,7 +3305,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">🌐 Le lien de ton site</label>
-                    <select value={behavior.websiteMentions} onChange={(e) => setBehavior({ ...behavior, websiteMentions: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
+                    <select value={behavior.websiteMentions} onChange={(e) => updateBehavior({ websiteMentions: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
                       <option value="auto">Automatique — il l'envoie quand c'est utile</option>
                       <option value="on_request">Seulement si le client le demande</option>
                       <option value="never">Ne JAMAIS mentionner le site</option>
@@ -3303,24 +3314,30 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
                   <div className="space-y-2.5">
                     <label className="flex items-start gap-2.5 cursor-pointer">
-                      <input type="checkbox" checked={behavior.stopWhenConfused} onChange={(e) => setBehavior({ ...behavior, stopWhenConfused: e.target.checked })} className="mt-0.5 w-4 h-4 accent-purple-600 cursor-pointer" />
+                      <input type="checkbox" checked={behavior.stopWhenConfused} onChange={(e) => updateBehavior({ stopWhenConfused: e.target.checked })} className="mt-0.5 w-4 h-4 accent-purple-600 cursor-pointer" />
                       <span className="text-sm text-slate-700">Quand il ne comprend pas, il le dit honnêtement au lieu d'inventer une réponse</span>
                     </label>
                     <label className="flex items-start gap-2.5 cursor-pointer">
-                      <input type="checkbox" checked={behavior.stopCommand} onChange={(e) => setBehavior({ ...behavior, stopCommand: e.target.checked })} className="mt-0.5 w-4 h-4 accent-purple-600 cursor-pointer" />
+                      <input type="checkbox" checked={behavior.stopCommand} onChange={(e) => updateBehavior({ stopCommand: e.target.checked })} className="mt-0.5 w-4 h-4 accent-purple-600 cursor-pointer" />
                       <span className="text-sm text-slate-700">Le client peut faire taire le bot en écrivant « stop » — et le relancer avec « reprends »</span>
                     </label>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">📝 Tes règles particulières (obligatoires pour le bot)</label>
-                    <textarea value={behavior.customRules} onChange={(e) => setBehavior({ ...behavior, customRules: e.target.value })} rows={4} maxLength={1000} placeholder="Ex : ne jamais parler de politique · toujours proposer la promo d'abord · tutoyer les clients · ne répondre qu'aux questions sur nos produits" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
+                    <textarea value={behavior.customRules} onChange={(e) => updateBehavior({ customRules: e.target.value })} rows={4} maxLength={1000} placeholder="Ex : ne jamais parler de politique · toujours proposer la promo d'abord · tutoyer les clients · ne répondre qu'aux questions sur nos produits" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 focus:bg-white" />
                     <p className="text-[11px] text-slate-400 mt-1">Une règle par ligne. Le bot les respecte à la lettre — elles priment sur tout le reste.</p>
                   </div>
 
-                  <button onClick={handleSaveToDatabase} disabled={isSavingDb} className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-2 cursor-pointer">
+                  <button type="button" onClick={() => { void handleSaveBehavior(); }} disabled={isSavingDb} className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-2 cursor-pointer">
                     {isSavingDb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Enregistrer le comportement
                   </button>
+                  {behaviorSaveMessage === 'success' && (
+                    <p role="status" aria-live="polite" className="text-sm text-emerald-700">Comportement enregistré.</p>
+                  )}
+                  {behaviorSaveMessage === 'error' && (
+                    <p role="alert" className="text-sm text-rose-700">Échec de l’enregistrement. Vérifie ta connexion puis réessaie.</p>
+                  )}
                   {behavior.autoInsights && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                       <p className="text-sm font-semibold text-emerald-900">🎯 Ce que le bot a appris de TA cible</p>

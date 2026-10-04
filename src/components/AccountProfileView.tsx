@@ -128,9 +128,17 @@ export const AccountProfileView: React.FC<AccountProfileViewProps> = ({ onAssist
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 max-w-4xl">
+      {/* Title */}
+      <div>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Mon profil</h2>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          Mettez à jour les informations de votre profil, de votre entreprise et gérez la sécurité de vos accès.
+        </p>
+      </div>
+
       {/* Profile & Business Form */}
-      <form onSubmit={handleSaveProfile} className="bg-white p-6 sm:p-8 rounded-[24px] shadow-[0_1px_2px_rgba(27,22,71,0.04)] space-y-6">
+      <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
           <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
             <User className="w-5 h-5" />
@@ -210,7 +218,7 @@ export const AccountProfileView: React.FC<AccountProfileViewProps> = ({ onAssist
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="Ex : 0551 23 45 67"
+                placeholder="Ex: +212 6 12 34 56 78"
                 className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs focus:bg-white focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/20"
               />
             </div>
@@ -268,7 +276,7 @@ export const AccountProfileView: React.FC<AccountProfileViewProps> = ({ onAssist
       </form>
 
       {/* Security & Password Form */}
-      <div className="bg-white p-6 sm:p-8 rounded-[24px] shadow-[0_1px_2px_rgba(27,22,71,0.04)] space-y-6">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
