@@ -73,8 +73,8 @@ describe('haut de la page d’accueil', () => {
     const reveal = container.querySelector('#hero-ink-reveal') as HTMLElement;
 
     expect(reveal).not.toBeNull();
-    expect(reveal.dataset.defaultImage).toBe('https://i.ibb.co/DfKNMRkd/femme.webp');
-    expect(reveal.dataset.revealImage).toBe('https://i.ibb.co/LhYMxdb8/robot.webp');
+    expect(reveal.dataset.defaultImage).toBe('/jawebfemme.jpg');
+    expect(reveal.dataset.revealImage).toBe('/jawebbot.jpg');
     expect(reveal.querySelector('canvas')?.getAttribute('aria-label')).toContain('photo d’une femme');
     expect(reveal.className).toContain('touch-pan-y');
     expect(reveal.className).toContain('md:absolute');
