@@ -41,7 +41,8 @@ const SECTIONS: Array<{ id: string; nav: string }> = [
   { id: 'simulator', nav: 'Tester l\'assistant' },
   { id: 'learning', nav: 'Apprentissage IA' },
   { id: 'leads', nav: 'Clients & statistiques' },
-  { id: 'integration', nav: 'Mettre sur mon site' },
+  { id: 'orders', nav: 'Commandes' },
+  { id: 'integration', nav: 'Mon site' },
   { id: 'instagram', nav: 'Instagram' },
   { id: 'automations', nav: 'Automatisations' },
   { id: 'billing', nav: 'Abonnement & factures' },
@@ -100,7 +101,7 @@ describe('tableau de bord — navigation', () => {
     render(<DashboardPlatform initialSection="overview" />);
     await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
     goTo('automations');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Canaux' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Automatisations' })).toBeTruthy();
     expect(await screen.findByRole('button', { name: /Nouvelle automatisation/ })).toBeTruthy();
     expect(window.location.pathname).toBe('/dashboard/automations');
   });

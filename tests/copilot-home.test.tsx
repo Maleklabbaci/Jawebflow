@@ -228,7 +228,7 @@ describe('Accueil : rien n’est perdu', () => {
     expect(screen.getByText(/Assistant en préparation/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Renseigner le nom de mon entreprise' })).toBeNull(); // le nom existe déjà
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter mes informations' }));
-    expect(await screen.findByText('Mon assistant', { selector: 'h1' })).toBeTruthy();
+    expect(await screen.findByText('Mes informations', { selector: 'h1' })).toBeTruthy();
   });
 
   it('une urgence (limite atteinte) remonte sur l’Accueil, avec un bouton qui mène au bon écran', async () => {
