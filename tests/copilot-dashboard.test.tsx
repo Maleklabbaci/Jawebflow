@@ -139,6 +139,28 @@ describe('où trouver « Parler à mon IA »', () => {
   });
 });
 
+describe('Comportement : enregistrement fiable', () => {
+  it('sauvegarde automatiquement les réglages puis confirme l’enregistrement manuel', async () => {
+    render(<DashboardPlatform initialSection="behavior" />);
+    await screen.findByRole('button', { name: 'Enregistrer le comportement' });
+    // Laisse finir la sauvegarde initiale de l’assistant avant de mesurer celle du changement.
+    await settle(1200);
+    hoisted.saves.length = 0;
+
+    const languageSelect = document.querySelector('main select') as HTMLSelectElement;
+    fireEvent.change(languageSelect, { target: { value: 'darija_dz' } });
+    await waitFor(() => expect(hoisted.saves.length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(lastSave().behavior.language).toBe('darija_dz');
+
+    fireEvent.change(screen.getByPlaceholderText(/Ex : ne jamais parler/), {
+      target: { value: 'parle toujours gentiment' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le comportement' }));
+    expect(await screen.findByText('Comportement enregistré.')).toBeTruthy();
+    expect(lastSave().behavior.customRules).toBe('parle toujours gentiment');
+  });
+});
+
 describe('ce que l’IA écrit apparaît dans les écrans, et la sauvegarde automatique ne l’écrase JAMAIS', () => {
   it('« ajoute… » : la fiche est dans « Mes informations », en base, et les sauvegardes suivantes la contiennent', async () => {
     await openChat();

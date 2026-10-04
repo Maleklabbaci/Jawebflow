@@ -182,14 +182,14 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(document.querySelector('header h1')!.textContent).toBe('Instagram');
   });
 
-  it('les chiffres du menu (fiches, clients) sont posés sur l’icône et disparaissent à zéro', async () => {
+  it('les badges Clients restent exacts et Mon assistant n’affiche pas un compte incomplet', async () => {
     be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [
       { id: 'p1', name: 'Karim', phone: '0550112233', status: 'qualifie', updatedAt: new Date().toISOString() },
       { id: 'p2', name: 'Sara', email: 'sara@mail.dz', status: 'qualifie', updatedAt: new Date().toISOString() },
     ] }), { status: 200 }));
     render(<DashboardPlatform initialSection="overview" />);
     await settle(300);
-    expect(document.getElementById('nav-knowledge')!.textContent).toContain('1');
+    expect(document.getElementById('nav-knowledge')!.textContent).not.toContain('1');
     expect(document.getElementById('nav-leads')!.textContent).toContain('2');
     expect(document.getElementById('nav-simulator')!.textContent).toBe('Tester'); // pas de chiffre
   });
