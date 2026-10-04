@@ -148,12 +148,35 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
         expect(inHeader.length, `bouton actif en haut pour « ${s.nav} »`).toBe(1);
       } else {
         expect(inMenu.length, `entrée active pour « ${s.nav} »`).toBe(1);
-        expect(inMenu[0].id).toBe(`nav-${MENU_ENTRY[s.id]}`);
+        if (['integration', 'instagram', 'automations'].includes(s.id)) {
+          expect(inMenu[0].getAttribute('data-tab')).toBe(s.id);
+        } else {
+          expect(inMenu[0].id).toBe(`nav-${MENU_ENTRY[s.id]}`);
+        }
         expect(inHeader.length).toBe(0);
       }
       expect(document.querySelector('header h1')!.textContent, `titre de « ${s.nav} »`).toBe(s.title);
     }
     expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('Canaux ouvre un sous-menu animé et permet de changer de canal', async () => {
+    render(<DashboardPlatform initialSection="overview" />);
+    await settle();
+    const channels = document.getElementById('nav-integration')!;
+    fireEvent.click(channels);
+    await settle(40);
+    expect(channels.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('channels-submenu')!.className).toContain('grid-rows-[1fr]');
+    expect(document.querySelector('header h1')!.textContent).toBe('Canaux');
+    expect(screen.getByRole('button', { name: 'Instagram' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Mon site' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Automatisations' })).toBeTruthy();
+
+    fireEvent.click(document.querySelector('[data-tab="instagram"]')!);
+    await settle(50);
+    expect(document.querySelector('[data-tab="instagram"]')!.getAttribute('aria-current')).toBe('page');
+    expect(document.getElementById('nav-integration')!.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('les chiffres du menu (fiches, clients) sont posés sur l’icône et disparaissent à zéro', async () => {
@@ -166,6 +189,36 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(document.getElementById('nav-knowledge')!.textContent).toContain('1');
     expect(document.getElementById('nav-leads')!.textContent).toContain('2');
     expect(document.getElementById('nav-simulator')!.textContent).toBe('Tester'); // pas de chiffre
+  });
+
+  it('le CRM montre le rappel et permet de le marquer traité', async () => {
+    const completedAt = '2026-10-03T12:00:00.000Z';
+    be.stub('/api/leads', (init) => new Response(JSON.stringify((init.method || 'GET') === 'POST'
+      ? { ok: true, prospectId: 'p1', followUpStatus: 'done', completedAt }
+      : { prospects: [{
+          id: 'p1', name: 'Sara', phone: '0550123456', email: 'Non fourni', need: 'Je veux acheter la veste',
+          status: 'qualifie', channel: 'instagram', salesIntentType: 'purchase', followUpStatus: 'pending',
+          followUpAt: '2026-10-03T13:00:00.000Z', followUpReason: 'Intention d’achat détectée',
+          nextAction: 'Confirmer la commande et les détails de livraison', updatedAt: '2026-10-03T11:00:00.000Z',
+          messages: [{ sender: 'user', text: 'Je veux acheter la veste', timestamp: '2026-10-03T11:00:00.000Z' }],
+        }] }), { status: 200 }));
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    expect(be.api.filter((request) => request.url.includes('/api/leads')).length).toBeGreaterThan(0);
+    expect(document.querySelector('header h1')?.textContent).toBe('Mes clients');
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+    expect(document.querySelector('main')?.textContent).toContain('Mes clients intéressés');
+    expect(document.querySelector('tbody')?.textContent).toContain('Sara');
+    expect(screen.getByText('À suivre')).toBeTruthy();
+    fireEvent.click(document.querySelector('tbody tr')!);
+    await settle(40);
+    expect(screen.getByText('Suivi commercial')).toBeTruthy();
+    expect(screen.getByText('Confirmer la commande et les détails de livraison')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Marquer le suivi comme traité' }));
+    await settle(80);
+    expect(screen.getAllByText(/Suivi terminé/).length).toBeGreaterThan(0);
+    expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
   });
 
   it('Résumé : trois cartes de chiffres (statut, clients, informations) avec les vrais nombres', async () => {
@@ -196,7 +249,7 @@ describe('barre latérale épurée, abonnement et profil en haut à droite', () 
       expect(side.textContent, `« ${gone} » ne doit plus être dans la barre latérale`).not.toContain(gone);
     }
     expect(side.querySelector('img[alt="JawebFlow"]')).toBeTruthy();
-    expect(side.querySelectorAll('nav button').length).toBe(6); // 6 entrées : une seule plateforme
+    expect(side.querySelectorAll('nav button[id^="nav-"]').length).toBe(6); // 6 entrées principales ; Canaux révèle ses sous-sections
   });
 
   it('plus de bouton « Enregistrer » en haut : à la place, « Abonnement & factures » et le profil', async () => {
