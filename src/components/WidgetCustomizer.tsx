@@ -188,57 +188,57 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
         <div className="lg:col-span-7 space-y-4">
           
           {/* Sub-tabs for customization categories */}
-          <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-x-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
             <button
               type="button"
               onClick={() => setActiveTab('icon')}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'icon'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
               <Bot className="w-3.5 h-3.5" />
-              <span>1. Logo & Icône</span>
+              <span className="truncate">1. Logo & Icône</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('colors')}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'colors'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
               <Palette className="w-3.5 h-3.5" />
-              <span>2. Couleurs & Thème</span>
+              <span className="truncate">2. Couleurs & Thème</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('layout')}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'layout'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>3. Forme & Position</span>
+              <span className="truncate">3. Forme & Position</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('content')}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'content'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span>4. Textes & Accroche</span>
+              <span className="truncate">4. Textes & Accroche</span>
             </button>
           </div>
 
