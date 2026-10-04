@@ -93,6 +93,12 @@ export const tidy = (t: string) =>
     .replace(/^\s*[*•-]\s+/gm, '• ')
     .trim();
 
+const BotAvatar: React.FC<{ error?: boolean }> = ({ error }) => (
+  <span aria-hidden="true" className={`mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${error ? 'bg-rose-500' : 'bg-gradient-to-br from-[#a23dff] to-[#5a2cff]'}`}>
+    {error ? <AlertTriangle className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+  </span>
+);
+
 function loadHistory(uid: string): ChatMsg[] {
   try {
     const raw = JSON.parse(localStorage.getItem(storageKey(uid)) || '[]');
@@ -619,45 +625,54 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
     return createPortal(page, props.homeHost);
   }
 
+  const bubbleShadow = 'shadow-[0_1px_2px_rgba(27,22,71,0.06)]';
+
   return (
     <div
       role="dialog"
       aria-label="Discussion avec mon IA"
       hidden={!open}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
-      className={`${open ? 'flex' : 'hidden'} fixed inset-0 z-[60] flex-col bg-white sm:inset-auto sm:bottom-4 sm:right-4 sm:top-[4.75rem] sm:w-[430px] sm:rounded-2xl sm:border sm:border-slate-200 sm:shadow-2xl`}
+      className={`${open ? 'flex' : 'hidden'} fixed inset-0 z-[60] flex-col overflow-hidden bg-white sm:inset-auto sm:bottom-6 sm:right-6 sm:h-[min(720px,calc(100dvh-3rem))] sm:w-[400px] sm:rounded-[28px] sm:border sm:border-[#e8e4f8] sm:shadow-[0_32px_80px_-24px_rgba(27,22,71,0.5)]`}
     >
       {/* En-tête */}
-      <div className="flex items-center gap-3 border-b border-slate-200 bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-3 text-white sm:rounded-t-2xl">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20"><Sparkles className="h-5 w-5" /></span>
+      <div className="flex shrink-0 items-center gap-3 bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-4 py-3.5 text-white">
+        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20">
+          <Sparkles className="h-5 w-5" />
+          <span aria-hidden="true" className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#7a35ff] bg-emerald-400" />
+        </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-bold leading-tight">Mon IA</h2>
-          <p className="truncate text-[11px] text-purple-100">Dis-lui quoi faire en français, en darija ou en arabe</p>
+          <h2 className="text-[15px] font-semibold leading-tight">Mon IA</h2>
+          <p className="truncate text-[12px] leading-tight text-white/80">En ligne · français, darija, arabe</p>
         </div>
-        <button type="button" onClick={reset} disabled={busy || empty} aria-label="Nouvelle discussion" title="Nouvelle discussion" className="rounded-lg p-2 text-white/80 hover:bg-white/15 hover:text-white disabled:opacity-30 cursor-pointer">
+        <button type="button" onClick={reset} disabled={busy || empty} aria-label="Nouvelle discussion" title="Nouvelle discussion" className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 outline-none transition hover:bg-white/15 hover:text-white focus-visible:ring-2 focus-visible:ring-white/60 disabled:opacity-30 cursor-pointer">
           <RotateCcw className="h-4 w-4" />
         </button>
-        <button type="button" onClick={onClose} aria-label="Fermer" title="Fermer" className="rounded-lg p-2 text-white/80 hover:bg-white/15 hover:text-white cursor-pointer">
+        <button type="button" onClick={onClose} aria-label="Fermer" title="Fermer" className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 outline-none transition hover:bg-white/15 hover:text-white focus-visible:ring-2 focus-visible:ring-white/60 cursor-pointer">
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Messages */}
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto bg-slate-50 px-3 py-4" aria-live="polite">
+      {/* Conversation */}
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto bg-[#f5f4fc] px-4 py-5" aria-live="polite">
         {empty && (
-          <div className="px-1 text-sm text-slate-600">
-            <p className="text-base font-semibold text-slate-900">Salut 👋 Je suis ton IA.</p>
-            <p className="mt-1">Dis-moi quoi faire, je le fais <b>pour de vrai</b> — et tu peux toujours annuler.</p>
-            <ul className="mt-3 space-y-1.5 text-[13px]">
-              <li>📚 Ajouter ou corriger les infos de ton entreprise</li>
-              <li>💬 Répondre aux commentaires Instagram à ta façon</li>
-              <li>🎯 Changer la façon de parler à tes clients (court, darija, tutoiement…)</li>
-              <li>📊 Savoir tes chiffres : messages, leads, questions sans réponse…</li>
-            </ul>
-            <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Essaie par exemple</p>
-            <div className="mt-2 flex flex-wrap gap-2">
+          <div>
+            <div className="flex items-end gap-2">
+              <BotAvatar />
+              <div className={`max-w-[84%] rounded-[20px] rounded-bl-md bg-white px-4 py-3 text-[14px] leading-[1.5] text-slate-700 ${bubbleShadow}`}>
+                <p className="font-semibold text-slate-900">Salut 👋 Je suis ton IA.</p>
+                <p className="mt-1">Dis-moi quoi faire, je le fais <b>pour de vrai</b> — et tu peux toujours annuler.</p>
+                <ul className="mt-2.5 space-y-1 text-[13px] text-slate-600">
+                  <li>📚 Ajouter ou corriger les infos de ton entreprise</li>
+                  <li>💬 Répondre aux commentaires Instagram à ta façon</li>
+                  <li>🎯 Changer ta façon de parler aux clients</li>
+                  <li>📊 Connaître tes chiffres : messages, leads…</li>
+                </ul>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 pl-9">
               {QUICK_PROMPTS.map((p) => (
-                <button key={p.label} type="button" onClick={() => pickPrompt(p)} disabled={busy} className="rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50 cursor-pointer">
+                <button key={p.label} type="button" onClick={() => pickPrompt(p)} disabled={busy} className="rounded-full border border-[#d9ccff] bg-white px-3.5 py-1.5 text-[13px] font-medium text-[#5a2cff] outline-none transition hover:bg-[#f1ecff] focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 disabled:opacity-50 cursor-pointer">
                   {p.label}
                 </button>
               ))}
@@ -665,52 +680,66 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
           </div>
         )}
 
-        {messages.map((m) => (
-          <div key={m.id} className={`flex flex-col gap-1.5 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-            <div
-              className={`max-w-[90%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                m.role === 'user'
-                  ? 'rounded-br-md bg-purple-600 text-white'
-                  : m.error
-                    ? 'rounded-bl-md border border-rose-200 bg-rose-50 text-rose-700'
-                    : 'rounded-bl-md border border-slate-200 bg-white text-slate-800'
-              }`}
-            >
-              {m.role === 'assistant' ? tidy(m.text) : m.text}
-            </div>
-            {m.error && m.retry && (
-              <button type="button" onClick={() => void send(m.retry!, { resend: true })} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
-                <RotateCcw className="h-3 w-3" /> Réessayer
-              </button>
-            )}
-            {m.actions && m.actions.length > 0 && (
-              <div className="w-full max-w-[96%] space-y-1.5">
-                {m.actions.map((a) => (
-                  <ActionCard key={a.id} action={a} busy={busy} onUndo={() => void runAction(m.id, a, 'undo')} onActivate={() => void runAction(m.id, a, 'activate')} onView={onView} />
-                ))}
+        {messages.map((m, i) => {
+          const isUser = m.role === 'user';
+          const prev = messages[i - 1];
+          const next = messages[i + 1];
+          const lastOfGroup = next?.role !== m.role;
+          const gap = i === 0 ? '' : prev?.role !== m.role ? 'mt-4' : 'mt-1';
+          const tail = lastOfGroup ? (isUser ? 'rounded-br-md' : 'rounded-bl-md') : '';
+          return (
+            <div key={m.id} className={gap}>
+              <div className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                {!isUser && (lastOfGroup ? <BotAvatar error={m.error} /> : <span className="w-7 shrink-0" />)}
+                <div
+                  className={`max-w-[80%] whitespace-pre-wrap break-words rounded-[20px] ${tail} px-4 py-2.5 text-[14px] leading-[1.5] ${
+                    isUser
+                      ? 'bg-gradient-to-br from-[#a23dff] to-[#5a2cff] text-white shadow-[0_6px_16px_-8px_rgba(110,50,255,0.6)]'
+                      : m.error
+                        ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
+                        : `bg-white text-slate-800 ${bubbleShadow}`
+                  }`}
+                >
+                  {isUser ? m.text : tidy(m.text)}
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+              {m.error && m.retry && (
+                <div className="mt-1.5 pl-9">
+                  <button type="button" onClick={() => void send(m.retry!, { resend: true })} disabled={busy} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                    <RotateCcw className="h-3 w-3" /> Réessayer
+                  </button>
+                </div>
+              )}
+              {m.actions && m.actions.length > 0 && (
+                <div className="mt-1.5 space-y-1.5 pl-9">
+                  {m.actions.map((a) => (
+                    <ActionCard key={a.id} action={a} busy={busy} onUndo={() => void runAction(m.id, a, 'undo')} onActivate={() => void runAction(m.id, a, 'activate')} onView={onView} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {busy && (
-          <div role="status" className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2.5">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400" />
+          <div role="status" className={`flex items-end gap-2 ${messages.length ? 'mt-4' : 'mt-3'}`}>
+            <BotAvatar />
+            <span className={`flex items-center gap-1 rounded-[20px] rounded-bl-md bg-white px-4 py-3.5 ${bubbleShadow}`}>
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#a23dff]/60 [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#a23dff]/60 [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#a23dff]/60" />
+              <span className="sr-only">Mon IA s’en occupe…</span>
             </span>
-            Mon IA s’en occupe…
           </div>
         )}
       </div>
 
-      {/* Zone de saisie */}
+      {/* Saisie */}
       <form
-        className="border-t border-slate-200 bg-white p-3 sm:rounded-b-2xl"
+        className="shrink-0 border-t border-[#eeeaf9] bg-white px-3 pb-3 pt-3"
         onSubmit={(e) => { e.preventDefault(); void send(draft); }}
       >
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-1.5 rounded-[26px] bg-[#f5f4fc] p-1.5 pl-4 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-[#a23dff]/30">
           <textarea
             ref={inputRef}
             value={draft}
@@ -724,40 +753,40 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
               }
             }}
             aria-label="Ton message pour mon IA"
-            placeholder="Écris ce que tu veux que je fasse…"
-            className="max-h-36 min-h-[42px] flex-1 resize-none rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-purple-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-200"
+            placeholder="Écris ton message…"
+            className="dash-bare max-h-32 min-h-[40px] flex-1 resize-none border-0 bg-transparent py-2.5 text-[14px] leading-[1.4] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
           />
           {Recognition && (
-            <div className="flex flex-col items-center gap-1">
-              <button
-                type="button"
-                onClick={toggleMic}
-                aria-label={listening ? 'Arrêter la dictée' : 'Dicter mon message'}
-                title={listening ? 'Arrêter la dictée' : 'Dicter mon message'}
-                className={`rounded-xl border p-2.5 cursor-pointer ${listening ? 'animate-pulse border-rose-300 bg-rose-100 text-rose-600' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
-              >
-                <Mic className="h-4 w-4" />
-              </button>
+            <>
               <button
                 type="button"
                 onClick={() => setVoiceLang((l) => (l === 'fr-FR' ? 'ar-DZ' : 'fr-FR'))}
                 disabled={listening}
                 aria-label={`Langue de la dictée : ${voiceLang === 'fr-FR' ? 'français' : 'arabe'}`}
                 title="Changer la langue de la dictée"
-                className="rounded-md px-1 text-[10px] font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                className="mb-2 h-6 shrink-0 rounded-full bg-white px-2 text-[10px] font-bold text-slate-500 outline-none transition hover:text-[#5a2cff] focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 disabled:opacity-40 cursor-pointer"
               >
                 {voiceLang === 'fr-FR' ? 'FR' : 'عربي'}
               </button>
-            </div>
+              <button
+                type="button"
+                onClick={toggleMic}
+                aria-label={listening ? 'Arrêter la dictée' : 'Dicter mon message'}
+                title={listening ? 'Arrêter la dictée' : 'Dicter mon message'}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 cursor-pointer ${listening ? 'animate-pulse bg-rose-100 text-rose-600' : 'text-slate-500 hover:bg-white hover:text-[#5a2cff]'}`}
+              >
+                <Mic className="h-[18px] w-[18px]" />
+              </button>
+            </>
           )}
           <button
             type="submit"
             disabled={busy || !draft.trim()}
             aria-label="Envoyer"
             title="Envoyer"
-            className="rounded-xl bg-purple-600 p-2.5 text-white transition-colors hover:bg-purple-700 disabled:opacity-40 cursor-pointer"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#a23dff] to-[#5a2cff] text-white shadow-[0_8px_18px_-10px_rgba(110,50,255,0.8)] outline-none transition hover:brightness-110 focus-visible:ring-2 focus-visible:ring-[#a23dff]/50 focus-visible:ring-offset-2 disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none cursor-pointer disabled:cursor-default"
           >
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+            {busy ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <ArrowUp className="h-5 w-5" />}
           </button>
         </div>
         <p className="mt-2 text-center text-[10px] text-slate-400">Tout est enregistré tout de suite · chaque action peut être annulée</p>
