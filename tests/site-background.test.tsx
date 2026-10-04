@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 //
-// Page d'accueil : le fond du site et le haut de page doivent rester LÉGERS.
-//   - plus de photos du robot (201 images, ~10 Mo par visiteur) ;
-//   - le fond est purement décoratif (jamais cliquable, ignoré des lecteurs d'écran) ;
-//   - tout fichier image/vidéo cité dans le code existe vraiment dans « public/ »
-//     (sinon le visiteur reçoit une image cassée).
+// Page d'accueil : le fond global reste léger et le hero n'utilise que les deux photos
+// demandées pour l'effet d'encre. Le fond global reste décoratif et sans média téléchargé.
 import fs from 'node:fs';
 import path from 'node:path';
 import React from 'react';
@@ -70,20 +67,17 @@ describe('haut de la page d’accueil', () => {
     expect(onScroll).toHaveBeenCalledTimes(1);
   });
 
-  it('l’aperçu de conversation est décoratif, léger et réservé aux grands écrans', () => {
+  it('révèle la photo du robot avec de l’encre, la femme étant affichée par défaut', () => {
+    vi.stubGlobal('WebGL2RenderingContext', undefined);
     const { container } = render(<HeroSection onOpenAssistantModal={() => {}} onScrollToParcours={() => {}} />);
-    const preview = container.querySelector('#hero-chat-preview') as HTMLElement;
+    const reveal = container.querySelector('#hero-ink-reveal') as HTMLElement;
 
-    expect(preview).not.toBeNull();
-    expect(preview.getAttribute('aria-hidden')).toBe('true'); // faux chat : rien à lire à voix haute
-    expect(preview.className).toMatch(/\bhidden\b/); // masqué par défaut…
-    expect(preview.className).toMatch(/\bxl:flex\b/); // …visible dès 1280 px
-    expect(preview.className).toContain('pointer-events-none');
-
-    // Seule image : le petit logo déjà utilisé ailleurs (aucune nouvelle photo).
-    const imgs = Array.from(preview.querySelectorAll('img')).map((i) => i.getAttribute('src'));
-    expect(imgs).toEqual(['/logo.png']);
-    expect(preview.textContent).toContain('Maison Lila');
+    expect(reveal).not.toBeNull();
+    expect(reveal.dataset.defaultImage).toBe('https://i.ibb.co/DfKNMRkd/femme.webp');
+    expect(reveal.dataset.revealImage).toBe('https://i.ibb.co/LhYMxdb8/robot.webp');
+    expect(reveal.querySelector('canvas')?.getAttribute('aria-label')).toContain('photo d’une femme');
+    expect(reveal.className).toContain('touch-pan-y');
+    expect(reveal.className).toContain('md:absolute');
   });
 });
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight, Globe, MessageCircle, Instagram } from 'lucide-react';
-import { HeroChatPreview } from './HeroChatPreview';
+import { HeroInkReveal } from './HeroInkReveal';
 
 interface HeroSectionProps {
   onOpenAssistantModal: () => void;
@@ -12,83 +12,77 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onScrollToParcours,
 }) => {
   return (
-    <section 
+    <section
       id="hero-section"
-      className="relative pt-24 sm:pt-36 md:pt-40 pb-10 sm:pb-20 px-6 sm:px-10 lg:px-16 max-w-[1440px] mx-auto flex flex-col md:flex-row items-center md:items-start justify-start w-full overflow-hidden"
+      className="relative w-full overflow-hidden bg-white md:flex md:min-h-[clamp(620px,56vw,900px)] md:items-center md:rounded-b-[40px]"
     >
-      <div className="w-full md:max-w-2xl md:mr-auto flex flex-col items-start text-left">
-        {/* Petit repère de confiance, sans surenchère */}
-        <div 
-          id="hero-badge"
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-xs text-neutral-300 mb-6 backdrop-blur-xl"
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span>Assistant de discussion pour les entreprises algériennes</span>
-        </div>
-
-        {/* Main Headline */}
-        <h1 
-          id="hero-title"
-          className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white font-display leading-[1.12] mb-5 drop-shadow-sm"
-        >
-          Répondez à vos clients <br />
-          <span className="text-neutral-400">
-            même quand vous êtes fermé.
-          </span>
-        </h1>
-
-        {/* Subtitle */}
-        <p 
-          id="hero-subtitle"
-          className="text-sm sm:text-base md:text-lg text-neutral-300 leading-relaxed mb-8 max-w-xl font-normal"
-        >
-          Une bulle de discussion sur votre site qui répond en français et en darija :
-          prix, livraison, horaires, disponibilité. Et qui vous transmet le numéro
-          des clients intéressés.
-        </p>
-
-        {/* Primary Actions */}
-        <div 
-          id="hero-cta-group"
-          className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 w-full sm:w-auto mb-8"
-        >
-          <button
-            id="hero-primary-cta"
-            onClick={onOpenAssistantModal}
-            className="w-full sm:w-auto px-6 py-3.5 rounded-lg bg-white hover:bg-neutral-200 text-neutral-900 font-semibold text-sm sm:text-base transition-colors flex items-center justify-center gap-2 cursor-pointer"
+      <div className="relative z-10 mx-auto w-full max-w-[1440px] px-6 pb-8 pt-24 sm:px-10 sm:pt-32 md:px-10 md:pb-16 md:pt-24 lg:px-16">
+        <div className="flex w-full flex-col items-start text-left md:max-w-xl lg:max-w-[600px]">
+          <div
+            id="hero-badge"
+            className="mb-6 inline-flex items-center gap-2 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs text-purple-800"
           >
-            <span>Créer mon assistant</span>
-            <ArrowRight className="w-4 h-4 shrink-0" />
-          </button>
+            <span className="h-1.5 w-1.5 rounded-full bg-purple-600" />
+            <span>Assistant de discussion pour les entreprises algériennes</span>
+          </div>
 
-          <button
-            id="hero-secondary-cta"
-            onClick={onScrollToParcours}
-            className="w-full sm:w-auto px-6 py-3.5 rounded-lg border border-white/15 text-neutral-300 hover:text-white hover:border-white/30 font-medium text-sm sm:text-base transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          <h1
+            id="hero-title"
+            className="mb-5 text-3xl font-bold leading-[1.12] tracking-tight text-purple-950 sm:text-5xl lg:text-5xl xl:text-6xl 2xl:text-7xl"
           >
-            <span>Comment ça marche</span>
-          </button>
-        </div>
+            Répondez à vos clients <br />
+            <span className="text-purple-600">même quand vous êtes fermé.</span>
+          </h1>
 
-        {/* Trois points concrets, sans jargon */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-neutral-400">
-          <span className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-neutral-500" />
-            Sur votre site, en 5 minutes
-          </span>
-          <span className="flex items-center gap-2">
-            <MessageCircle className="w-4 h-4 text-neutral-500" />
-            Français & darija
-          </span>
-          <span className="flex items-center gap-2">
-            <Instagram className="w-4 h-4 text-neutral-500" />
-            Aussi sur Instagram
-          </span>
+          <p
+            id="hero-subtitle"
+            className="mb-8 max-w-xl text-sm font-normal leading-relaxed text-purple-950/70 sm:text-base md:text-lg"
+          >
+            Une bulle de discussion sur votre site qui répond en français et en darija :
+            prix, livraison, horaires, disponibilité. Et qui vous transmet le numéro
+            des clients intéressés.
+          </p>
+
+          <div
+            id="hero-cta-group"
+            className="mb-8 flex w-full flex-col items-stretch gap-3.5 sm:w-auto sm:flex-row sm:items-center"
+          >
+            <button
+              id="hero-primary-cta"
+              onClick={onOpenAssistantModal}
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-700 px-6 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-purple-800 sm:w-auto sm:text-base"
+            >
+              <span>Créer mon assistant</span>
+              <ArrowRight className="h-4 w-4 shrink-0" />
+            </button>
+
+            <button
+              id="hero-secondary-cta"
+              onClick={onScrollToParcours}
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-purple-200 px-6 py-3.5 text-sm font-medium text-purple-800 transition-colors hover:border-purple-300 hover:bg-purple-50 hover:text-purple-950 sm:w-auto sm:text-base"
+            >
+              <span>Comment ça marche</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-purple-900/75">
+            <span className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-purple-500" />
+              Sur votre site, en 5 minutes
+            </span>
+            <span className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-purple-500" />
+              Français & darija
+            </span>
+            <span className="flex items-center gap-2">
+              <Instagram className="h-4 w-4 text-purple-500" />
+              Aussi sur Instagram
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Aperçu de conversation (grand écran) — remplace temporairement l'ancien robot animé */}
-      <HeroChatPreview />
+      <HeroInkReveal />
     </section>
   );
 };
