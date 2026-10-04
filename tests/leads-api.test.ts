@@ -64,4 +64,31 @@ describe('/api/leads — suivi sécurisé', () => {
     const invalid = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-other', followUpStatus: 'pending' }));
     expect(invalid.status).toBe(400);
   });
+
+  it('fait avancer les commandes avec transitions contrôlées et laisse le commerçant reprendre la main', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'p-order', assistant_id: 'asst1', data: {
+        channel: 'instagram', igUserId: 'ig-sara', sessionId: 'ig_ig-sara',
+        orders: [{ id: 'order-1', reference: 'JF-ORDER1', status: 'pending_merchant_confirmation' }],
+      },
+    }]);
+
+    const confirmed = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-order', orderId: 'order-1', orderStatus: 'confirmed' }));
+    expect(confirmed.status).toBe(200);
+    expect(fx.supabase.rows('prospects')[0].data.orders[0]).toMatchObject({ status: 'confirmed', updatedAt: expect.any(String) });
+
+    const impossible = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-order', orderId: 'order-1', orderStatus: 'delivered' }));
+    expect(impossible.status).toBe(409);
+
+    const takeover = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-order', action: 'takeover' }));
+    expect(takeover.status).toBe(200);
+    expect(await takeover.json()).toMatchObject({ handoffStatus: 'human', sessionId: 'ig_ig-sara' });
+    expect(fx.supabase.rows('bot_mutes')).toHaveLength(1);
+    expect(fx.supabase.rows('prospects')[0].data.handoffStatus).toBe('human');
+
+    const resume = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-order', action: 'resume' }));
+    expect(resume.status).toBe(200);
+    expect(fx.supabase.rows('bot_mutes')).toHaveLength(0);
+    expect(fx.supabase.rows('prospects')[0].data.handoffStatus).toBe('bot');
+  });
 });

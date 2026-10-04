@@ -55,7 +55,8 @@ import {
   SlidersHorizontal,
   Activity,
   ChevronDown,
-  Share2
+  Share2,
+  ShoppingCart
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -75,7 +76,21 @@ import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { SubTabs } from './dashboard/SubTabs';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+
+type LeadOrder = {
+  id: string;
+  reference: string;
+  status: string;
+  channel: string;
+  summary: string;
+  customerName: string;
+  phone: string;
+  city: string;
+  totalAmount: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 /**
  * Menu de l'espace client.
@@ -86,8 +101,8 @@ export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge
 type NavItem = { id: DashboardSectionId; label: string; icon: React.ComponentType<{ className?: string }>; pro?: boolean };
 
 /**
- * UNE SEULE plateforme, 6 entrées de menu :
- *   Accueil · Résumé · Mon assistant · Tester · Canaux · Clients
+ * UNE SEULE plateforme, entrées de menu simples :
+ *   Accueil · Résumé · Mon assistant · Tester · Canaux · Clients · Commandes
  * « Mon assistant » et « Canaux » regroupent plusieurs écrans, affichés en petits onglets.
  */
 const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: DashboardSectionId; label: string }> }> = {
@@ -121,6 +136,7 @@ const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
   { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
   { id: 'leads', label: 'Clients', icon: BarChart3, pro: true },
+  { id: 'orders', label: 'Commandes', icon: ShoppingCart, pro: true },
 ];
 
 interface DashboardPlatformProps {
@@ -590,6 +606,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [leadFollowUpBusy, setLeadFollowUpBusy] = useState<string | null>(null);
   const [leadFollowUpError, setLeadFollowUpError] = useState<string>('');
+  const [orderActionBusy, setOrderActionBusy] = useState<string | null>(null);
+  const [orderActionError, setOrderActionError] = useState<string>('');
+  const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
+  const [handoffError, setHandoffError] = useState<string>('');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'nouveau' | 'qualifie'>('all');
@@ -629,6 +649,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     followUpNote?: string;
     nextAction?: string;
     lastInteractionAt?: string;
+    sessionId?: string;
+    igUserId?: string;
+    handoffStatus?: string;
+    instagramOrigin?: { caption?: string; permalink?: string; thumbnail?: string; mediaId?: string; type?: string };
+    orders?: LeadOrder[];
   }>>([]);
 
   // Load user data from Firestore on mount
@@ -805,6 +830,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           followUpNote: data.followUpNote || '',
           nextAction: data.nextAction || '',
           lastInteractionAt: data.lastInteractionAt || '',
+          sessionId: data.sessionId || '',
+          igUserId: data.igUserId || '',
+          handoffStatus: data.handoffStatus || 'bot',
+          instagramOrigin: data.instagramOrigin || null,
+          orders: Array.isArray(data.orders) ? data.orders : [],
         }));
         if (!cancelled) setLeadsList(prospects);
       } catch (error) {
@@ -837,6 +867,51 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setLeadFollowUpError(error?.message || 'Erreur réseau. Réessaie.');
     } finally {
       setLeadFollowUpBusy(null);
+    }
+  };
+
+  const updateOrderStatus = async (prospectId: string, orderId: string, orderStatus: string) => {
+    const actionKey = `${prospectId}:${orderId}`;
+    if (!assistantId || orderActionBusy) return;
+    setOrderActionBusy(actionKey);
+    setOrderActionError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId, orderId, orderStatus }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) throw new Error(result?.error || 'Impossible de mettre à jour la commande.');
+      setLeadsList((current) => current.map((lead) => lead.id === prospectId
+        ? { ...lead, orders: (lead.orders || []).map((order) => order.id === orderId ? { ...order, status: orderStatus, updatedAt: result.updatedAt } : order) }
+        : lead));
+    } catch (error: any) {
+      setOrderActionError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setOrderActionBusy(null);
+    }
+  };
+
+  const setLeadHandoff = async (lead: any, action: 'takeover' | 'resume') => {
+    if (!assistantId || handoffBusy) return;
+    setHandoffBusy(lead.id);
+    setHandoffError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId: lead.id, action }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) throw new Error(result?.error || 'Impossible de changer la prise en main.');
+      setLeadsList((current) => current.map((item) => item.id === lead.id ? { ...item, handoffStatus: result.handoffStatus } : item));
+    } catch (error: any) {
+      setHandoffError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setHandoffBusy(null);
     }
   };
 
@@ -1250,7 +1325,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assistantId: assistantId || businessName || 'asst_default',
+          sessionId: `dashboard_simulator_${assistantId || 'preview'}`,
+          isSimulator: true,
           message: userText,
+          history: messages.slice(-6).map(({ sender, text }) => ({ sender, text })),
           website: websiteUrl,
           knowledgeNotes: knowledgeNotes.filter(n => n.enabled)
         })
@@ -1388,13 +1466,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             </div>
           </div>
 
-          {/* Navigation : 6 entrées, libellés simples */}
+          {/* Navigation : libellés simples, dont la vue Commandes */}
           <nav className="px-3 pb-4 pt-3" aria-label="Menu principal">
             <div className="space-y-1">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = item.group ? groupOf(currentSection) === item.group : currentSection === item.id;
-                const badge = item.id === 'leads' ? String(leadsList.length) : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length) : null;
+                const badge = item.id === 'leads' ? String(leadsList.length) : item.id === 'orders' ? String(leadsList.reduce((count, lead) => count + (lead.orders?.length || 0), 0)) : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length) : null;
                 return (
                   <button
                     key={item.id}
@@ -1500,6 +1578,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 {groupOf(currentSection) === 'channels' && SECTION_GROUPS.channels.title}
                 {currentSection === 'simulator' && 'Tester mon assistant'}
                 {currentSection === 'leads' && 'Mes clients'}
+                {currentSection === 'orders' && 'Commandes'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
               </h1>
@@ -2963,6 +3042,42 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           </div>
                         )}
 
+                        {lead.channel === 'instagram' && lead.igUserId && (
+                          <section className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900">Conversation Instagram</h4>
+                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${lead.handoffStatus === 'human' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                {lead.handoffStatus === 'human' ? 'Prise en main humaine' : 'Bot actif'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] leading-relaxed text-indigo-800">
+                              {lead.handoffStatus === 'human'
+                                ? 'Le bot est en pause pour ce client. Réponds directement depuis Instagram, puis rends la conversation au bot lorsque tu as terminé.'
+                                : 'Tu peux mettre le bot en pause et reprendre la conversation directement dans Instagram.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void setLeadHandoff(lead, lead.handoffStatus === 'human' ? 'resume' : 'takeover')}
+                              disabled={handoffBusy !== null}
+                              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-semibold text-white transition disabled:cursor-wait disabled:opacity-60 ${lead.handoffStatus === 'human' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                            >
+                              {handoffBusy === lead.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+                              {lead.handoffStatus === 'human' ? 'Rendre la main au bot' : 'Reprendre la main'}
+                            </button>
+                            {handoffError && <p role="alert" className="text-[10px] font-medium text-rose-600">{handoffError}</p>}
+                          </section>
+                        )}
+
+                        {lead.instagramOrigin && (
+                          <section className="space-y-2 rounded-xl border border-pink-200 bg-pink-50/60 p-4">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-pink-900">Publication à l’origine de la conversation</h4>
+                            {lead.instagramOrigin.thumbnail && <img src={lead.instagramOrigin.thumbnail} alt="Miniature de la publication Instagram" loading="lazy" className="max-h-40 w-full rounded-lg object-cover" />}
+                            {lead.instagramOrigin.caption && <p className="line-clamp-3 text-xs text-slate-700">{lead.instagramOrigin.caption}</p>}
+                            <p className="text-[10px] font-semibold text-pink-800">{lead.instagramOrigin.type || 'Contenu Instagram'}{lead.instagramOrigin.mediaId ? ` · ${lead.instagramOrigin.mediaId}` : ''}</p>
+                            {lead.instagramOrigin.permalink && <a href={lead.instagramOrigin.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-pink-700 hover:text-pink-900">Ouvrir la publication <ExternalLink className="h-3 w-3" /></a>}
+                          </section>
+                        )}
+
                         {/* Les détails techniques intéressent rarement le commerçant : repliés par défaut */}
                         <button
                           type="button"
@@ -3228,6 +3343,105 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               </div>
             </div>
           )}
+
+          {/* =================================================================
+              SECTION: COMMANDES (confirmées explicitement par le client)
+              ================================================================= */}
+          {currentSection === 'orders' && (() => {
+            const orders = leadsList.flatMap((lead) => (lead.orders || []).map((order) => ({ lead, order })))
+              .sort((a, b) => Date.parse(b.order.createdAt || '') - Date.parse(a.order.createdAt || ''));
+            const labels: Record<string, string> = {
+              pending_merchant_confirmation: 'À confirmer par la boutique',
+              confirmed: 'Confirmée', preparing: 'En préparation', shipped: 'Expédiée', delivered: 'Livrée', cancelled: 'Annulée',
+            };
+            const steps = ['pending_merchant_confirmation', 'confirmed', 'preparing', 'shipped', 'delivered'];
+            const nextStatuses: Record<string, Array<{ status: string; label: string; destructive?: boolean }>> = {
+              pending_merchant_confirmation: [{ status: 'confirmed', label: 'Confirmer la commande' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
+              confirmed: [{ status: 'preparing', label: 'Démarrer la préparation' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
+              preparing: [{ status: 'shipped', label: 'Marquer comme expédiée' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
+              shipped: [{ status: 'delivered', label: 'Marquer comme livrée' }],
+              delivered: [], cancelled: [],
+            };
+            return (
+              <div className="mx-auto max-w-6xl space-y-6 animate-in fade-in duration-200">
+                <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-purple-600" /><h2 className="text-lg font-bold text-slate-900">Commandes via l’assistant</h2></div>
+                    <p className="mt-1 text-sm text-slate-500">Seules les demandes confirmées explicitement par le client apparaissent ici. Vérifie prix et disponibilité avant de confirmer.</p>
+                  </div>
+                  <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">{orders.length} commande{orders.length === 1 ? '' : 's'}</span>
+                </div>
+                {orderActionError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{orderActionError}</p>}
+                {orders.length ? (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {orders.map(({ lead, order }) => {
+                      const currentStep = steps.indexOf(order.status);
+                      const busyKey = `${lead.id}:${order.id}`;
+                      const created = order.createdAt && Number.isFinite(Date.parse(order.createdAt))
+                        ? new Date(order.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : 'Date indisponible';
+                      return (
+                        <article key={`${lead.id}:${order.id}`} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{order.reference || order.id} · {order.channel || lead.channel || 'Assistant'}</p>
+                              <h3 className="mt-1 text-base font-bold text-slate-900">{order.customerName || lead.name}</h3>
+                              <p className="text-xs text-slate-500">{created}</p>
+                            </div>
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${order.status === 'pending_merchant_confirmation' ? 'border-amber-200 bg-amber-50 text-amber-800' : order.status === 'cancelled' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                              {labels[order.status] || order.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
+                            <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Téléphone</span><span className="font-semibold text-slate-800">{order.phone || lead.phone || 'Non fourni'}</span></div>
+                            <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Ville</span><span className="font-semibold text-slate-800">{order.city || lead.city || 'Non précisée'}</span></div>
+                            <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Montant</span><span className="font-semibold text-slate-800">{typeof order.totalAmount === 'number' ? `${new Intl.NumberFormat('fr-DZ').format(order.totalAmount)} DA` : 'À vérifier avec le client — montant non confirmé'}</span></div>
+                          </div>
+                          <div>
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suivi de commande</p>
+                            {order.status === 'cancelled' ? <p className="text-xs font-semibold text-rose-700">Cette demande a été annulée.</p> : (
+                              <div className="grid grid-cols-5 gap-1">
+                                {steps.map((step, index) => {
+                                  const complete = currentStep >= 0 && index <= currentStep;
+                                  return <div key={step} className="min-w-0"><div className={`h-1.5 rounded-full ${complete ? 'bg-purple-600' : 'bg-slate-200'}`} /><p className={`mt-1 truncate text-[8px] ${complete ? 'font-bold text-purple-700' : 'text-slate-400'}`}>{labels[step]}</p></div>;
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <div className="rounded-xl border border-slate-100 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Résumé transmis par le client</p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{order.summary || lead.need || 'Aucun détail produit enregistré.'}</p>
+                          </div>
+                          {lead.instagramOrigin && (
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-pink-100 bg-pink-50/60 p-3 text-xs">
+                              <span className="font-semibold text-pink-900">Origine : {lead.instagramOrigin.type || 'publication Instagram'}</span>
+                              {lead.instagramOrigin.permalink && <a href={lead.instagramOrigin.permalink} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 font-semibold text-pink-700">Ouvrir <ExternalLink className="h-3 w-3" /></a>}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                            <button type="button" onClick={() => { setSelectedLeadId(lead.id); setInsightsTab('prospects'); handleSectionChange('leads'); }} className="text-xs font-semibold text-purple-700 hover:text-purple-900">Voir la conversation</button>
+                            <div className="flex flex-wrap gap-2">
+                              {(nextStatuses[order.status] || []).map((action) => (
+                                <button key={action.status} type="button" onClick={() => void updateOrderStatus(lead.id, order.id, action.status)} disabled={orderActionBusy !== null} className={`rounded-lg px-3 py-2 text-[10px] font-bold transition disabled:cursor-wait disabled:opacity-60 ${action.destructive ? 'border border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                                  {orderActionBusy === busyKey ? <Loader2 className="mr-1 inline h-3 w-3 animate-spin" /> : null}{action.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+                    <ShoppingCart className="mx-auto h-9 w-9 text-slate-300" />
+                    <h3 className="mt-3 font-bold text-slate-800">Aucune commande pour le moment</h3>
+                    <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">Une commande apparaîtra ici uniquement après une confirmation claire du client dans une conversation avec l’assistant.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* =================================================================
               SECTION: BILLING & PLAN (Professional SaaS Billing Dashboard)

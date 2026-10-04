@@ -249,7 +249,7 @@ describe('barre latérale épurée, abonnement et profil en haut à droite', () 
       expect(side.textContent, `« ${gone} » ne doit plus être dans la barre latérale`).not.toContain(gone);
     }
     expect(side.querySelector('img[alt="JawebFlow"]')).toBeTruthy();
-    expect(side.querySelectorAll('nav button[id^="nav-"]').length).toBe(6); // 6 entrées principales ; Canaux révèle ses sous-sections
+    expect(side.querySelectorAll('nav button[id^="nav-"]').length).toBe(7); // 7 entrées principales ; Canaux révèle ses sous-sections
   });
 
   it('plus de bouton « Enregistrer » en haut : à la place, « Abonnement & factures » et le profil', async () => {

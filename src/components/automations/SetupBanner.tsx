@@ -2,7 +2,7 @@
  * « Une dernière étape » : tant que la mise à jour de la base de données n'a pas
  * été faite (une seule fois, 30 secondes), on guide le marchand pas à pas.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, ClipboardCopy, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import migrationSql from '../../../supabase/migration_ig_automations.sql?raw';
 import { Card, primaryBtn, secondaryBtn } from './ui';
@@ -17,6 +17,10 @@ export function supabaseSqlEditorUrl(): string {
 
 export function SetupBanner({ onRecheck, checking, isAdmin }: { onRecheck: () => void; checking: boolean; isAdmin: boolean }) {
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+  }, []);
 
   // Un client de JawebFlow n'a pas accès à la base de données de la plateforme : la mise à jour est faite par l'équipe.
   if (!isAdmin) {
@@ -44,7 +48,8 @@ export function SetupBanner({ onRecheck, checking, isAdmin }: { onRecheck: () =>
       box?.select();
       try { document.execCommand('copy'); setCopied(true); } catch { /* sélection manuelle */ }
     }
-    setTimeout(() => setCopied(false), 3000);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 3000);
   };
 
   return (

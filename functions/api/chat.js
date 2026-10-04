@@ -12,7 +12,7 @@
 import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
-import { detectSalesIntent, buildLeadFollowUp } from '../_shared/sales-intent.ts';
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, createPendingOrderRequest } from '../_shared/sales-intent.ts';
 import { getGeminiContextCache } from '../_shared/gemini-cache.ts';
 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
@@ -31,6 +31,10 @@ const DEFAULT_CHAT_MODEL = 'gemini-3.1-flash-lite';
 
 // Les règles permanentes sont partagées avec Instagram pour garder un seul cerveau.
 const buildStaticSystemPrompt = buildSalesSystemPrompt;
+
+function webProspectId(assistantId, sessionId) {
+  return `${assistantId}_web_${String(sessionId || 'web')}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+}
 
 // Parser Firestore REST -> Objet JS
 function parseFirestoreDoc(doc) {
@@ -81,7 +85,8 @@ export async function onRequestPost(context) {
   let followUpRecorded = false;
 
   try {
-    const { message, assistantId, history, image, sessionId } = await context.request.json();
+    const { message, assistantId, history, image, sessionId, messageId, isSimulator } = await context.request.json();
+    const simulatorRequest = isSimulator === true;
     const env = context.env;
     const apiKey = env.GEMINI_API_KEY;
     const chatModel = env.GEMINI_MODEL || DEFAULT_CHAT_MODEL;
@@ -178,15 +183,16 @@ export async function onRequestPost(context) {
 
     // 🙋 TRANSFERT HUMAIN : réponse immédiate SANS appel IA, le marchand est
     // prévenu en DM par le compte JawebFlow (1 fois / 2 h par session).
-    if (assistantId && !isDemoAssistant && isHumanTransfer(message)) {
+    if (assistantId && !isDemoAssistant && !simulatorRequest && isHumanTransfer(message)) {
       if (supabaseConfigured(env)) {
         try {
           const sessionKey = String(sessionId || 'web');
           const prospectId = `${assistantId}_web_${sessionKey}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
           const now = new Date().toISOString();
           const followUp = buildLeadFollowUp({ type: 'appointment', priority: 'high', nextAction: 'Recontacter le visiteur pour poursuivre sa demande' }, message, 'Site web', new Date(now));
+          await supabaseRequest(env, 'bot_mutes', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates' }, body: JSON.stringify({ assistant_id: assistantId, session_id: sessionKey }) });
           await supabaseUpsertProspect(env, prospectId, assistantId, {
-            source: 'site web', channel: 'site web', status: 'qualifie',
+            source: 'site web', channel: 'site web', sessionId: sessionKey, handoffStatus: 'human', handoffAt: now, status: 'qualifie',
             salesIntentType: 'human_transfer', salesStage: 'qualified',
             need: String(message).slice(0, 2000), lastInteractionAt: now,
             ...followUp,
@@ -246,9 +252,20 @@ export async function onRequestPost(context) {
 
     // 🧮 ÉCONOMIE : une pure politesse (salam/merci/ok...) ne déclenche NI la
     // recherche produits NI l'appel IA — réponse locale gratuite.
-    if (isSmallTalk(message)) {
-      diagnostics.push('politesse -> réponse locale sans IA');
-      return reply(localGreeting(message, config), diagnostics, { skipped: 'smalltalk', weight: 0 });
+    if (isSmallTalk(message) && !simulatorRequest) {
+      let awaitingOrderConfirmation = false;
+      if (isAffirmative(message) && supabaseConfigured(env)) {
+        try {
+          const sessionKey = String(sessionId || 'web');
+          const leadRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(webProspectId(assistantId, sessionKey))}&select=data`);
+          const rows = leadRes.ok ? await leadRes.json().catch(() => []) : [];
+          awaitingOrderConfirmation = rows?.[0]?.data?.orderDraft?.status === 'awaiting_confirmation';
+        } catch { /* une réponse « oui » reste une simple politesse si aucun brouillon n'est accessible */ }
+      }
+      if (!awaitingOrderConfirmation) {
+        diagnostics.push('politesse -> réponse locale sans IA');
+        return reply(localGreeting(message, config), diagnostics, { skipped: 'smalltalk', weight: 0 });
+      }
     }
 
     // 🧮 POIDS DE QUOTA : message simple = 1 · photo = 4 · recherche produits = +2.
@@ -334,6 +351,25 @@ export async function onRequestPost(context) {
       }
     }
 
+    // Historique serveur prioritaire : le widget ne peut ni perdre le fil ni
+    // forger un faux message précédent pour confirmer une commande.
+    let conversationHistory = Array.isArray(history) ? history : [];
+    if (supabaseConfigured(env)) {
+      try {
+        const sessionKey = String(sessionId || 'web');
+        const historyRes = await supabaseRequest(env, `conversation_contexts?assistant_id=eq.${encodeURIComponent(assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}&channel=eq.web_widget&select=user_message,assistant_response,created_at&order=created_at.desc&limit=4`);
+        if (historyRes.ok) {
+          const rows = await historyRes.json().catch(() => []);
+          if (Array.isArray(rows) && rows.length) {
+            conversationHistory = rows.reverse().flatMap((row) => [
+              ...(row.user_message ? [{ sender: 'user', text: String(row.user_message).slice(0, 2_000) }] : []),
+              ...(row.assistant_response ? [{ sender: 'bot', text: String(row.assistant_response).slice(0, 2_000) }] : []),
+            ]).slice(-6);
+          }
+        }
+      } catch { /* l'historique n'interrompt jamais le chat */ }
+    }
+
     // 3. Historique de conversation (image jointe => partie inline_data native)
     const userParts = [];
     if (image && image.data) {
@@ -347,24 +383,31 @@ export async function onRequestPost(context) {
       }
     }
     userParts.push({ text: message.trim() || "Voici une photo (sans texte du client). Identifie PRÉCISÉMENT l'article visible — catégorie exacte (un jean/denim n'est PAS un jersey : base-toi sur la matière et la coupe), couleur, logo lisible — puis aide le client en utilisant notre base de connaissances." });
-    const contents = (Array.isArray(history) ? history : [])
+    const contents = conversationHistory
       .slice(-6)
       .map(h => ({ role: h.sender === 'user' ? 'user' : 'model', parts: [{ text: h.text }] }));
     contents.push({ role: 'user', parts: userParts });
 
-    // 📇 Capture des coordonnées ET des signaux d'achat : le marchand retrouve
-    // aussi les visiteurs anonymes qui ont une vraie intention commerciale.
-    if (supabaseConfigured(env)) {
+    // 📇 Capture des coordonnées, signaux d'achat et commandes confirmées.
+    let createdOrder = null;
+    if (!simulatorRequest && supabaseConfigured(env)) {
       try {
         const wf = extractLeadFacts(message);
         const hasFacts = Boolean(wf.phone || wf.name || wf.city || wf.email);
-        if (hasFacts || salesIntent) {
-          const sessionKey = String(sessionId || 'web');
-          const pid = linkedProspectId || `${assistantId}_web_${sessionKey}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+        const possibleConfirmation = isExplicitOrderConfirmation(message) || isAffirmative(message);
+        const sessionKey = String(sessionId || 'web');
+        const pid = linkedProspectId || webProspectId(assistantId, sessionKey);
+        if (hasFacts || salesIntent || possibleConfirmation) {
           const exRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(pid)}&select=id,data`);
           const exists = exRes.ok ? ((await exRes.json().catch(() => [])) || [])[0] : null;
-          if (exists || wf.phone || wf.email || salesIntent) {
+          const draft = exists?.data?.orderDraft;
+          const orderConfirmed = exists?.data?.handoffStatus !== 'human' && (
+            isExplicitOrderConfirmation(message)
+            || (draft?.status === 'awaiting_confirmation' && isAffirmative(message))
+          );
+          if (hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation') {
             const now = new Date();
+            const nowIso = now.toISOString();
             const contactAvailable = Boolean(wf.phone || wf.email || exists?.data?.phone || exists?.data?.email || linkedProspectId);
             const hasOpenFollowUp = !['pending', 'done'].includes(String(exists?.data?.followUpStatus || ''));
             const followUpPatch = salesIntent
@@ -372,19 +415,42 @@ export async function onRequestPost(context) {
               : (contactAvailable && hasOpenFollowUp ? buildLeadFollowUp(null, message, 'Site web', now, true) : {});
             const isNew = !exists;
             const highIntent = salesIntent?.priority === 'high';
+            const savedMessages = Array.isArray(exists?.data?.messages) ? exists.data.messages.slice(-8) : [];
+            const conversationSummary = [
+              ...savedMessages.map((entry) => `${entry.sender === 'bot' ? 'Assistant' : 'Client'} : ${String(entry.text || '').slice(0, 350)}`),
+              `Client : ${String(message).slice(0, 350)}`,
+            ].join('\n').slice(-2_000);
+            if (orderConfirmed) {
+              const requestId = messageId || `session_${sessionKey}_${now.getTime()}`;
+              createdOrder = createPendingOrderRequest({
+                id: `web_${requestId}`,
+                channel: 'Site web',
+                summary: String(draft?.summary || conversationSummary),
+                customerName: wf.name || exists?.data?.name,
+                phone: wf.phone || exists?.data?.phone,
+                city: wf.city || exists?.data?.city,
+                now,
+              });
+            }
+            const invalidateOldDraft = draft?.status === 'awaiting_confirmation' && !orderConfirmed;
+            const nextDraft = invalidateOldDraft
+              ? { ...draft, status: 'collecting', summary: conversationSummary, updatedAt: nowIso }
+              : null;
             await supabaseUpsertProspect(env, pid, assistantId, {
               ...(!exists ? { source: 'site web' } : {}),
               channel: 'site web',
+              sessionId: sessionKey,
               ...(wf.phone ? { phone: wf.phone } : {}),
               ...(wf.name ? { name: wf.name } : {}),
               ...(wf.city ? { city: wf.city } : {}),
               ...(wf.email ? { email: wf.email } : {}),
-              ...(isNew || salesIntent ? { status: 'qualifie' } : {}),
-              ...((isNew || salesIntent) ? { need: String(message).slice(0, 2000) } : {}),
+              ...(isNew || orderConfirmed || salesIntent ? { status: 'qualifie' } : {}),
+              ...((isNew || (salesIntent && !orderConfirmed)) ? { need: String(message).slice(0, 2_000) } : {}),
               ...(salesIntent ? { salesIntentType: salesIntent.type } : {}),
               ...(Object.keys(followUpPatch).length ? { ...followUpPatch } : {}),
-              lastInteractionAt: now.toISOString(),
-              messages: [{ sender: 'user', text: String(message).slice(0, 500), timestamp: now.toISOString() }],
+              ...(createdOrder ? { orders: [createdOrder], orderDraft: null } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
+              lastInteractionAt: nowIso,
+              messages: [{ sender: 'user', text: String(message).slice(0, 500), timestamp: nowIso }],
             });
             trackedProspectId = pid;
             followUpRecorded = Boolean(followUpPatch.followUpStatus);
@@ -393,17 +459,27 @@ export async function onRequestPost(context) {
               nextAction: followUpPatch.nextAction,
               note: 'Le suivi est enregistré pour le commerçant dans son espace prospects. Ne prétends pas qu’un rappel client est déjà effectué ou planifié.',
             };
-            diagnostics.push(salesIntent ? `prospect enregistré (${salesIntent.type})` : 'fiche prospect enrichie');
+            if (createdOrder) {
+              businessContext.orderCreated = {
+                reference: createdOrder.reference,
+                status: createdOrder.status,
+                note: 'Demande de commande enregistrée, en attente de validation humaine par la boutique. Aucune confirmation de stock, prix ou paiement.',
+              };
+              diagnostics.push(`demande de commande ${createdOrder.reference} enregistrée pour validation`);
+            } else {
+              diagnostics.push(salesIntent ? `prospect enregistré (${salesIntent.type})` : 'fiche prospect enrichie');
+            }
 
             // Une notification externe seulement pour un nouveau contact ou un
             // signal commercial fort ; les questions de prix isolées restent
             // visibles dans le CRM sans spammer le marchand.
-            if ((isNew && Boolean(wf.phone || wf.email)) || highIntent) {
+            if ((isNew && Boolean(wf.phone || wf.email)) || highIntent || createdOrder) {
               const leadPayload = {
                 ...wf,
                 need: String(message).slice(0, 200),
                 source: 'site web',
                 ...(salesIntent ? { salesIntentType: salesIntent.type, nextAction: salesIntent.nextAction } : {}),
+                ...(createdOrder ? { orderReference: createdOrder.reference } : {}),
               };
               try { await notifyLead(env, assistantId, leadPayload); } catch { /* notification best-effort */ }
               try {
@@ -411,7 +487,7 @@ export async function onRequestPost(context) {
                   env, assistantId, { ...leadPayload, contactKey: sessionKey },
                   typeof context.waitUntil === 'function' ? context.waitUntil.bind(context) : undefined,
                 );
-              } catch { /* intégration externe best-effort */ }
+              } catch { /* best-effort */ }
             }
           }
         }
@@ -442,6 +518,10 @@ export async function onRequestPost(context) {
         }
         if (RESUME_WORDS.includes(normMsg)) {
           await supabaseRequest(env, `bot_mutes?assistant_id=eq.${encodeURIComponent(assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}`, { method: 'DELETE' });
+          const leadRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(webProspectId(assistantId, sessionKey))}&assistant_id=eq.${encodeURIComponent(assistantId)}&select=id&limit=1`);
+          if (leadRes.ok && (await leadRes.json().catch(() => [])).length) {
+            await supabaseUpsertProspect(env, webProspectId(assistantId, sessionKey), assistantId, { handoffStatus: 'bot', handoffAt: new Date().toISOString() });
+          }
           return reply("C'est reparti ! 😊 Comment puis-je vous aider ?", diagnostics);
         }
         const mRes = await supabaseRequest(env, `bot_mutes?assistant_id=eq.${encodeURIComponent(assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}&select=assistant_id`);
@@ -472,7 +552,7 @@ export async function onRequestPost(context) {
       generationConfig: {
         temperature: 0.65,
         // 🧮 plafond selon le réglage « quantité » du client (coût de sortie ÷2)
-        maxOutputTokens: config.behavior?.length === 'detailed' ? 700 : 450,
+        maxOutputTokens: (createdOrder || salesIntent?.priority === 'high') ? 180 : (config.behavior?.length === 'detailed' ? 700 : 450),
         // 🧮 zéro réflexion cachée (Gemini 3 facture la réflexion au prix fort)
         thinkingConfig: { thinkingBudget: 0 },
       },
@@ -506,6 +586,25 @@ export async function onRequestPost(context) {
       diagnostics.push(`Gemini ${chatModel}: réponse vide (blockReason: ${geminiData?.promptFeedback?.blockReason || 'inconnu'})`);
       console.error('[chat] réponse Gemini vide:', JSON.stringify(geminiData).slice(0, 300));
       throw new Error("Réponse Gemini vide");
+    }
+
+    if (supabaseConfigured(env) && trackedProspectId && !createdOrder && isOrderConfirmationQuestion(aiText)) {
+      const draftMessages = [
+        ...conversationHistory.filter((entry) => entry?.sender === 'user').slice(-4).map((entry) => `Client : ${String(entry.text || '').slice(0, 350)}`),
+        `Client : ${String(message).slice(0, 350)}`,
+      ];
+      try {
+        await supabaseUpsertProspect(env, trackedProspectId, assistantId, {
+          orderDraft: {
+            status: 'awaiting_confirmation',
+            channel: 'Site web',
+            summary: draftMessages.join('\\n').slice(-2_000),
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        console.warn('[chat][order] confirmation en attente non sauvegardée:', error?.message || error);
+      }
     }
 
     if (supabaseConfigured(env) && trackedProspectId) {

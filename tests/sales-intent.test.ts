@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLeadFollowUp, detectSalesIntent } from '../functions/_shared/sales-intent';
+import { buildLeadFollowUp, createPendingOrderRequest, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion } from '../functions/_shared/sales-intent';
 
 describe('détection et suivi commercial', () => {
   it('repère une volonté d’achat en français, darija translittérée et arabe', () => {
@@ -17,6 +17,18 @@ describe('détection et suivi commercial', () => {
   it('évite de confondre « recommander » avec « commander »', () => {
     expect(detectSalesIntent('Tu peux me recommander une coque ?')).toBeNull();
     expect(detectSalesIntent('')).toBeNull();
+  });
+
+  it('ne crée une commande qu’après une confirmation explicite ou un oui au brouillon', () => {
+    expect(isExplicitOrderConfirmation('Je confirme la commande')).toBe(true);
+    expect(isExplicitOrderConfirmation('Je la prends')).toBe(false);
+    expect(isOrderConfirmationQuestion('Souhaitez-vous confirmer la commande ?')).toBe(true);
+    expect(isAffirmative('Oui, je confirme')).toBe(true);
+    expect(isAffirmative('Oui, mais je voudrais encore voir une autre couleur')).toBe(false);
+    expect(createPendingOrderRequest({ id: 'web_message-1234', channel: 'Site web', summary: 'Une veste', now: new Date('2026-10-04T10:00:00.000Z') })).toMatchObject({
+      id: 'web_message-1234', status: 'pending_merchant_confirmation', totalAmount: null,
+      createdAt: '2026-10-04T10:00:00.000Z',
+    });
   });
 
   it('ne promet pas de relance hors canal sans moyen de contact disponible', () => {
