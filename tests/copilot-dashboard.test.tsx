@@ -192,7 +192,7 @@ describe('ce que l’IA écrit apparaît dans les écrans, et la sauvegarde auto
     expect((screen.getByDisplayValue(/Tutoie toujours le client/) as HTMLTextAreaElement).value).toBe('Tutoie toujours le client.');
 
     // une sauvegarde complète du tableau de bord (bouton « Enregistrer ces informations ») garde le nouveau comportement
-    fireEvent.click(document.getElementById('nav-knowledge')!);
+    goTo('knowledge');
     const savesBefore = hoisted.saves.length;
     fireEvent.click(await screen.findByRole('button', { name: /Enregistrer ces informations/ }));
     await waitFor(() => expect(hoisted.saves.length).toBeGreaterThan(savesBefore));
@@ -262,7 +262,7 @@ describe('sauvegarde automatique : en pause pendant que l’IA travaille', () =>
     await waitFor(() => expect(release).toBeTypeOf('function'));
 
     // pendant l'attente, le marchand met une fiche de côté dans « Mes informations » (derrière le chat)
-    fireEvent.click(document.getElementById('nav-knowledge')!);
+    goTo('knowledge');
     const toggle = await screen.findByRole('button', { name: /Désactiver la fiche Livraison/ });
     const beforeEdit = hoisted.saves.length;
     fireEvent.click(toggle);
@@ -302,7 +302,7 @@ describe('réponse perdue en route : les écrans disent la vérité', () => {
     expect(notesInDb().map((n) => n.title)).toContain('Coque Spiderman');
 
     // l'écran « Mes informations » a été remis d'équerre avec la base
-    fireEvent.click(document.getElementById('nav-knowledge')!);
+    goTo('knowledge');
     const main = document.querySelector('main')!;
     await waitFor(() => expect(within(main).getAllByText(/Coque Spiderman/).length).toBeGreaterThan(0));
     globalThis.fetch = routed;
