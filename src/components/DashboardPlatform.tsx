@@ -72,7 +72,6 @@ import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
-import { SubTabs } from './dashboard/SubTabs';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
@@ -114,13 +113,15 @@ const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: Dashboar
 const groupOf = (id: DashboardSectionId): string | null =>
   Object.keys(SECTION_GROUPS).find((g) => SECTION_GROUPS[g].tabs.some((t) => t.id === id)) || null;
 
+const menuGroupOf = (id: DashboardSectionId): string | null => groupOf(id) || (id === 'leads' ? 'clients' : null);
+
 const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
   { id: 'summary', label: 'Résumé', icon: TrendingUp },
   { id: 'knowledge', label: 'Mon assistant', icon: Bot, group: 'assistant' },
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
   { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
-  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true },
+  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true, group: 'clients' },
 ];
 
 interface DashboardPlatformProps {
@@ -168,7 +169,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [currentSection, setCurrentSection] = useState<DashboardSectionId>(
     (initialSection as DashboardSectionId) || 'overview'
   );
-  const [channelsMenuOpen, setChannelsMenuOpen] = useState(() => groupOf(initialSection as DashboardSectionId) === 'channels');
+  const [openGroup, setOpenGroup] = useState<string | null>(() => menuGroupOf(initialSection as DashboardSectionId));
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
   // Venue des Automatisations : l'onglet Instagram met en avant « Autoriser les commentaires ».
   const [instagramFocus, setInstagramFocus] = useState<'comments' | null>(null);
@@ -183,7 +184,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   useEffect(() => {
     if (initialSection && initialSection !== currentSection) {
       setCurrentSection(initialSection as DashboardSectionId);
-      setChannelsMenuOpen(groupOf(initialSection as DashboardSectionId) === 'channels');
+      setOpenGroup(menuGroupOf(initialSection as DashboardSectionId));
     }
   }, [initialSection]);
 
@@ -213,7 +214,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
-    setChannelsMenuOpen(groupOf(section) === 'channels');
+    setOpenGroup(menuGroupOf(section));
     setMobileMenuOpen(false);
     setAccountMenuOpen(false);
     if (onNavigate) {
@@ -1393,74 +1394,82 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             <div className="space-y-1">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
-                const isActive = item.group ? groupOf(currentSection) === item.group : currentSection === item.id;
+                const group = item.group;
+                const isActive = group ? menuGroupOf(currentSection) === group : currentSection === item.id;
+                const isOpen = !!group && openGroup === group;
                 const badge = item.id === 'leads' ? String(leadsList.length) : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length) : null;
+                const subItems: Array<{ key: string; label: string; selected: boolean; onSelect: () => void }> = !group ? [] : group === 'clients'
+                  ? [
+                      { key: 'analytics', label: "Vue d'ensemble", selected: currentSection === 'leads' && insightsTab === 'analytics', onSelect: () => { setInsightsTab('analytics'); handleSectionChange('leads'); } },
+                      { key: 'prospects', label: 'Mes clients', selected: currentSection === 'leads' && insightsTab === 'prospects', onSelect: () => { setInsightsTab('prospects'); handleSectionChange('leads'); } },
+                    ]
+                  : SECTION_GROUPS[group].tabs.map((tab) => ({ key: tab.id, label: tab.label, selected: currentSection === tab.id, onSelect: () => handleSectionChange(tab.id) }));
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    id={`nav-${item.id}`}
-                    title={item.label}
-                    aria-current={isActive && item.group !== 'channels' ? 'page' : undefined}
-                    aria-expanded={item.group === 'channels' ? channelsMenuOpen : undefined}
-                    aria-controls={item.group === 'channels' ? 'channels-submenu' : undefined}
-                    onClick={() => {
-                      if (item.group === 'channels') {
-                        if (groupOf(currentSection) !== 'channels') {
+                  <React.Fragment key={item.id}>
+                    <button
+                      type="button"
+                      id={`nav-${item.id}`}
+                      title={item.label}
+                      aria-current={isActive && !group ? 'page' : undefined}
+                      aria-expanded={group ? isOpen : undefined}
+                      aria-controls={group ? `submenu-${group}` : undefined}
+                      onClick={() => {
+                        if (!group) { handleSectionChange(item.id); return; }
+                        if (menuGroupOf(currentSection) !== group) {
                           const keepDrawerOpen = mobileMenuOpen;
-                          handleSectionChange('integration');
+                          if (group === 'clients') setInsightsTab('analytics');
+                          handleSectionChange(group === 'channels' ? 'integration' : item.id);
                           if (keepDrawerOpen) setMobileMenuOpen(true);
-                        } else setChannelsMenuOpen((open) => !open);
-                      } else handleSectionChange(item.id);
-                    }}
-                    className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
-                        : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="relative shrink-0">
-                      <Icon className={`h-[19px] w-[19px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
-                      {badge && badge !== '0' && (
-                        <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
-                          {badge}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex-1 truncate text-left">{item.label}</span>
-                    {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
-                    {item.group === 'channels' && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${channelsMenuOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
-                  </button>
+                        } else setOpenGroup((g) => (g === group ? null : group));
+                      }}
+                      className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                          : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
+                      }`}
+                    >
+                      <span className="relative shrink-0">
+                        <Icon className={`h-[19px] w-[19px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                        {badge && badge !== '0' && (
+                          <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
+                            {badge}
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex-1 truncate text-left">{item.label}</span>
+                      {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
+                      {group && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
+                    </button>
+                    {group && (
+                      <div
+                        id={`submenu-${group}`}
+                        aria-hidden={!isOpen}
+                        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-3 pb-1">
+                            {subItems.map((sub, index) => (
+                              <button
+                                key={sub.key}
+                                type="button"
+                                tabIndex={isOpen ? 0 : -1}
+                                onClick={sub.onSelect}
+                                data-tab={sub.key}
+                                aria-current={sub.selected ? 'page' : undefined}
+                                className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-[13px] transition-all duration-200 ${sub.selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
+                                style={{ transitionDelay: isOpen ? `${index * 35}ms` : '0ms', transform: isOpen ? 'translateY(0)' : 'translateY(-4px)' }}
+                              >
+                                <span className={`h-1.5 w-1.5 rounded-full ${sub.selected ? 'bg-[#5a2cff]' : 'bg-slate-300'}`} />
+                                {sub.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
                 );
               })}
-              <div
-                id="channels-submenu"
-                aria-hidden={!channelsMenuOpen}
-                className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out ${channelsMenuOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-3 pb-1">
-                    {SECTION_GROUPS.channels.tabs.map((tab, index) => {
-                      const selected = currentSection === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          tabIndex={channelsMenuOpen ? 0 : -1}
-                          onClick={() => handleSectionChange(tab.id)}
-                          data-tab={tab.id}
-                          aria-current={selected ? 'page' : undefined}
-                          className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-[13px] transition-all duration-200 ${selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
-                          style={{ transitionDelay: channelsMenuOpen ? `${index * 35}ms` : '0ms', transform: channelsMenuOpen ? 'translateY(0)' : 'translateY(-4px)' }}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#5a2cff]' : 'bg-slate-300'}`} />
-                          {tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
             </div>
           </nav>
         </div>
@@ -1618,14 +1627,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
-          {groupOf(currentSection) === 'assistant' && (
-            <SubTabs
-              tabs={SECTION_GROUPS[groupOf(currentSection) as string].tabs}
-              active={currentSection}
-              onChange={(id) => handleSectionChange(id)}
-            />
-          )}
-
           {currentSection === 'overview' && (
             // « Bonjour {prénom} » + grand champ de texte : le chat « Mon IA » s'affiche ici (voir <CopilotChat mode="page" />).
             <div ref={setCopilotHost} className="h-full" data-testid="copilot-home-host" />
@@ -2540,26 +2541,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
             return (
               <div className="space-y-6 animate-in fade-in duration-200">
-                {/* Insights vs CRM Tabs */}
-                <div className="flex w-full gap-2 sm:w-max">
-                  <button
-                    onClick={() => setInsightsTab('analytics')}
-                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
-                      insightsTab === 'analytics' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
-                    }`}
-                  >
-                    Vue d'ensemble
-                  </button>
-                  <button
-                    onClick={() => setInsightsTab('prospects')}
-                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
-                      insightsTab === 'prospects' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
-                    }`}
-                  >
-                    Mes clients
-                  </button>
-                </div>
-
                 {insightsTab === 'analytics' ? (
                   <InsightsDashboard user={user} />
                 ) : (
