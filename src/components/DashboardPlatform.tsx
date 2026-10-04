@@ -2545,16 +2545,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   <>
                     {/* Export : une carte simple, deux boutons */}
                 <div className="flex flex-col gap-4 rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(27,22,71,0.04)] sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <h3 className="text-base">Exporter mes contacts</h3>
                     <p className="mt-0.5 text-sm text-slate-500">{totalTracked} client{totalTracked > 1 ? 's' : ''} enregistré{totalTracked > 1 ? 's' : ''}. Télécharge la liste pour l’ouvrir dans Excel ou l’importer dans tes contacts.</p>
                   </div>
-                  <div className="flex flex-wrap gap-2.5">
+                  <div className="flex shrink-0 flex-wrap gap-2.5 sm:flex-nowrap">
                     <button
                       type="button"
                       onClick={handleExportCSV}
                       disabled={leadsList.length === 0}
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
+                      className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
                     >
                       <Download className="h-4 w-4" /> Télécharger la liste
                     </button>
@@ -2562,7 +2562,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       type="button"
                       onClick={handleExportAdsCSV}
                       disabled={leadsList.length === 0}
-                      className="inline-flex items-center gap-2 rounded-full bg-[#f1eaff] px-5 py-2.5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
+                      className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[#f1eaff] px-5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
                     >
                       <Target className="h-4 w-4" /> Pour mes publicités
                     </button>
