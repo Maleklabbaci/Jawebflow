@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BackgroundVideo } from './components/BackgroundVideo';
 import { Navbar, PageId } from './components/Navbar';
 import { FloatingLiveWidget } from './components/FloatingLiveWidget';
+import { SiteFooter } from './components/SiteFooter';
 import { useAuth } from './context/AuthContext';
 
 const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
@@ -220,7 +221,7 @@ export default function App() {
 
   const isInsideDashboard = ((currentPage === 'create-assistant' || currentPage === 'checkout') && !!user) || currentPage === 'admin';
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#0d0f17] text-neutral-100 selection:bg-purple-500/30 selection:text-purple-200">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#08070f] text-neutral-100 selection:bg-purple-500/30 selection:text-purple-200">
       {!isInsideDashboard && <BackgroundVideo opacity={0.88} />}
       <div className="relative z-10 flex min-h-screen flex-col">
         {!isInsideDashboard && <Navbar currentPage={currentPage} onNavigate={handleNavigate} onOpenAssistantModal={() => handleNavigate('create-assistant')} />}
@@ -242,6 +243,15 @@ export default function App() {
             {currentPage === 'admin' && <AdminPage />}
           </Suspense>
         </main>
+        {/* Un seul pied de page pour tout le site vitrine : coordonnées, pages utiles
+            et un dernier appel à l'action sur chaque page publique. */}
+        {!isInsideDashboard && (
+          <SiteFooter
+            onOpenAssistantModal={() => handleNavigate('create-assistant')}
+            onNavigate={handleNavigate}
+            showCallToAction={currentPage !== 'home'}
+          />
+        )}
       </div>
       {!isInsideDashboard && <FloatingLiveWidget onOpenCreateAssistant={() => handleNavigate('create-assistant')} onNavigate={handleNavigate} />}
     </div>

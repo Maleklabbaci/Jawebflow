@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, ArrowRight, ShieldCheck, Heart } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Clock, Lock, Sparkles } from 'lucide-react';
 
 interface CtaSectionProps {
   onOpenAssistantModal: () => void;
@@ -7,106 +7,69 @@ interface CtaSectionProps {
 }
 
 export const CtaSection: React.FC<CtaSectionProps> = ({ onOpenAssistantModal, onNavigate }) => {
+  const goTo = (page: string) => {
+    if (onNavigate) onNavigate(page);
+    else window.location.href = page === 'home' ? '/' : `/${page}`;
+  };
+
   return (
-    <section 
+    <section
       id="cta-section"
-      className="relative py-14 sm:py-28 px-4 sm:px-6 max-w-5xl mx-auto text-center w-full overflow-hidden"
+      className="relative mx-auto w-full max-w-5xl overflow-hidden px-4 pt-14 sm:px-6 sm:pt-24"
     >
-      {/* Container with High-End Glass & Subtle Purple Glow */}
-      <div className="relative rounded-2xl sm:rounded-3xl bg-neutral-950/35 border border-white/15 p-6 sm:p-12 md:p-14 backdrop-blur-2xl shadow-2xl shadow-purple-950/40 overflow-hidden">
-        {/* Ambient Top Light Beam */}
-        <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-purple-400 to-transparent"></div>
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 sm:w-80 h-72 sm:h-80 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        {/* Section Tag */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-xs font-semibold text-purple-200 mb-5 backdrop-blur-xl">
-          <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-          <span>Commencer</span>
-        </div>
+      {/* Dernier moment de décision : on lève le dernier frein, puis on propose une seule action. */}
+      <div className="lux-card lux-card-beam relative p-6 text-center sm:p-12 md:p-14">
+        <div className="lux-orb left-1/2 top-0 h-64 w-64 -translate-x-1/2 bg-purple-600/25" />
 
-        {/* Heading */}
-        <h2 
-          id="cta-title"
-          className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-neutral-100 font-display mb-4 sm:mb-6 leading-tight max-w-3xl mx-auto break-words"
-        >
-          Offrez à votre entreprise <br className="hidden sm:inline" />
-          <span className="text-purple-300">
-            quelqu'un qui répond à votre place.
+        <div className="relative z-10">
+          <span className="lux-eyebrow">
+            <Sparkles className="h-3.5 w-3.5 text-purple-300" />
+            Dernière étape
           </span>
-        </h2>
 
-        <p className="text-sm sm:text-base md:text-lg text-neutral-200/90 max-w-xl mx-auto mb-6 sm:mb-10 leading-relaxed font-normal drop-shadow-sm">
-          Mise en place en quelques minutes. Vous gardez la main sur vos informations à tout moment.
-        </p>
+          <h2 id="cta-title" className="lux-h2 mt-5 break-words">
+            Vos clients écrivent maintenant. <br className="hidden sm:inline" />
+            <span className="lux-accent">Répondez-leur avant qu’ils aillent ailleurs.</span>
+          </h2>
 
-        {/* CTA Button */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
-          <button
-            id="cta-action-btn"
-            onClick={onOpenAssistantModal}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-white hover:bg-neutral-200 text-neutral-900 font-semibold text-sm sm:text-base transition-colors flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <span>Créer mon assistant</span>
-            <ArrowRight className="w-4 h-4 shrink-0" />
-          </button>
-        </div>
+          <p className="lux-lead mx-auto mt-5 max-w-xl">
+            Chaque jour sans réponse, ce sont des demandes qui partent chez un concurrent.
+            Commencez aujourd’hui : votre assistant peut être en ligne dans 5 minutes.
+          </p>
 
-        {/* Security & Reliability micro-labels */}
-        <div className="mt-8 sm:mt-10 pt-6 sm:pt-8 border-t border-white/10 flex flex-wrap items-center justify-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-neutral-300">
-          <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-neutral-500 shrink-0" />
-            Pour tout type de site
-          </span>
-          <span className="hidden sm:inline">•</span>
-          <span>Français & darija</span>
-          <span className="hidden sm:inline">•</span>
-          <span>Installation rapide</span>
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
+            <button id="cta-action-btn" onClick={onOpenAssistantModal} className="btn btn-lg btn-primary">
+              <span>Créer mon assistant</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+            <button onClick={() => goTo('demo')} className="btn btn-lg btn-glass">
+              <span>Voir la démo d’abord</span>
+            </button>
+          </div>
+
+          <p className="lux-note mt-4 text-[0.8rem]">
+            Sans engagement · Aucune carte demandée pour commencer · Vous gardez vos informations
+          </p>
+
+          {/* Réassurance finale en trois points */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 border-t border-white/[0.07] pt-7 text-[0.76rem] font-light text-neutral-400">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 text-purple-300/80" />
+              Pour tout type de site
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-purple-300/80" />
+              En ligne en 5 minutes
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Lock className="h-3.5 w-3.5 text-purple-300/80" />
+              Français & darija
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Footer Branding & Legal Links */}
-      <footer className="mt-12 sm:mt-20 pt-6 sm:pt-8 pb-10 sm:pb-12 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-400 gap-3 sm:gap-4">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <img 
-            src="/logo.jpg" 
-            alt="Logo" 
-            className="h-6 sm:h-7 w-auto object-cover rounded-md opacity-90"
-          />
-          <span>·</span>
-          <span className="text-[11px] sm:text-xs font-medium text-neutral-300">Assistant conversationnel pour sites web & entreprises en Algérie 🇩🇿</span>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-5 text-neutral-400 text-[11px]">
-          {onNavigate ? (
-            <>
-              <button 
-                onClick={() => onNavigate('privacy')} 
-                className="hover:text-purple-300 transition-colors cursor-pointer underline underline-offset-4"
-              >
-                Confidentialité
-              </button>
-              <button 
-                onClick={() => onNavigate('terms')} 
-                className="hover:text-purple-300 transition-colors cursor-pointer underline underline-offset-4"
-              >
-                Conditions
-              </button>
-              <button 
-                onClick={() => onNavigate('data-deletion')} 
-                className="hover:text-purple-300 transition-colors cursor-pointer underline underline-offset-4"
-              >
-                Suppression des données
-              </button>
-            </>
-          ) : (
-            <>
-              <a href="/privacy" className="hover:text-purple-300 transition-colors">Confidentialité</a>
-              <a href="/terms" className="hover:text-purple-300 transition-colors">Conditions</a>
-              <a href="/data-deletion" className="hover:text-purple-300 transition-colors">Suppression des données</a>
-            </>
-          )}
-        </div>
-      </footer>
     </section>
   );
 };

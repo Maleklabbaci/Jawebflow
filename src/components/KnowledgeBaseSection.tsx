@@ -1,85 +1,74 @@
 import React from 'react';
-import { CheckCircle2, Languages, Sparkles, ShieldCheck, Database, Check, FileText, UploadCloud, Cpu, MessageSquare, FileSpreadsheet, FileCode, Layers, HelpCircle, Lock, RefreshCw } from 'lucide-react';
+import { Database, UploadCloud, Cpu, MessageSquare, Lock, RefreshCw } from 'lucide-react';
 
 export const KnowledgeBaseSection: React.FC = () => {
+  const steps = [
+    {
+      icon: UploadCloud,
+      title: '1. Vous déposez vos informations',
+      text: 'Fiches de services, catalogues, tableaux Excel, conditions de vente ou simples notes : tout ce que vous diriez à un client au comptoir.',
+    },
+    {
+      icon: Cpu,
+      title: '2. Votre assistant les retient',
+      text: 'Il assimile vos tarifs, vos délais et votre façon de parler, puis répond avec précision en français, en darija et en anglais.',
+    },
+    {
+      icon: MessageSquare,
+      title: '3. Il répond à votre place',
+      text: 'Sur votre site, il renseigne, rassure et recueille le contact des clients intéressés — sans jamais inventer une information.',
+    },
+  ];
+
+  const guarantees = [
+    { icon: Lock, title: 'Vos informations restent les vôtres', text: 'Elles servent uniquement à répondre à vos visiteurs. Aucune revente, aucun partage.' },
+    { icon: RefreshCw, title: 'Tout se met à jour en un clic', text: 'Vous changez un prix ou une condition : votre assistant suit immédiatement.' },
+    { icon: MessageSquare, title: 'Il n’invente jamais rien', text: 'S’il ne sait pas, il vous transmet la question au lieu de répondre au hasard.' },
+  ];
 
   return (
-    <section 
+    <section
       id="knowledge-section"
-      className="relative py-12 sm:py-24 px-4 sm:px-6 max-w-6xl mx-auto w-full overflow-hidden"
+      className="relative mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 sm:py-24"
     >
       {/* Section Header */}
-      <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-12">
-        <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-neutral-950/50 border border-purple-500/30 text-[11px] sm:text-xs font-semibold text-purple-300 mb-3 sm:mb-4 backdrop-blur-xl shadow-lg shadow-purple-950/30">
-          <Database className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-          <span>Fonctionnement & Intégration</span>
-        </div>
+      <div className="mx-auto mb-12 max-w-3xl text-center sm:mb-16">
+        <span className="lux-eyebrow">
+          <Database className="h-3.5 w-3.5 text-purple-300" />
+          Fonctionnement & intégration
+        </span>
 
-        <h2 
-          id="knowledge-title"
-          className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-neutral-100 font-display mb-3 sm:mb-4 leading-tight break-words"
-        >
-          Comment fonctionne la base de connaissances ? <br className="hidden sm:inline" />
-          <span className="text-purple-300">
-            Vos documents et consignes.
-          </span>
+        <h2 id="knowledge-title" className="lux-h2 mt-5">
+          Votre savoir-faire, <br className="hidden sm:inline" />
+          <span className="lux-accent">enfin disponible 24h/24.</span>
         </h2>
 
-        <p 
-          id="knowledge-desc"
-          className="text-sm sm:text-base md:text-lg text-neutral-300 leading-relaxed max-w-2xl mx-auto"
-        >
-          L’assistant ne possède aucune offre par défaut : vous y déposez simplement vos propres fichiers (catalogues, réponses types, conditions de vente) pour qu’il réponde selon vos règles exactes.
+        <p id="knowledge-desc" className="lux-lead mx-auto mt-5 max-w-2xl">
+          L’assistant ne possède aucune offre par défaut : vous y déposez vos propres
+          documents et consignes, et il répond uniquement selon vos règles exactes.
         </p>
       </div>
 
       {/* 3-Step Visual Explanation */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mb-8 sm:mb-10">
-        <div className="relative p-4 sm:p-5 rounded-2xl bg-neutral-950/40 border border-white/10 backdrop-blur-xl card-hover-tilt-glow hover:-translate-y-2 hover:-rotate-[0.8deg] space-y-2 sm:space-y-3 group overflow-hidden cursor-default">
-          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-transparent via-purple-500/10 to-white/10" />
-          <div className="relative z-10 w-9 sm:w-10 h-9 sm:h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0 group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(168,85,247,0.4)] transition-all">
-            <UploadCloud className="w-4 sm:w-5 h-4 sm:h-5" />
+      <div className="mb-4 grid grid-cols-1 gap-3.5 sm:gap-4 md:grid-cols-3">
+        {steps.map((step) => (
+          <div key={step.title} className="lux-card lux-card-hover lux-card-beam group p-5 sm:p-7">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/15 text-purple-200 transition-transform duration-300 group-hover:scale-[1.06]">
+              <step.icon className="h-4.5 w-4.5" />
+            </div>
+            <h3 className="lux-h3 text-[1rem] sm:text-[1.05rem]">{step.title}</h3>
+            <p className="lux-sub mt-2 text-[0.84rem] sm:text-[0.88rem]">{step.text}</p>
           </div>
-          <h3 className="relative z-10 text-sm sm:text-base font-bold text-neutral-100 group-hover:text-purple-200 transition-colors">1. Vous décrivez votre activité</h3>
-          <p className="relative z-10 text-xs text-neutral-300 leading-relaxed">
-            Vos fiches de services, catalogues de produits, tableaux Excel ou foires aux questions habituelles.
-          </p>
-        </div>
-
-        <div className="relative p-4 sm:p-5 rounded-2xl bg-neutral-950/40 border border-white/10 backdrop-blur-xl card-hover-tilt-glow hover:-translate-y-2 hover:scale-[1.015] space-y-2 sm:space-y-3 group overflow-hidden cursor-default">
-          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-transparent via-purple-500/10 to-white/10" />
-          <div className="relative z-10 w-9 sm:w-10 h-9 sm:h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0 group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(168,85,247,0.4)] transition-all">
-            <Cpu className="w-4 sm:w-5 h-4 sm:h-5" />
-          </div>
-          <h3 className="relative z-10 text-sm sm:text-base font-bold text-neutral-100 group-hover:text-purple-200 transition-colors">2. Votre assistant retient vos informations</h3>
-          <p className="relative z-10 text-xs text-neutral-300 leading-relaxed">
-            Elle assimile vos conditions, vos délais et s'exprime avec précision en Français, Darija et plusieurs langues.
-          </p>
-        </div>
-
-        <div className="relative p-4 sm:p-5 rounded-2xl bg-neutral-950/40 border border-white/10 backdrop-blur-xl card-hover-tilt-glow hover:-translate-y-2 hover:rotate-[0.8deg] space-y-2 sm:space-y-3 group overflow-hidden cursor-default">
-          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-transparent via-purple-500/10 to-white/10" />
-          <div className="relative z-10 w-9 sm:w-10 h-9 sm:h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0 group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(168,85,247,0.4)] transition-all">
-            <MessageSquare className="w-4 sm:w-5 h-4 sm:h-5" />
-          </div>
-          <h3 className="relative z-10 text-sm sm:text-base font-bold text-neutral-100 group-hover:text-purple-200 transition-colors">3. Il répond à vos clients</h3>
-          <p className="relative z-10 text-xs text-neutral-300 leading-relaxed">
-            Sur votre site web ou boutique en ligne, l'assistant renseigne vos prospects sans jamais inventer d'information.
-          </p>
-        </div>
+        ))}
       </div>
 
       {/* Trois garanties simples, sans détail technique */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        {[
-          { icon: Lock, title: 'Vos informations restent les vôtres', text: 'Elles servent uniquement à répondre à vos visiteurs.' },
-          { icon: RefreshCw, title: 'Tout se met à jour en un clic', text: 'Vous changez un prix : votre assistant suit immédiatement.' },
-          { icon: MessageSquare, title: "Il n'invente rien", text: "S'il ne sait pas, il vous transmet la question au lieu de répondre au hasard." },
-        ].map((item) => (
-          <div key={item.title} className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-2">
-            <item.icon className="w-4 h-4 text-neutral-400" />
-            <h3 className="text-sm font-semibold text-neutral-100">{item.title}</h3>
-            <p className="text-xs text-neutral-400 leading-relaxed">{item.text}</p>
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3 sm:gap-4">
+        {guarantees.map((item) => (
+          <div key={item.title} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 sm:p-6">
+            <item.icon className="h-4 w-4 text-purple-300/80" />
+            <h3 className="mt-3 text-[0.9rem] font-semibold tracking-[-0.01em] text-neutral-100">{item.title}</h3>
+            <p className="lux-sub mt-1.5 text-[0.8rem] sm:text-[0.83rem]">{item.text}</p>
           </div>
         ))}
       </div>

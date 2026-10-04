@@ -21,9 +21,9 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ url, themeMode
   let badgeText = 'Lien externe';
 
   if (hostname.includes('jawebflow') || hostname.includes('dz')) {
-    siteTitle = 'JawebFlow - Assistant IA & Chatbot';
-    siteDescription = 'Plateforme n°1 en Algérie pour ajouter un chatbot intelligent et capturer des prospects.';
-    badgeText = 'Site Officiel';
+    siteTitle = 'JawebFlow — Assistant IA & chatbot';
+    siteDescription = 'Assistant IA pour sites web et entreprises : réponses en français et en darija, 24h/24.';
+    badgeText = 'Site officiel';
   } else if (hostname.includes('whatsapp') || hostname.includes('wa.me')) {
     siteTitle = 'Discussion WhatsApp Directe';
     siteDescription = 'Contactez-nous instantanément sur WhatsApp pour toute question.';
@@ -45,7 +45,7 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ url, themeMode
       rel="noopener noreferrer"
       className={`mt-2.5 p-3 rounded-xl border flex items-center gap-3 transition-all group block ${
         isDark
-          ? 'bg-neutral-955/80 hover:bg-neutral-900 border-white/10 hover:border-purple-500/50 text-neutral-100 shadow-md'
+          ? 'bg-white/[0.045] hover:bg-white/[0.075] border-white/[0.09] hover:border-purple-400/40 text-neutral-100'
           : 'bg-white hover:bg-neutral-50 border-neutral-200 hover:border-purple-400 text-neutral-900 shadow-sm'
       }`}
     >

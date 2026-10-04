@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
-import { 
-  Mail, 
-  Phone, 
-  MapPin, 
-  Send, 
-  MessageCircle, 
-  Building2, 
-  Sparkles, 
-  CheckCircle2, 
+import {
+  Mail,
+  Phone,
+  MapPin,
+  Send,
+  MessageCircle,
+  CheckCircle2,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  AlertCircle,
+  Loader2,
+  ArrowRight
 } from 'lucide-react';
 
 interface ContactPageProps {
   onOpenAssistantModal: () => void;
   onNavigate: (page: string) => void;
 }
+
+type Status = 'idle' | 'sending' | 'sent' | 'error';
 
 export const ContactPage: React.FC<ContactPageProps> = ({ onOpenAssistantModal }) => {
   const [formData, setFormData] = useState({
@@ -26,214 +29,295 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onOpenAssistantModal }
     sector: 'services',
     message: ''
   });
-  const [submitted, setSubmitted] = useState(false);
+  const [status, setStatus] = useState<Status>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const update = (field: keyof typeof formData, value: string) =>
+    setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    if (status === 'sending') return;
+
+    setStatus('sending');
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.ok) {
+        // On ne dit JAMAIS « message envoyé » si personne ne l'a reçu.
+        setErrorMessage(
+          data?.error ||
+            'Nous n’avons pas pu transmettre votre demande. Écrivez-nous directement à contact@jawebflow.dz.'
+        );
+        setStatus('error');
+        return;
+      }
+
+      setStatus('sent');
+    } catch {
+      setErrorMessage(
+        'Connexion interrompue. Réessayez, ou écrivez-nous directement à contact@jawebflow.dz — nous répondons sous 2 heures ouvrées.'
+      );
+      setStatus('error');
+    }
   };
 
+  const mailtoFallback = `mailto:contact@jawebflow.dz?subject=${encodeURIComponent(
+    `Demande de devis — ${formData.company || 'mon entreprise'}`
+  )}&body=${encodeURIComponent(
+    `${formData.message}\n\n${formData.name}\n${formData.company}\n${formData.email}\n${formData.phone}`
+  )}`;
+
   return (
-    <div className="pt-28 pb-20 px-6 sm:px-10 lg:px-16 max-w-[1440px] mx-auto space-y-16">
+    <div className="mx-auto max-w-[1440px] space-y-14 px-6 pb-20 pt-28 sm:px-10 lg:px-16">
       {/* Header */}
-      <div className="text-center max-w-3xl mx-auto space-y-4">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-semibold backdrop-blur-xl">
-          <MessageCircle className="w-3.5 h-3.5 text-purple-400" />
-          <span>Équipe d'ingénieurs & Support dédié</span>
-        </div>
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-neutral-100">
-          Parlons de votre projet et de <br />
-          <span className="bg-gradient-to-r from-purple-300 via-fuchsia-200 to-indigo-300 bg-clip-text text-transparent">
-            vos objectifs de conversion.
-          </span>
+      <div className="mx-auto max-w-3xl space-y-5 text-center">
+        <span className="lux-eyebrow">
+          <MessageCircle className="h-3.5 w-3.5 text-purple-300" />
+          Réponse sous 2 heures ouvrées
+        </span>
+        <h1 className="lux-h1">
+          Parlons de votre projet. <br />
+          <span className="lux-accent">Et de ce que ça peut vous rapporter.</span>
         </h1>
-        <p className="text-neutral-300 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
-          Déploiement clé en main, cadrage sur-mesure ou facture proforma d'entreprise : nous vous répondons sous 2 heures ouvrées.
+        <p className="lux-lead mx-auto max-w-2xl">
+          Déploiement clé en main, cadrage sur mesure ou facture proforma d’entreprise :
+          dites-nous simplement ce dont vous avez besoin, nous revenons vers vous avec une
+          proposition claire — prix et délais inclus.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
         {/* Contact Info & Guarantees (5 cols) */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="p-6 sm:p-8 rounded-3xl bg-neutral-950/40 border border-white/10 backdrop-blur-2xl space-y-6 shadow-xl">
-            <h3 className="text-xl font-bold text-neutral-100 font-display">Coordonnées directes</h3>
-            
-            <div className="space-y-4 text-xs sm:text-sm text-neutral-300">
+        <div className="space-y-6 lg:col-span-5">
+          <div className="lux-card space-y-6 p-6 sm:p-8">
+            <h2 className="lux-h3 text-[1.1rem]">Coordonnées directes</h2>
+
+            <div className="space-y-5 text-[0.84rem] text-neutral-300">
               <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex-shrink-0">
-                  <Mail className="w-4 h-4" />
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/12 text-purple-200">
+                  <Mail className="h-4 w-4" />
                 </div>
                 <div>
-                  <span className="block text-neutral-400 text-[11px]">Email professionnel</span>
-                  <a href="mailto:contact@jawebflow.dz" className="font-semibold text-neutral-100 hover:text-purple-300 transition-colors">
+                  <span className="block text-[0.68rem] uppercase tracking-[0.12em] text-neutral-500">Email professionnel</span>
+                  <a href="mailto:contact@jawebflow.dz" className="font-medium text-neutral-100 transition-colors hover:text-purple-200">
                     contact@jawebflow.dz
                   </a>
                 </div>
               </div>
 
               <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex-shrink-0">
-                  <Phone className="w-4 h-4" />
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/12 text-purple-200">
+                  <Phone className="h-4 w-4" />
                 </div>
                 <div>
-                  <span className="block text-neutral-400 text-[11px]">Ligne directe & WhatsApp Pro</span>
-                  <span className="font-semibold text-neutral-100">+213 (0) 550 00 00 00</span>
+                  <span className="block text-[0.68rem] uppercase tracking-[0.12em] text-neutral-500">Ligne directe & WhatsApp Pro</span>
+                  <span className="font-medium text-neutral-100">+213 (0) 550 00 00 00</span>
                 </div>
               </div>
 
               <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex-shrink-0">
-                  <MapPin className="w-4 h-4" />
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/12 text-purple-200">
+                  <MapPin className="h-4 w-4" />
                 </div>
                 <div>
-                  <span className="block text-neutral-400 text-[11px]">Bureaux & Interventions</span>
-                  <span className="font-semibold text-neutral-100">Alger, Oran, Constantine — Déploiement partout en Algérie 🇩🇿</span>
+                  <span className="block text-[0.68rem] uppercase tracking-[0.12em] text-neutral-500">Bureaux & interventions</span>
+                  <span className="font-medium text-neutral-100">Alger, Oran, Constantine — déploiement partout en Algérie 🇩🇿</span>
                 </div>
               </div>
 
               <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex-shrink-0">
-                  <Clock className="w-4 h-4" />
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/12 text-purple-200">
+                  <Clock className="h-4 w-4" />
                 </div>
                 <div>
-                  <span className="block text-neutral-400 text-[11px]">Horaires de support</span>
-                  <span className="font-semibold text-neutral-100">Lundi au Samedi : 08h30 – 18h30</span>
+                  <span className="block text-[0.68rem] uppercase tracking-[0.12em] text-neutral-500">Horaires de support</span>
+                  <span className="font-medium text-neutral-100">Lundi au samedi : 08h30 – 18h30</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="p-6 rounded-3xl bg-neutral-950/40 border border-white/10 backdrop-blur-2xl space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-purple-300">
-              <ShieldCheck className="w-4 h-4 text-purple-400" />
-              <span>Garanties d'accompagnement</span>
+          <div className="lux-card space-y-3.5 p-6">
+            <div className="flex items-center gap-2 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-purple-200">
+              <ShieldCheck className="h-4 w-4 text-purple-300" />
+              <span>Ce que vous obtenez en nous écrivant</span>
             </div>
-            <ul className="text-xs text-neutral-300 space-y-2">
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
-                <span>Devis proforma officiel avec coordonnées fiscales sous 2h</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
-                <span>Installation et paramétrage offerts sur votre site</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
-                <span>Paiement sécurisé et facturation d’entreprise conforme</span>
-              </li>
+            <ul className="space-y-2.5">
+              {[
+                'Un devis proforma officiel avec vos mentions fiscales, sous 2 heures ouvrées',
+                'L’installation et le paramétrage offerts sur votre site',
+                'Une démonstration adaptée à votre activité, sans engagement',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-[0.82rem] font-light leading-relaxed text-neutral-300">
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
+          </div>
+
+          <div className="lux-card p-6">
+            <p className="lux-sub text-[0.84rem]">
+              Pressé ? Vous pouvez déjà créer votre espace et préparer votre assistant
+              gratuitement — sans carte bancaire.
+            </p>
+            <button onClick={onOpenAssistantModal} className="btn btn-primary btn-sm mt-4">
+              <span>Créer mon assistant</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 
         {/* Contact / Proforma Form (7 cols) */}
         <div className="lg:col-span-7">
-          <div className="p-6 sm:p-8 rounded-3xl bg-neutral-950/50 border border-white/10 backdrop-blur-2xl shadow-2xl space-y-6">
-            <div>
-              <h3 className="text-xl font-bold text-neutral-100 font-display">Demande d'accompagnement & Devis</h3>
-              <p className="text-xs text-neutral-400 mt-1">Remplissez ce formulaire pour recevoir une proposition adaptée à votre entreprise.</p>
+          <div className="lux-card p-6 sm:p-8">
+            <div className="mb-6">
+              <h2 className="lux-h3 text-[1.15rem]">Demande d’accompagnement & devis</h2>
+              <p className="lux-sub mt-1.5 text-[0.84rem]">
+                Deux minutes suffisent. Plus votre message est précis, plus notre proposition l’est aussi.
+              </p>
             </div>
 
-            {submitted ? (
-              <div className="p-8 rounded-2xl bg-purple-500/20 border border-purple-500/40 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-purple-500/30 flex items-center justify-center text-purple-300 mx-auto">
-                  <CheckCircle2 className="w-6 h-6" />
+            {status === 'sent' ? (
+              <div className="space-y-4 rounded-2xl border border-purple-400/30 bg-purple-500/[0.08] p-8 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/20 text-purple-200">
+                  <CheckCircle2 className="h-6 w-6" />
                 </div>
-                <h4 className="text-lg font-bold text-neutral-100">Message bien transmis !</h4>
-                <p className="text-xs text-neutral-300 max-w-md mx-auto">
-                  Notre équipe technique et commerciale vous contactera dans les plus brefs délais avec une démonstration personnalisée.
+                <h3 className="lux-h3 text-[1.1rem]">Demande transmise à l’équipe</h3>
+                <p className="lux-sub mx-auto max-w-md text-[0.84rem]">
+                  Merci {formData.name.split(' ')[0] || ''} — nous revenons vers vous sous 2 heures ouvrées
+                  avec une proposition adaptée à {formData.company || 'votre entreprise'}.
                 </p>
-                <button
-                  onClick={() => setSubmitted(false)}
-                  className="mt-4 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-semibold"
-                >
+                <button onClick={() => setStatus('idle')} className="btn btn-glass btn-sm">
                   Envoyer une autre demande
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1.5">Nom et Prénom</label>
+                    <label className="lux-label" htmlFor="contact-name">Nom et prénom</label>
                     <input
+                      id="contact-name"
                       type="text"
                       required
+                      autoComplete="name"
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="Ex: Karim Benali"
-                      className="w-full bg-neutral-900/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-purple-500 transition-all"
+                      onChange={(e) => update('name', e.target.value)}
+                      placeholder="Ex : Karim Benali"
+                      className="lux-input"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1.5">Nom de l'entreprise ou marque</label>
+                    <label className="lux-label" htmlFor="contact-company">Entreprise ou marque</label>
                     <input
+                      id="contact-company"
                       type="text"
                       required
+                      autoComplete="organization"
                       value={formData.company}
-                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                      placeholder="Ex: SARL Alger Tech, Maison Bio..."
-                      className="w-full bg-neutral-900/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-purple-500 transition-all"
+                      onChange={(e) => update('company', e.target.value)}
+                      placeholder="Ex : SARL Alger Tech"
+                      className="lux-input"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1.5">Adresse Email</label>
+                    <label className="lux-label" htmlFor="contact-email">Adresse email</label>
                     <input
+                      id="contact-email"
                       type="email"
                       required
+                      autoComplete="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      onChange={(e) => update('email', e.target.value)}
                       placeholder="contact@entreprise.dz"
-                      className="w-full bg-neutral-900/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-purple-500 transition-all"
+                      className="lux-input"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1.5">Numéro de Téléphone (DZ)</label>
+                    <label className="lux-label" htmlFor="contact-phone">Téléphone (DZ)</label>
                     <input
+                      id="contact-phone"
                       type="tel"
                       required
+                      autoComplete="tel"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="05 / 06 / 07 ..."
-                      className="w-full bg-neutral-900/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-purple-500 transition-all"
+                      onChange={(e) => update('phone', e.target.value)}
+                      placeholder="05 / 06 / 07 …"
+                      className="lux-input"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">Secteur d'activité</label>
+                  <label className="lux-label" htmlFor="contact-sector">Secteur d’activité</label>
                   <select
+                    id="contact-sector"
                     value={formData.sector}
-                    onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
-                    className="w-full bg-neutral-900/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 focus:outline-none focus:border-purple-500 transition-all cursor-pointer"
+                    onChange={(e) => update('sector', e.target.value)}
+                    className="lux-input cursor-pointer"
                   >
                     <option value="services">Services & Agence B2B</option>
                     <option value="ecommerce">E-commerce & Vente en ligne</option>
                     <option value="formation">Institut, École & Formation</option>
-                    <option value="cabinet">Cabinet Médical & Santé</option>
-                    <option value="autre">Autre domaine d'activité</option>
+                    <option value="cabinet">Cabinet médical & Santé</option>
+                    <option value="autre">Autre domaine d’activité</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">Votre message ou spécificités du projet</label>
+                  <label className="lux-label" htmlFor="contact-message">Votre besoin</label>
                   <textarea
-                    rows={3}
+                    id="contact-message"
+                    rows={4}
                     value={formData.message}
-                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    placeholder="Précisez vos besoins : intégration sur votre site actuel, connexion WhatsApp, volume de demandes..."
-                    className="w-full bg-neutral-900/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-purple-500 transition-all resize-none"
-                  ></textarea>
+                    onChange={(e) => update('message', e.target.value)}
+                    placeholder="Ex : je veux installer l’assistant sur ma boutique Shopify, avec les frais de livraison par wilaya et une facture proforma pour ma société."
+                    className="lux-input"
+                  />
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-lg shadow-purple-600/40 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Envoyer ma demande & recevoir le devis</span>
+                {status === 'error' && (
+                  <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-rose-400/30 bg-rose-500/[0.08] p-3.5 text-[0.82rem] leading-snug text-rose-200">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-300" />
+                    <div className="space-y-1.5">
+                      <p>{errorMessage}</p>
+                      <a href={mailtoFallback} className="inline-block font-medium text-white underline underline-offset-4">
+                        Ouvrir mon logiciel d’email (message pré-rempli)
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <button type="submit" disabled={status === 'sending'} className="btn btn-primary btn-block btn-lg">
+                  {status === 'sending' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Envoi en cours…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      <span>Recevoir ma proposition</span>
+                    </>
+                  )}
                 </button>
+
+                <p className="lux-note text-center text-[0.76rem]">
+                  Vos coordonnées servent uniquement à vous répondre. Jamais de revente, jamais de spam.
+                </p>
               </form>
             )}
           </div>

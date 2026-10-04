@@ -809,6 +809,8 @@ Règles de communication impératives :
   // test sont coûteux — sans limite, le quota IA peut être épuisé par un tiers.
   const chatRateLimit = createRateLimiter({ windowMs: 60_000, max: 60, label: "/api/chat" });
   const heavyRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, label: "scan & tests webhook" });
+  // Le formulaire de contact est public : on le limite pour éviter le spam.
+  const contactRateLimit = createRateLimiter({ windowMs: 60_000, max: 5, label: "/api/contact" });
 
   app.post("/api/chat", chatRateLimit, handleApiChat);
   app.get("/api/chat", chatRateLimit, handleApiChat);
@@ -896,6 +898,76 @@ Règles de communication impératives :
       console.error("Prospect write error:", error);
       res.status(500).json({ error: "Failed to save prospect" });
     }
+  });
+
+  // Formulaire de contact public — même contrat que functions/api/contact.js
+  // (production Cloudflare) : valider, transmettre à l'équipe, ne jamais
+  // prétendre avoir envoyé une demande que personne ne recevra.
+  app.post("/api/contact", contactRateLimit, async (req, res) => {
+    const clean = (value: unknown, max = 500) => String(value ?? "").trim().slice(0, max);
+    const name = clean(req.body?.name, 120);
+    const company = clean(req.body?.company, 160);
+    const email = clean(req.body?.email, 160);
+    const phone = clean(req.body?.phone, 40);
+    const sector = clean(req.body?.sector, 60) || "autre";
+    const message = clean(req.body?.message, 4000);
+
+    if (!name || !company || !email || !phone) {
+      return res.status(400).json({ ok: false, error: "Nom, entreprise, email et téléphone sont obligatoires." });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      return res.status(400).json({ ok: false, error: "Adresse email invalide." });
+    }
+    if (phone.replace(/\D/g, "").length < 8) {
+      return res.status(400).json({ ok: false, error: "Numéro de téléphone invalide." });
+    }
+
+    const receivedAt = new Date().toISOString();
+    const record = { name, company, email, phone, sector, message, source: "site_contact", receivedAt };
+
+    // 1) Sauvegarde de secours (la demande ne doit jamais se perdre).
+    let stored = false;
+    if (db) {
+      try {
+        await db.collection("contact_requests").add(record);
+        stored = true;
+      } catch (err) {
+        console.warn("Contact request save skipped:", (err as Error)?.message || err);
+      }
+    }
+
+    // 2) Email réel via Brevo (mêmes variables que les autres emails du site).
+    let emailed = false;
+    const brevoKey = envValue("BREVO_API_KEY");
+    const sender = envValue("EMAIL_SENDER");
+    if (brevoKey && sender) {
+      try {
+        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: { "api-key": brevoKey, "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            sender: { name: envValue("EMAIL_SENDER_NAME") || "JawebFlow", email: sender },
+            to: [{ email: envValue("CONTACT_INBOX") || sender }],
+            subject: `Contact site — ${company} (${name})`,
+            htmlContent: `<div style="font-family:Poppins,Arial,sans-serif;line-height:1.7"><h2>Nouvelle demande depuis le site</h2><p>Reçue le ${receivedAt}</p><p><strong>${name}</strong> — ${company}<br>${email} — ${phone}<br>Secteur : ${sector}</p><div style="padding:12px 14px;background:#f4f2fb;border-radius:12px;white-space:pre-wrap">${message || "(aucun message)"}</div></div>`,
+          }),
+        });
+        emailed = response.ok;
+        if (!response.ok) console.warn("Contact email refused:", response.status, (await response.text().catch(() => "")).slice(0, 200));
+      } catch (err) {
+        console.warn("Contact email failed:", (err as Error)?.message || err);
+      }
+    }
+
+    if (!emailed && !stored) {
+      return res.status(503).json({
+        ok: false,
+        error: "Envoi indisponible pour le moment. Écrivez-nous directement à contact@jawebflow.dz.",
+        fallback: { email: "contact@jawebflow.dz" },
+      });
+    }
+
+    res.json({ ok: true, delivered: { email: emailed, stored } });
   });
 
   // Proxy Event Tracking

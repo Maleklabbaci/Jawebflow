@@ -24,28 +24,32 @@ interface WidgetMessage {
 }
 
 const QUICK_PROMPTS = [
-  { label: '💰 Quels sont les tarifs ?', query: 'Quels sont les tarifs et forfaits de JawebFlow ?' },
-  { label: '⚡ Comment installer sur mon site ?', query: 'Comment installer le widget sur mon site web ?' },
-  { label: '🇩🇿 Est-ce compatible Darija ?', query: 'Est-ce que le chatbot comprend et répond en Darija algérienne ?' },
-  { label: '💳 Quels modes de paiement ?', query: 'Quels sont les modes de paiement acceptés en Algérie ?' }
+  { label: 'Combien ça coûte ?', query: 'Quels sont les tarifs et forfaits de JawebFlow ?' },
+  { label: 'Ça s’installe comment ?', query: 'Comment installer le widget sur mon site web ?' },
+  { label: 'Ça parle darija ?', query: 'Est-ce que le chatbot comprend et répond en Darija algérienne ?' },
+  { label: 'Comment je paie ?', query: 'Quels sont les modes de paiement acceptés en Algérie ?' }
 ];
 
+// Les mêmes prix que la page Tarifs : un visiteur qui compare les deux pages ne
+// doit jamais tomber sur deux montants différents (l'ancien widget annonçait
+// 2 900 DA et 5 900 DA — introuvables ailleurs sur le site).
 const DEFAULT_ANSWERS: Record<string, string> = {
-  tarifs: `Voici nos forfaits transparents en Dinars Algériens (DZD) :
-• Découverte (0 DA) : Test complet et configuration du widget.
-• Basique (2 900 DA/mois) : 1 000 messages/mois, 1 site web, import de documents.
-• Pro (5 900 DA/mois) : 5 000 messages/mois, multi-sites, CRM des prospects et scan de site illimité.
-• Entreprise (Sur mesure) : Déploiement personnalisé et intégrations dédiées.`,
-  installer: `L'installation prend moins de 2 minutes !
-Il vous suffit d'insérer une seule ligne de code HTML/JS avant la balise </body> de votre site :
+  tarifs: `Voici nos formules, en dinars comme en dollars :
+• Découverte — 0 DA : configuration complète et installation du widget, pour tester sans risque.
+• Basic — 6 850 DA/mois (~29 $) : jusqu'à 1 000 conversations/mois, 1 site, import de vos documents.
+• Pro — 18 700 DA/mois (~79 $) : jusqu'à 5 000 conversations/mois, plusieurs sites, clients intéressés (nom, téléphone, ville) détectés automatiquement.
+• Enterprise — sur mesure : volume élevé, intégrations dédiées et accompagnement.
+Sans engagement : vous changez de formule ou vous arrêtez quand vous voulez, et la facture d'entreprise conforme (NIF, NIS, RC) est disponible.`,
+  installer: `L'installation prend moins de 5 minutes, sans développeur.
+Une seule ligne de code à coller dans votre site, avant la balise </body> :
 <script src="https://jawebflow.dz/cdn/widget.js" data-assistant-id="VOTRE_ID" async></script>
-Compatible à 100% avec WordPress, Shopify, Wix, Webflow, Next.js ou HTML personnalisé.`,
+Compatible avec WordPress, Shopify, Wix, Webflow, Next.js ou un site sur mesure. Si vous préférez, notre équipe l'installe pour vous.`,
   darija: `Oui, absolument ! 🇩🇿
-JawebFlow a été spécialement calibré pour le public algérien : il comprend parfaitement la Darija en caractères latins (Arabizi), en alphabet arabe et en Français courant. Il s'adapte automatiquement à la langue parlée par votre visiteur.`,
-  paiement: `Nous acceptons tous les moyens de paiement locaux et fiables :
+JawebFlow a été calibré pour le public algérien : il comprend la darija écrite en lettres latines (Arabizi), en caractères arabes, ainsi que le français et l'anglais. Il s'adapte automatiquement à la langue de votre visiteur.`,
+  paiement: `Nous acceptons les moyens de paiement locaux et professionnels :
 • BaridiMob (transfert RIP instantané)
 • CCP (virement / reçu postal)
-• Virement bancaire entreprise avec facture certifiée (NIF, NIS, RC)`
+• Virement bancaire d'entreprise avec facture conforme (NIF, NIS, RC, RIB)`
 };
 
 export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({ 
@@ -62,7 +66,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     {
       id: 'welcome',
       sender: 'assistant',
-      text: "Salam ! 👋 Bienvenue sur JawebFlow. Je suis votre conseiller virtuel. Posez-moi toutes vos questions sur l'intégration, nos fonctionnalités ou nos forfaits !",
+      text: "Salam ! 👋 Je suis l’assistant JawebFlow. Posez-moi vos questions : installation, tarifs, darija, paiement — je vous réponds tout de suite.",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -126,7 +130,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       }
 
       if (!botReply) {
-        botReply = instantMatch || "JawebFlow vous permet d'intégrer en 2 minutes un assistant intelligent sur votre site web pour convertir vos visiteurs 24h/24 en Français et en Darija. Souhaitez-vous créer votre compte gratuit ?";
+        botReply = instantMatch || "JawebFlow installe en 5 minutes un assistant qui répond à vos clients 24h/24, en français et en darija, et qui vous transmet le contact des clients intéressés. Vous pouvez commencer gratuitement, sans carte bancaire.";
       }
 
       const botMsg: WidgetMessage = {
@@ -134,13 +138,13 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
         sender: 'assistant',
         text: botReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionLabel: 'Créer un assistant gratuitement',
+        actionLabel: 'Créer mon assistant gratuitement',
         actionUrl: 'create-assistant'
       };
 
       setMessages(prev => [...prev, botMsg]);
     } catch {
-      const fallbackReply = instantMatch || "Merci pour votre question ! JawebFlow s'installe en 2 minutes sur n'importe quel site web et répond à vos prospects 24h/24.";
+      const fallbackReply = instantMatch || "Merci pour votre question ! JawebFlow s'installe en 5 minutes sur n'importe quel site web et répond à vos clients 24h/24. Voulez-vous créer votre assistant gratuitement ?";
       const botMsg: WidgetMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',
@@ -162,24 +166,24 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       {isOpen && (
         <div 
           id="live-widget-modal"
-          className="mb-2.5 w-[calc(100vw-1.5rem)] sm:w-[380px] max-w-[400px] h-[520px] max-h-[calc(100dvh-5.5rem)] sm:max-h-[82vh] rounded-3xl bg-neutral-950/95 border border-purple-500/30 backdrop-blur-2xl shadow-2xl shadow-purple-950/60 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 pointer-events-auto"
+          className="animate-in slide-in-from-bottom-5 pointer-events-auto mb-2.5 flex h-[520px] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col overflow-hidden rounded-[22px] border border-purple-400/25 bg-[#0b0912]/97 shadow-[0_36px_70px_-40px_rgba(0,0,0,0.95)] backdrop-blur-2xl duration-200 sm:h-[540px] sm:max-h-[82vh] sm:w-[380px]"
         >
           {/* Header */}
-          <div className="p-3.5 sm:p-4 bg-neutral-900/90 border-b border-white/10 flex items-center justify-between text-white shrink-0">
+          <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] bg-white/[0.03] p-3.5 text-white sm:p-4">
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               <div className="relative shrink-0">
-                <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center font-bold text-sm text-white shadow-md shadow-purple-600/40">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-b from-purple-500 to-purple-700 text-[0.8rem] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]">
                   JF
                 </div>
-                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-950"></span>
+                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0b0912] bg-emerald-400"></span>
               </div>
               <div className="min-w-0">
                 <h4 className="font-semibold text-xs sm:text-sm leading-tight text-white flex items-center gap-1.5 truncate">
                   <span className="truncate">Assistant JawebFlow</span>
-                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-200 border border-purple-500/30 font-medium">Officiel</span>
+                  <span className="shrink-0 rounded-full border border-purple-400/30 bg-purple-500/15 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-[0.1em] text-purple-200">Officiel</span>
                 </h4>
-                <p className="text-[11px] text-emerald-400 font-medium truncate">
-                  En ligne • Réponse immédiate
+                <p className="truncate text-[0.68rem] font-light text-emerald-400">
+                  En ligne • réponse immédiate
                 </p>
               </div>
             </div>
@@ -188,7 +192,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/[0.05] text-neutral-400 transition-colors hover:bg-white/[0.12] hover:text-white sm:h-8 sm:w-8"
                 title="Réduire"
               >
                 <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -196,7 +200,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/[0.05] text-neutral-400 transition-colors hover:bg-white/[0.12] hover:text-white sm:h-8 sm:w-8"
                 title="Fermer"
               >
                 <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -207,7 +211,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           {/* Messages Container */}
           <div 
             ref={chatScrollRef}
-            className="flex-1 p-3.5 sm:p-4 overflow-y-auto space-y-3 bg-[#090b11]/90 overscroll-contain"
+            className="flex-1 space-y-3 overflow-y-auto overscroll-contain bg-[#08070e] p-3.5 sm:p-4"
             style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}
           >
             {messages.map((m) => {
@@ -220,8 +224,8 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                   <div 
                     className={`max-w-[88%] rounded-2xl px-3.5 sm:px-4 py-2.5 text-xs sm:text-[13px] leading-relaxed shadow-sm break-words ${
                       isAssistant
-                        ? 'bg-neutral-900 text-neutral-100 border border-white/10 rounded-tl-sm'
-                        : 'bg-purple-600 text-white rounded-tr-sm font-medium'
+                        ? 'rounded-tl-sm border border-white/[0.07] bg-white/[0.045] font-light text-neutral-100'
+                        : 'rounded-tr-sm bg-purple-600 text-white'
                     }`}
                   >
                     {renderMessageContent(m.text, 'dark')}
@@ -235,7 +239,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                             setIsOpen(false);
                             onOpenCreateAssistant();
                           }}
-                          className="w-full py-1.5 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-purple-600/30 cursor-pointer"
+                          className="btn btn-sm btn-primary btn-block"
                         >
                           <span>{m.actionLabel}</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -264,7 +268,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                 key={idx}
                 type="button"
                 onClick={() => handleSendMessage(qp.query)}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-purple-600/30 text-neutral-300 hover:text-white border border-white/10 hover:border-purple-500/40 whitespace-nowrap transition-all shrink-0 cursor-pointer"
+                className="lux-chip shrink-0"
               >
                 {qp.label}
               </button>
@@ -279,15 +283,15 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Posez une question sur JawebFlow…"
-              className="flex-1 min-w-0 bg-neutral-950 border border-white/15 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-neutral-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+              placeholder="Posez votre question…"
+              className="lux-input min-w-0 flex-1 rounded-[10px] px-3.5 py-2 text-[0.82rem]"
             />
             <button
               id="live-widget-send-btn"
               type="button"
               onClick={() => handleSendMessage()}
               disabled={!inputText.trim()}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center justify-center transition-all cursor-pointer shadow-md shadow-purple-600/30 shrink-0"
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] bg-purple-600 text-white transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
               title="Envoyer"
             >
               <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -295,7 +299,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           </div>
 
           {/* Bottom attribution label */}
-          <div className="px-3 py-1.5 bg-neutral-950 border-t border-white/5 flex items-center justify-between text-[10px] text-neutral-400">
+          <div className="flex items-center justify-between border-t border-white/[0.06] bg-black/30 px-3 py-1.5 text-[0.62rem] font-light text-neutral-500">
             <span>⚡ Propulsé par JawebFlow</span>
             <button
               type="button"
@@ -303,7 +307,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                 setIsOpen(false);
                 onOpenCreateAssistant();
               }}
-              className="text-purple-300 hover:underline cursor-pointer"
+              className="cursor-pointer font-normal text-purple-300 transition-colors hover:text-purple-200"
             >
               Créer mon chatbot →
             </button>
@@ -313,14 +317,14 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
 
       {/* Teaser Bubble (when closed) */}
       {!isOpen && showTeaser && (
-        <div className="mb-2 flex items-center gap-2 px-3 sm:px-3.5 py-2 rounded-2xl bg-neutral-950/95 border border-purple-500/40 backdrop-blur-xl shadow-xl shadow-purple-950/40 text-xs text-neutral-200 animate-in fade-in slide-in-from-right-4 duration-300 pointer-events-auto max-w-[calc(100vw-5rem)] sm:max-w-xs">
+        <div className="animate-in fade-in slide-in-from-right-4 pointer-events-auto mb-2 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-2xl border border-purple-400/35 bg-[#0b0912]/96 px-3 py-2 text-[0.76rem] font-light text-neutral-200 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl duration-300 sm:max-w-xs sm:px-3.5">
           <button 
             type="button"
             onClick={handleToggle}
             className="flex items-center gap-2 text-left cursor-pointer hover:text-white truncate"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse"></span>
-            <span className="truncate">Une question ? Testez le widget en direct 👋</span>
+            <span className="truncate">Une question ? Je réponds tout de suite 👋</span>
           </button>
           <button
             type="button"
@@ -338,7 +342,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
         id="floating-live-widget-toggle"
         type="button"
         onClick={handleToggle}
-        className="relative group p-3.5 sm:p-4 rounded-full bg-purple-600 hover:bg-purple-500 text-white shadow-xl shadow-purple-600/40 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center pointer-events-auto"
+        className="group pointer-events-auto relative flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-purple-500 to-purple-700 p-3.5 text-white shadow-[0_20px_45px_-22px_rgba(124,58,237,1)] transition-transform duration-200 hover:scale-[1.04] active:scale-95 sm:p-4"
         aria-label="Ouvrir l'assistant"
       >
         {isOpen ? (
@@ -349,7 +353,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
 
         {/* Unread indicator dot */}
         {!isOpen && hasUnread && (
-          <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-neutral-950 flex items-center justify-center text-[8px] font-bold text-neutral-950 shadow-sm">
+          <span className="absolute right-0 top-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#08070f] bg-emerald-400 text-[0.5rem] font-bold text-neutral-950">
             1
           </span>
         )}

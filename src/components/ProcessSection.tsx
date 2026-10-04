@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { 
-  FileText, 
-  Cpu, 
-  Code2, 
-  Copy, 
-  Check, 
-  ArrowRight, 
-  Sparkles, 
+import {
+  FileText,
+  Cpu,
+  Code2,
+  Copy,
+  Check,
+  ArrowRight,
   Layers,
   Terminal
 } from 'lucide-react';
@@ -26,10 +25,16 @@ export const ProcessSection: React.FC<ProcessSectionProps> = ({ onOpenAssistantM
   async>
 </script>`;
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(sampleScript);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(sampleScript);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Presse-papiers indisponible (ancien navigateur) : on ne laisse pas le
+      // client croire que le code est copié.
+      setCopied(false);
+    }
   };
 
   const steps = [
@@ -38,147 +43,128 @@ export const ProcessSection: React.FC<ProcessSectionProps> = ({ onOpenAssistantM
       title: 'Vos informations',
       description: 'Ajoutez vos textes et documents : services, tarifs, offres, FAQ ou catalogues.',
       icon: FileText,
-      detail: 'Vous écrivez vos informations dans votre espace, ou nous les importons depuis votre site en un clic.',
+      detail: 'Vous les écrivez dans votre espace, ou nous les importons depuis votre site en un clic.',
     },
     {
       number: '02',
       title: 'Votre assistant',
-      description: 'Votre assistant est prêt : il connaît vos informations et votre façon de parler à vos clients.',
+      description: 'Il apprend votre activité et votre façon de parler à vos clients.',
       icon: Cpu,
-      detail: 'Vos réponses restent les vôtres : l\'assistant ne dit rien que vous ne lui avez pas appris.',
+      detail: 'Vos réponses restent les vôtres : l’assistant ne dit rien que vous ne lui avez pas appris.',
     },
     {
       number: '03',
       title: 'Votre site',
-      description: 'La bulle apparaît sur votre site : la discussion démarre et vous recevez les coordonnées des clients intéressés.',
+      description: 'La bulle apparaît : la discussion démarre et vous recevez les clients intéressés.',
       icon: Code2,
       detail: 'WordPress, Shopify, Wix ou site sur mesure : le code se colle une seule fois, sans ralentir votre site.',
     },
   ];
 
   return (
-    <section 
+    <section
       id="parcours-section"
-      className="relative py-12 sm:py-24 px-4 sm:px-6 max-w-6xl mx-auto w-full overflow-hidden"
+      className="relative mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 sm:py-24"
     >
       {/* Section Eyebrow & Titles */}
-      <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-16">
-        <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-neutral-950/50 border border-purple-500/30 text-[11px] sm:text-xs font-semibold text-purple-300 mb-3 sm:mb-4 backdrop-blur-xl shadow-lg shadow-purple-950/30">
-          <Layers className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-          <span>Le parcours</span>
-        </div>
+      <div className="mx-auto mb-12 max-w-3xl text-center sm:mb-16">
+        <span className="lux-eyebrow">
+          <Layers className="h-3.5 w-3.5 text-purple-300" />
+          Le parcours
+        </span>
 
-        <h2 
-          id="parcours-title"
-          className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-neutral-100 font-display mb-4 sm:mb-6 leading-tight break-words"
-        >
-          Trois étapes simples. <br className="hidden sm:inline" />
-          <span className="text-purple-300">
-            Votre chatbot en ligne en 2 minutes.
-          </span>
+        <h2 id="parcours-title" className="lux-h2 mt-5">
+          Trois étapes. <br className="hidden sm:inline" />
+          <span className="lux-accent">Votre assistant en ligne aujourd’hui.</span>
         </h2>
 
-        <p 
-          id="parcours-desc"
-          className="text-sm sm:text-base md:text-lg text-neutral-200/90 leading-relaxed max-w-2xl mx-auto drop-shadow-sm"
-        >
-          Une configuration rapide et intuitive, pensée pour laisser place à l’essentiel : des réponses certifiées, immédiates et sans hallucination pour vos clients.
+        <p id="parcours-desc" className="lux-lead mx-auto mt-5 max-w-2xl">
+          Une configuration rapide, pensée pour vous laisser l’essentiel : des réponses
+          justes, immédiates et sans invention pour vos clients.
         </p>
       </div>
 
-      {/* 3 Step Cards Grid - Ultra-translucent Frosted Glass */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
+      {/* 3 Step Cards Grid */}
+      <div className="mb-8 grid grid-cols-1 gap-3.5 sm:mb-12 sm:gap-4 md:grid-cols-3">
         {steps.map((step, idx) => {
           const Icon = step.icon;
           const isSelected = activeStep === idx + 1;
-          const tiltClass = idx === 0 
-            ? 'hover:-translate-y-2 hover:-rotate-[0.8deg]' 
-            : idx === 1 
-              ? 'hover:-translate-y-2 hover:scale-[1.015]' 
-              : 'hover:-translate-y-2 hover:rotate-[0.8deg]';
 
           return (
             <div
               key={step.number}
               id={`step-card-${step.number}`}
               onClick={() => setActiveStep(idx + 1)}
-              className={`relative rounded-2xl sm:rounded-3xl p-5 sm:p-8 card-hover-tilt-glow ${tiltClass} overflow-hidden group cursor-pointer ${
-                isSelected
-                  ? 'bg-neutral-950/50 border-2 border-purple-500/70 shadow-2xl shadow-purple-950/50'
-                  : 'bg-neutral-950/30 border border-white/15'
-              } backdrop-blur-2xl flex flex-col justify-between`}
+              className={`lux-card lux-card-hover group flex cursor-pointer flex-col justify-between p-5 sm:p-7 ${
+                isSelected ? 'border-purple-400/35 bg-purple-500/[0.06]' : ''
+              }`}
             >
-              {/* Specular light overlay */}
-              <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-transparent via-purple-500/10 to-white/10" />
-
               <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <span className="text-2xl sm:text-3xl font-extrabold font-display text-purple-300/90 group-hover:text-purple-200 transition-colors">
+                <div className="mb-5 flex items-center justify-between">
+                  <span className={`text-[1.35rem] font-extrabold tracking-[-0.03em] transition-colors sm:text-[1.6rem] ${
+                    isSelected ? 'text-purple-200' : 'text-purple-300/60 group-hover:text-purple-200'
+                  }`}>
                     {step.number}
                   </span>
-                  <div className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all duration-300 ${
-                    isSelected ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-md shadow-purple-500/20' : 'bg-neutral-900/50 text-neutral-400 border border-white/10 group-hover:text-purple-300 group-hover:border-purple-500/40 group-hover:scale-110'
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all duration-300 ${
+                    isSelected
+                      ? 'border-purple-400/35 bg-purple-500/15 text-purple-200'
+                      : 'border-white/10 bg-white/[0.04] text-neutral-400 group-hover:border-purple-400/30 group-hover:text-purple-200'
                   }`}>
-                    <Icon className="w-4 sm:w-5 h-4 sm:h-5" />
+                    <Icon className="h-4 w-4" />
                   </div>
                 </div>
 
-                <h3 className="text-lg sm:text-xl font-bold text-neutral-100 font-display mb-2 sm:mb-3 group-hover:text-purple-200 transition-colors">
-                  {step.title}
-                </h3>
+                <h3 className="lux-h3 text-[1rem] sm:text-[1.08rem]">{step.title}</h3>
 
-                <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed mb-3 sm:mb-4">
-                  {step.description}
-                </p>
+                <p className="lux-sub mt-2 text-[0.84rem] sm:text-[0.88rem]">{step.description}</p>
               </div>
 
-              <div className="relative z-10 pt-3 sm:pt-4 border-t border-white/10 text-[11px] sm:text-xs text-neutral-400 group-hover:text-neutral-300 transition-colors">
+              <p className="lux-note relative z-10 mt-5 border-t border-white/[0.07] pt-4 text-[0.76rem] sm:text-[0.78rem]">
                 {step.detail}
-              </div>
+              </p>
             </div>
           );
         })}
       </div>
 
-      {/* Live Snippet Box for Step 3 Preview - Frosted Glass */}
-      <div className="rounded-2xl sm:rounded-3xl bg-neutral-950/35 border border-white/15 p-5 sm:p-6 backdrop-blur-2xl shadow-2xl shadow-purple-950/30 max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-3 text-xs text-neutral-400">
+      {/* Live Snippet Box */}
+      <div className="lux-card mx-auto max-w-3xl p-5 sm:p-7">
+        <div className="mb-3 flex items-center justify-between gap-3 text-[0.72rem] text-neutral-400">
           <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-purple-400" />
-            <span className="font-mono text-neutral-200 font-medium">Script d'intégration universel</span>
+            <Terminal className="h-3.5 w-3.5 text-purple-300" />
+            <span className="font-medium text-neutral-200">Script d’intégration universel</span>
           </div>
           <button
             onClick={handleCopyCode}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900/60 hover:bg-purple-950/40 text-neutral-200 hover:text-purple-200 border border-white/10 transition-colors text-xs font-medium backdrop-blur-md cursor-pointer"
+            className="btn btn-sm btn-glass"
+            aria-label="Copier le script d’intégration"
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-purple-300" />
-                <span className="text-purple-300">Copié !</span>
+                <Check className="h-3.5 w-3.5 text-purple-300" />
+                <span className="text-purple-200">Copié</span>
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5 text-neutral-400" />
+                <Copy className="h-3.5 w-3.5" />
                 <span>Copier le script</span>
               </>
             )}
           </button>
         </div>
 
-        <pre className="p-4 rounded-xl bg-neutral-950/60 border border-white/10 text-xs font-mono text-purple-200 overflow-x-auto backdrop-blur-md">
+        <pre className="overflow-x-auto rounded-xl border border-white/[0.08] bg-black/40 p-4 text-[0.72rem] leading-relaxed text-purple-200">
           <code>{sampleScript}</code>
         </pre>
 
-        <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 border-t border-white/10">
-          <span className="text-xs text-neutral-400">
-            Installation en moins de 2 minutes sur n'importe quel site ou boutique.
-          </span>
-          <button
-            onClick={onOpenAssistantModal}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600/50 hover:to-indigo-600/50 text-purple-200 border border-purple-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer backdrop-blur-md shadow-md"
-          >
-            <span>Créer pour mon site web</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+        <div className="mt-5 flex flex-col items-center justify-between gap-4 border-t border-white/[0.07] pt-5 sm:flex-row">
+          <p className="lux-note text-center text-[0.78rem] sm:text-left">
+            Une seule ligne de code — installation en moins de 2 minutes, sur n’importe quel site ou boutique.
+          </p>
+          <button onClick={onOpenAssistantModal} className="btn btn-primary btn-sm w-full sm:w-auto">
+            <span>Créer pour mon site</span>
+            <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>

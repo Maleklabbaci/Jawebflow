@@ -1,8 +1,10 @@
 import React from 'react';
 import { HeroSection } from '../components/HeroSection';
 import { InteractiveChatMockup } from '../components/InteractiveChatMockup';
+import { TrustSection } from '../components/TrustSection';
 import { KnowledgeBaseSection } from '../components/KnowledgeBaseSection';
 import { ProcessSection } from '../components/ProcessSection';
+import { FaqSection } from '../components/FaqSection';
 import { CtaSection } from '../components/CtaSection';
 
 interface HomePageProps {
@@ -19,8 +21,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenAssistantModal, onNavi
   };
 
   return (
-    <div className="space-y-4">
-      {/* Hero Section */}
+    <div className="space-y-2 sm:space-y-4">
+      {/* Hero Section — inchangé (validé par le client) */}
       <HeroSection 
         onOpenAssistantModal={onOpenAssistantModal}
         onScrollToParcours={() => onNavigate('services')}
@@ -32,12 +34,24 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenAssistantModal, onNavi
         onOpenAssistantModal={onOpenAssistantModal}
       />
 
+      {/* Ce que ça change concrètement (bénéfices + avant / après) */}
+      <TrustSection
+        onOpenAssistantModal={onOpenAssistantModal}
+        onNavigate={onNavigate}
+      />
+
       {/* Knowledge Base Section */}
       <KnowledgeBaseSection />
 
       {/* Process Section */}
       <ProcessSection 
         onOpenAssistantModal={onOpenAssistantModal}
+      />
+
+      {/* Objections & objections prix : les questions qui débloquent la décision */}
+      <FaqSection
+        onOpenAssistantModal={onOpenAssistantModal}
+        onNavigate={onNavigate}
       />
 
       {/* Call to Action Final Section */}

@@ -217,7 +217,6 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>(config.initialMessages);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
   const [showLeadPrompt, setShowLeadPrompt] = useState(false);
   const [leadPhone, setLeadPhone] = useState('');
   const [leadSuccess, setLeadSuccess] = useState(false);
@@ -382,92 +381,74 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
     setMessages(prev => [...prev, confirmationMsg]);
   };
 
-  const scriptCode = `<script src="https://jawebflow.dz/cdn/widget.js" data-assistant-id="${config.assistantId}" async></script>`;
-
-  const handleCopyScript = () => {
-    navigator.clipboard.writeText(scriptCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
-  };
-
   return (
     <section 
       id="demo-section"
       className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-12 w-full flex flex-col items-center"
     >
       {/* Section Header */}
-      <div className="text-center max-w-2xl mx-auto mb-6 sm:mb-8">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/80 border border-purple-500/30 text-xs font-semibold text-purple-200 mb-3 backdrop-blur-xl">
-          <Globe className="w-3.5 h-3.5 text-purple-300" />
-          <span>Aperçu de l'intégration sur votre site</span>
-        </div>
+      <div className="mx-auto mb-10 max-w-3xl text-center sm:mb-14">
+        <span className="lux-eyebrow">
+          <Globe className="h-3.5 w-3.5 text-purple-300" />
+          Démo en direct — sans inscription
+        </span>
 
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-white font-display mb-2">
-          Le widget en conditions réelles.
+        <h2 className="lux-h2 mt-5">
+          Écrivez comme vos clients écrivent. <br className="hidden sm:inline" />
+          <span className="lux-accent">Regardez ce qu’ils reçoivent.</span>
         </h2>
-        <p className="text-xs sm:text-sm text-neutral-300">
-          Sélectionnez un secteur d'activité et testez les réponses instantanées en Français et en Darija algérienne.
+        <p className="lux-lead mx-auto mt-4 max-w-2xl">
+          Choisissez votre secteur, posez une question en français ou en darija,
+          et voyez exactement ce que verrait un visiteur sur votre site.
         </p>
       </div>
 
       {/* Sector Switcher Controls */}
-      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-neutral-950/70 border border-white/10 backdrop-blur-xl mb-5 w-full max-w-xl">
-        <button
-          onClick={() => handleSelectSector('ecommerce')}
-          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer truncate ${
-            selectedSector === 'ecommerce'
-              ? 'bg-purple-600 text-white font-semibold shadow-md shadow-purple-600/30'
-              : 'text-neutral-300 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">E-commerce</span>
-        </button>
-
-        <button
-          onClick={() => handleSelectSector('services')}
-          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer truncate ${
-            selectedSector === 'services'
-              ? 'bg-purple-600 text-white font-semibold shadow-md shadow-purple-600/30'
-              : 'text-neutral-300 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <Briefcase className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Services & Agence</span>
-        </button>
-
-        <button
-          onClick={() => handleSelectSector('formation')}
-          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer truncate ${
-            selectedSector === 'formation'
-              ? 'bg-purple-600 text-white font-semibold shadow-md shadow-purple-600/30'
-              : 'text-neutral-300 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <GraduationCap className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Formation Pro</span>
-        </button>
+      <div className="mb-6 grid w-full max-w-xl grid-cols-3 gap-1 rounded-[14px] border border-white/[0.09] bg-white/[0.03] p-1 backdrop-blur-xl">
+        {([
+          { id: 'ecommerce' as const, label: 'E-commerce', icon: ShoppingBag },
+          { id: 'services' as const, label: 'Services & Agence', icon: Briefcase },
+          { id: 'formation' as const, label: 'Formation Pro', icon: GraduationCap },
+        ]).map((sector) => {
+          const SectorIcon = sector.icon;
+          const isActive = selectedSector === sector.id;
+          return (
+            <button
+              key={sector.id}
+              onClick={() => handleSelectSector(sector.id)}
+              aria-pressed={isActive}
+              className={`flex cursor-pointer items-center justify-center gap-1.5 truncate rounded-[10px] px-3 py-2 text-[0.76rem] font-medium transition-all duration-200 ${
+                isActive
+                  ? 'bg-purple-600/90 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                  : 'text-neutral-400 hover:bg-white/[0.05] hover:text-white'
+              }`}
+            >
+              <SectorIcon className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{sector.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Realistic Simulated Browser Window */}
-      <div className="relative w-full rounded-3xl bg-neutral-950/80 border border-white/15 backdrop-blur-2xl shadow-2xl shadow-purple-950/40 overflow-hidden flex flex-col">
+      <div className="lux-card relative flex w-full flex-col overflow-hidden">
         
         {/* Browser Top Navigation Bar */}
-        <div className="px-4 py-3 bg-neutral-900/90 border-b border-white/10 flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] bg-black/30 px-4 py-3 text-xs">
           <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
-            <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
-            <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-white/15"></span>
           </div>
 
-          <div className="flex-1 max-w-md mx-auto bg-neutral-950/80 border border-white/10 rounded-xl px-3 py-1.5 flex items-center justify-center gap-2 text-neutral-300 text-xs font-mono">
-            <Lock className="w-3 h-3 text-emerald-400 shrink-0" />
+          <div className="mx-auto flex flex-1 max-w-md items-center justify-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-neutral-300">
+            <Lock className="h-3 w-3 shrink-0 text-emerald-400" />
             <span className="truncate text-[11px] sm:text-xs">{config.url}</span>
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 text-neutral-400 text-[11px]">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Widget Actif</span>
+          <div className="hidden items-center gap-2 text-[11px] text-neutral-400 sm:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            <span>Widget actif</span>
           </div>
         </div>
 
@@ -475,31 +456,31 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
         <div className="relative min-h-[480px] sm:min-h-[530px] p-5 sm:p-8 bg-gradient-to-b from-neutral-900/40 to-neutral-950/90 flex flex-col justify-between overflow-hidden">
           
           {/* Simulated Website Background Elements */}
-          <div className="max-w-xl space-y-4 text-left pointer-events-none select-none opacity-90">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300 font-medium">
+          <div className="pointer-events-none max-w-xl select-none space-y-4 text-left opacity-95">
+            <div className="inline-flex items-center gap-2 rounded-full border border-purple-400/20 bg-purple-500/10 px-3 py-1 text-[0.72rem] font-medium text-purple-200">
               <span>{config.sectorName}</span>
             </div>
 
-            <h3 className="text-xl sm:text-3xl font-bold text-white font-display leading-tight">
+            <h3 className="lux-h3 text-[1.25rem] sm:text-[1.8rem]">
               {config.siteHeroTitle}
             </h3>
 
-            <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
+            <p className="lux-sub max-w-md text-[0.8rem] sm:text-[0.86rem]">
               {config.siteHeroDesc}
             </p>
 
             {/* Product/Service Cards on the Simulated Site */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-white/10">
-                <div className="text-xs font-semibold text-white">{config.siteItem1.title}</div>
-                <div className="text-[11px] text-neutral-400 mt-0.5">{config.siteItem1.desc}</div>
-                <div className="text-xs font-bold text-purple-300 mt-2">{config.siteItem1.price}</div>
+            <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+                <div className="text-[0.78rem] font-semibold text-white">{config.siteItem1.title}</div>
+                <div className="mt-0.5 text-[0.7rem] font-light text-neutral-400">{config.siteItem1.desc}</div>
+                <div className="mt-2 text-[0.78rem] font-semibold text-purple-300">{config.siteItem1.price}</div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-white/10">
-                <div className="text-xs font-semibold text-white">{config.siteItem2.title}</div>
-                <div className="text-[11px] text-neutral-400 mt-0.5">{config.siteItem2.desc}</div>
-                <div className="text-xs font-bold text-purple-300 mt-2">{config.siteItem2.price}</div>
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+                <div className="text-[0.78rem] font-semibold text-white">{config.siteItem2.title}</div>
+                <div className="mt-0.5 text-[0.7rem] font-light text-neutral-400">{config.siteItem2.desc}</div>
+                <div className="mt-2 text-[0.78rem] font-semibold text-purple-300">{config.siteItem2.price}</div>
               </div>
             </div>
           </div>
@@ -511,43 +492,45 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
             {widgetOpen ? (
               <div 
                 id="real-embedded-widget-window"
-                className="w-[calc(100vw-3rem)] sm:w-[360px] max-w-full h-[430px] max-h-[calc(100%-1rem)] rounded-3xl bg-neutral-950 border border-purple-500/30 backdrop-blur-2xl shadow-2xl shadow-purple-950/60 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 pointer-events-auto"
+                className="pointer-events-auto flex h-[430px] max-h-[calc(100%-1rem)] w-[calc(100vw-3rem)] max-w-full flex-col overflow-hidden rounded-[22px] border border-purple-400/25 bg-[#0b0912] shadow-[0_30px_60px_-30px_rgba(0,0,0,0.95)] backdrop-blur-2xl animate-in zoom-in-95 duration-200 sm:w-[360px]"
               >
                 {/* Widget Header */}
-                <div className="p-3 sm:p-3.5 bg-neutral-900 border-b border-white/10 flex items-center justify-between text-white shrink-0">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] bg-white/[0.03] p-3 text-white sm:p-3.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
                     <div className="relative shrink-0">
-                      <div className="w-8 h-8 rounded-xl bg-purple-600 flex items-center justify-center font-bold text-xs text-white shadow-md shadow-purple-600/30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-b from-purple-500 to-purple-700 text-[0.7rem] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]">
                         {config.avatarText}
                       </div>
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-950"></span>
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0b0912] bg-emerald-400"></span>
                     </div>
                     <div className="min-w-0">
-                      <h4 className="font-semibold text-xs text-white flex items-center gap-1.5 truncate">
+                      <h4 className="flex items-center gap-1.5 truncate text-[0.75rem] font-semibold text-white">
                         <span className="truncate">{config.businessName}</span>
                       </h4>
-                      <p className="text-[10px] text-emerald-400 font-medium truncate">
-                        En ligne • Réponse immédiate
+                      <p className="truncate text-[0.62rem] font-light text-emerald-400">
+                        En ligne • réponse immédiate
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                  <div className="ml-1 flex shrink-0 items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setMessages(config.initialMessages)}
                       title="Réinitialiser la discussion"
-                      className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 flex items-center justify-center text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                      aria-label="Réinitialiser la discussion"
+                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg bg-white/[0.05] text-neutral-400 transition-colors hover:bg-white/[0.12] hover:text-white"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
+                      <RotateCcw className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setWidgetOpen(false)}
                       title="Réduire"
-                      className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 flex items-center justify-center text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                      aria-label="Réduire la discussion"
+                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg bg-white/[0.05] text-neutral-400 transition-colors hover:bg-white/[0.12] hover:text-white"
                     >
-                      <Minus className="w-3.5 h-3.5" />
+                      <Minus className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
@@ -555,7 +538,7 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
                 {/* Messages Body */}
                 <div 
                   ref={chatScrollRef}
-                  className="flex-1 p-3 sm:p-3.5 overflow-y-auto space-y-2.5 bg-[#0a0c13] overscroll-contain"
+                  className="flex-1 space-y-2.5 overflow-y-auto bg-[#08070e] p-3 sm:p-3.5 overscroll-contain"
                   style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}
                 >
                   {messages.map((m) => {
@@ -566,19 +549,19 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
                         className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}
                       >
                         <div 
-                          className={`max-w-[90%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm break-words ${
+                          className={`max-w-[90%] break-words rounded-2xl px-3.5 py-2 text-[0.76rem] font-light leading-relaxed ${
                             isAssistant
-                              ? 'bg-neutral-900 text-neutral-100 border border-white/10 rounded-tl-sm'
-                              : 'bg-purple-600 text-white rounded-tr-sm font-medium'
+                              ? 'rounded-tl-sm border border-white/[0.07] bg-white/[0.045] text-neutral-100'
+                              : 'rounded-tr-sm bg-purple-600 font-normal text-white'
                           }`}
                         >
                           {renderMessageContent(m.text, 'dark')}
                         </div>
-                        <div className={`text-[9px] mt-0.5 px-1 flex items-center gap-1 ${
-                          isAssistant ? 'text-neutral-400' : 'text-purple-300'
+                        <div className={`mt-0.5 flex items-center gap-1 px-1 text-[0.58rem] ${
+                          isAssistant ? 'text-neutral-500' : 'text-purple-300'
                         }`}>
                           <span>{m.timestamp}</span>
-                          {!isAssistant && <CheckCheck className="w-3 h-3 shrink-0" />}
+                          {!isAssistant && <CheckCheck className="h-3 w-3 shrink-0" />}
                         </div>
                       </div>
                     );
@@ -586,22 +569,22 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
 
                   {/* Lead Capture Interactive Prompt */}
                   {showLeadPrompt && !leadSuccess && (
-                    <form onSubmit={handleLeadSubmit} className="p-3 rounded-2xl bg-neutral-900 border border-purple-500/30 space-y-2 animate-in fade-in">
-                      <div className="text-[11px] font-semibold text-purple-200 flex items-center gap-1.5">
-                        <Phone className="w-3 h-3 text-purple-400 shrink-0" />
-                        <span>Recevoir votre devis / être rappelé :</span>
+                    <form onSubmit={handleLeadSubmit} className="animate-in fade-in space-y-2 rounded-2xl border border-purple-400/25 bg-purple-500/[0.07] p-3">
+                      <div className="flex items-center gap-1.5 text-[0.68rem] font-medium text-purple-100">
+                        <Phone className="h-3 w-3 shrink-0 text-purple-300" />
+                        <span>Laissez votre numéro : on vous rappelle</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <input
                           type="tel"
                           value={leadPhone}
                           onChange={(e) => setLeadPhone(e.target.value)}
-                          placeholder="Ex: 0550 12 34 56"
-                          className="flex-1 bg-neutral-950 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-neutral-400 focus:outline-none focus:border-purple-500"
+                          placeholder="Ex : 0550 12 34 56"
+                          className="lux-input min-w-0 flex-1 rounded-[10px] px-2.5 py-1.5 text-[0.72rem]"
                         />
                         <button
                           type="submit"
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0"
+                          className="btn btn-sm btn-primary shrink-0 px-3 py-2 text-[0.7rem]"
                         >
                           Valider
                         </button>
@@ -619,13 +602,13 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
                 </div>
 
                 {/* Suggestion Chips */}
-                <div className="px-2.5 py-2 bg-neutral-900 border-t border-white/10 flex items-center gap-1.5 overflow-x-auto shrink-0 overscroll-x-contain" style={{ scrollbarWidth: 'none' }}>
+                <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-t border-white/[0.07] bg-white/[0.02] px-2.5 py-2 overscroll-x-contain" style={{ scrollbarWidth: 'none' }}>
                   {config.quickQuestions.map((q, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => handleSendMessage(q.text)}
-                      className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-purple-600/30 text-neutral-300 hover:text-white border border-white/10 hover:border-purple-500/40 whitespace-nowrap transition-all shrink-0 cursor-pointer"
+                      className="lux-chip shrink-0 px-2.5 py-1 text-[0.65rem]"
                     >
                       {q.label}
                     </button>
@@ -633,45 +616,47 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
                 </div>
 
                 {/* Input Footer */}
-                <div className="p-2.5 bg-neutral-900 border-t border-white/10 flex items-center gap-2 shrink-0">
+                <div className="flex shrink-0 items-center gap-2 border-t border-white/[0.07] bg-white/[0.03] p-2.5">
                   <input
                     type="text"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Posez votre question…"
-                    className="flex-1 min-w-0 bg-neutral-950 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-400 focus:outline-none focus:border-purple-500"
+                    placeholder="Écrivez votre question…"
+                    aria-label="Votre question pour la démo"
+                    className="lux-input min-w-0 flex-1 rounded-[10px] px-3 py-1.5 text-[0.74rem]"
                   />
                   <button
                     type="button"
                     onClick={() => handleSendMessage()}
                     disabled={!inputText.trim()}
-                    className="w-7 h-7 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white flex items-center justify-center transition-all cursor-pointer shrink-0"
+                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-purple-600 text-white transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
                     title="Envoyer"
+                    aria-label="Envoyer le message"
                   >
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
             ) : (
               /* Minimized Floating Launcher Button */
-              <div className="flex items-center gap-2 pointer-events-auto">
+              <div className="pointer-events-auto flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setWidgetOpen(true)}
-                  className="px-3 sm:px-3.5 py-2 rounded-lg bg-neutral-950/90 border border-white/15 text-xs text-white shadow-xl flex items-center gap-2 cursor-pointer hover:border-white/30 transition-colors max-w-[calc(100vw-6rem)] sm:max-w-xs"
+                  className="flex max-w-[calc(100vw-6rem)] cursor-pointer items-center gap-2 rounded-xl border border-white/[0.12] bg-[#0b0912]/95 px-3 py-2 text-[0.72rem] text-white shadow-[0_18px_40px_-24px_rgba(0,0,0,0.9)] backdrop-blur-xl transition-colors hover:border-purple-400/40 sm:max-w-xs sm:px-3.5"
                 >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400"></span>
                   <span className="truncate">Une question ? Discutons en direct 👋</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setWidgetOpen(true)}
-                  className="p-3 sm:p-3.5 rounded-full bg-neutral-900 text-white shadow-lg hover:bg-neutral-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                  className="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-purple-500 to-purple-700 p-3 text-white shadow-[0_18px_40px_-22px_rgba(124,58,237,1)] transition-transform hover:scale-[1.04] sm:p-3.5"
                   aria-label="Ouvrir le chat"
                 >
-                  <MessageSquare className="w-5 h-5" />
+                  <MessageSquare className="h-5 w-5" />
                 </button>
               </div>
             )}
@@ -679,19 +664,19 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
         </div>
 
         {/* Barre d'action simple : pas de code affiché au visiteur */}
-        <div className="p-4 bg-neutral-900/95 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <p className="text-neutral-400 text-center sm:text-left">
-            Voilà exactement ce que verront vos visiteurs.
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-white/[0.07] bg-black/25 p-4 text-xs sm:flex-row">
+          <p className="lux-sub text-center text-[0.78rem] sm:text-left">
+            Voilà exactement ce que verront vos visiteurs — et vous, vous recevez leurs coordonnées.
           </p>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end">
+          <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-end">
             {onOpenAssistantModal && (
               <button
                 onClick={onOpenAssistantModal}
-                className="px-4 py-2 rounded-lg bg-white text-neutral-900 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                className="btn btn-sm btn-primary shrink-0"
               >
                 <span>Créer mon assistant</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
@@ -700,3 +685,4 @@ export const InteractiveChatMockup: React.FC<InteractiveChatMockupProps> = ({
     </section>
   );
 };
+

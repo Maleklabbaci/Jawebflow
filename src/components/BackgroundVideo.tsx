@@ -23,7 +23,7 @@ export const BackgroundVideo: React.FC<BackgroundVideoProps> = ({ opacity = 1 })
   <div
     id="site-background"
     aria-hidden="true"
-    className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none bg-[#0b0a10]"
+    className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none bg-[#08070f]"
   >
     <div className="absolute inset-0" style={{ opacity }}>
       {/* Grande lueur violette derrière le titre + reflet doux côté droit */}
