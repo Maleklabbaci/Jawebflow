@@ -1,16 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 
-/** Effet d'encre : la photo femme est affichée par défaut, le robot apparaît sous le pointeur. */
 const CFG = {
   top: '/jawebfemme.jpg',
   bottom: '/jawebbot.jpg',
-  // le reste ne change pas  brush: 0.15,
+  brush: 0.15,
   fade: 0.004,
   follow: 22,
   diffuse: 0.55,
   flow: 2.4,
   refract: 0.12,
 };
+
 
 const VERT = `#version 300 es
 out vec2 vUv;
