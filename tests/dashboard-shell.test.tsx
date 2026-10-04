@@ -106,16 +106,17 @@ async function say(text: string) {
 const TITLES: Array<{ id: string; nav: string; title: string }> = [
   { id: 'overview', nav: 'Accueil', title: 'Accueil' },
   { id: 'summary', nav: 'Résumé', title: 'Résumé' },
-  { id: 'knowledge', nav: 'Mon assistant', title: 'Mon assistant' },
-  { id: 'crawler', nav: 'Mon assistant', title: 'Mon assistant' },
-  { id: 'behavior', nav: 'Mon assistant', title: 'Mon assistant' },
-  { id: 'widget', nav: 'Mon assistant', title: 'Mon assistant' },
-  { id: 'learning', nav: 'Mon assistant', title: 'Mon assistant' },
+  { id: 'knowledge', nav: 'Mon assistant', title: 'Mes informations' },
+  { id: 'crawler', nav: 'Mon assistant', title: 'Mon site web' },
+  { id: 'behavior', nav: 'Mon assistant', title: 'Comportement' },
+  { id: 'widget', nav: 'Mon assistant', title: 'Apparence' },
+  { id: 'learning', nav: 'Mon assistant', title: 'Apprentissage' },
   { id: 'simulator', nav: 'Tester', title: 'Tester mon assistant' },
-  { id: 'integration', nav: 'Canaux', title: 'Canaux' },
-  { id: 'instagram', nav: 'Canaux', title: 'Canaux' },
-  { id: 'automations', nav: 'Canaux', title: 'Canaux' },
-  { id: 'leads', nav: 'Clients', title: 'Mes clients' },
+  { id: 'integration', nav: 'Canaux', title: 'Mon site' },
+  { id: 'instagram', nav: 'Canaux', title: 'Instagram' },
+  { id: 'automations', nav: 'Canaux', title: 'Automatisations' },
+  { id: 'leads', nav: 'Clients', title: "Vue d'ensemble" },
+  { id: 'orders', nav: 'Commandes', title: 'Commandes' },
   { id: 'billing', nav: 'Abonnement & factures', title: 'Abonnement & factures' },
   { id: 'settings', nav: 'Mon profil', title: 'Mon profil' },
 ];
@@ -148,8 +149,8 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
         expect(inHeader.length, `bouton actif en haut pour « ${s.nav} »`).toBe(1);
       } else {
         expect(inMenu.length, `entrée active pour « ${s.nav} »`).toBe(1);
-        if (['integration', 'instagram', 'automations'].includes(s.id)) {
-          expect(inMenu[0].getAttribute('data-tab')).toBe(s.id);
+        if (['knowledge', 'crawler', 'behavior', 'widget', 'learning', 'integration', 'instagram', 'automations', 'leads'].includes(s.id)) {
+          expect(inMenu[0].getAttribute('data-tab')).toBe(s.id === 'leads' ? 'analytics' : s.id);
         } else {
           expect(inMenu[0].id).toBe(`nav-${MENU_ENTRY[s.id]}`);
         }
@@ -167,8 +168,9 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     fireEvent.click(channels);
     await settle(40);
     expect(channels.getAttribute('aria-expanded')).toBe('true');
-    expect(document.getElementById('channels-submenu')!.className).toContain('grid-rows-[1fr]');
-    expect(document.querySelector('header h1')!.textContent).toBe('Canaux');
+    expect(document.getElementById('submenu-channels')!.className).toContain('grid-rows-[1fr]');
+    // Cliquer sur un groupe ouvre son sous-menu sans détourner immédiatement l’écran courant.
+    expect(document.querySelector('header h1')!.textContent).toBe('Accueil');
     expect(screen.getByRole('button', { name: 'Instagram' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Mon site' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Automatisations' })).toBeTruthy();
@@ -177,6 +179,7 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     await settle(50);
     expect(document.querySelector('[data-tab="instagram"]')!.getAttribute('aria-current')).toBe('page');
     expect(document.getElementById('nav-integration')!.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('header h1')!.textContent).toBe('Instagram');
   });
 
   it('les chiffres du menu (fiches, clients) sont posés sur l’icône et disparaissent à zéro', async () => {
@@ -205,9 +208,10 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     render(<DashboardPlatform initialSection="leads" />);
     await settle(300);
     expect(be.api.filter((request) => request.url.includes('/api/leads')).length).toBeGreaterThan(0);
-    expect(document.querySelector('header h1')?.textContent).toBe('Mes clients');
+    expect(document.querySelector('header h1')?.textContent).toBe("Vue d'ensemble");
     fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
     await settle(60);
+    expect(document.querySelector('header h1')?.textContent).toBe('Mes clients');
     expect(document.querySelector('main')?.textContent).toContain('Mes clients intéressés');
     expect(document.querySelector('tbody')?.textContent).toContain('Sara');
     expect(screen.getByText('À suivre')).toBeTruthy();
@@ -219,6 +223,42 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     await settle(80);
     expect(screen.getAllByText(/Suivi terminé/).length).toBeGreaterThan(0);
     expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
+  });
+
+  it('Commandes garde les données du nouveau parcours et cohabite avec la navigation Clients corrigée', async () => {
+    const order = {
+      id: 'order-1', reference: 'JF-ORDER1', status: 'pending_merchant_confirmation', channel: 'instagram',
+      summary: 'Veste noire, taille M', customerName: 'Sara', phone: '0550123456', city: 'Blida',
+      deliveryAddress: '12 rue des Fleurs', totalAmount: 8400,
+      createdAt: '2026-10-03T11:00:00.000Z', updatedAt: '2026-10-03T11:00:00.000Z',
+      changeHistory: [{ type: 'customer_change', details: 'Adresse confirmée par la cliente', confirmedAt: '2026-10-03T11:05:00.000Z' }],
+    };
+    be.stub('/api/leads', (init) => new Response(JSON.stringify((init.method || 'GET') === 'POST'
+      ? { ok: true, updatedAt: '2026-10-03T12:00:00.000Z' }
+      : { prospects: [{
+          id: 'p1', name: 'Sara', phone: '0550123456', email: 'Non fourni', need: order.summary,
+          status: 'qualifie', channel: 'instagram', city: 'Blida', orders: [order], updatedAt: order.updatedAt,
+        }] }), { status: 200 }));
+
+    render(<DashboardPlatform initialSection="orders" />);
+    await settle(300);
+    expect(document.querySelector('header h1')?.textContent).toBe('Commandes');
+    expect(document.getElementById('nav-orders')?.textContent).toContain('1');
+    expect(screen.getByText(/JF-ORDER1/)).toBeTruthy();
+    expect(screen.getByText('Veste noire, taille M')).toBeTruthy();
+    expect(screen.getByText('12 rue des Fleurs')).toBeTruthy();
+    expect(screen.getByText('Adresse confirmée par la cliente')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer la commande' }));
+    await settle(100);
+    expect(screen.getAllByText('Confirmée').length).toBeGreaterThan(0);
+    expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
+
+    fireEvent.click(document.getElementById('nav-leads')!);
+    await settle(50);
+    expect(document.getElementById('nav-leads')?.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: "Vue d'ensemble" })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Mes clients' })).toBeTruthy();
   });
 
   it('Résumé : trois cartes de chiffres (statut, clients, informations) avec les vrais nombres', async () => {
