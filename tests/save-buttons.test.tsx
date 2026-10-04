@@ -75,13 +75,19 @@ describe('échec d’enregistrement', () => {
     render(<DashboardPlatform initialSection="overview" />);
     // plus de bouton « Enregistrer » en haut : l'enregistrement est automatique (≈ 1 s après le chargement) et échoue ici
     expect(Array.from(document.querySelectorAll('header button')).some((b) => /^\s*Enregistrer\s*$/.test(b.textContent || ''))).toBe(false);
-    const retry = await screen.findByRole('button', { name: /Échec — réessayer/ }, { timeout: 4000 });
+    const retry = await screen.findByRole('button', { name: /Échec — réessayer/ }, { timeout: 4000 }) as HTMLButtonElement;
     expect(retry.title).toMatch(/a échoué/);
-    // on réessaie avec une connexion rétablie : « Enregistré »
-    saveSpy.mockImplementation(async () => 'asst1');
-    await act(async () => { fireEvent.click(retry); await new Promise((r) => setTimeout(r, 120)); });
-    expect(screen.getByRole('status').textContent).toMatch(/Enregistré/);
+    // Pendant la reprise, le bouton reste visible et signale discrètement l'activité ; après succès,
+    // l'erreur disparaît sans bandeau « Enregistré » persistant.
+    let finishRetry: ((value: string) => void) | undefined;
+    saveSpy.mockImplementation(() => new Promise((resolve) => { finishRetry = resolve; }));
+    await act(async () => { fireEvent.click(retry); await Promise.resolve(); });
+    expect(retry.disabled).toBe(true);
+    expect(retry.title).toMatch(/tentative en cours/);
+    await act(async () => { finishRetry?.('asst1'); await new Promise((r) => setTimeout(r, 120)); });
+    expect(saveSpy).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: /Échec/ })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('l’échec reste affiché : il ne disparaît pas tout seul (plus de bouton « Enregistrer » pour réessayer à tout moment)', async () => {

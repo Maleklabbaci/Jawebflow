@@ -104,8 +104,8 @@ const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: Dashboar
   channels: {
     title: 'Canaux',
     tabs: [
-      { id: 'integration', label: 'Mon site' },
       { id: 'instagram', label: 'Instagram' },
+      { id: 'integration', label: 'Mon site' },
       { id: 'automations', label: 'Automatisations' },
     ],
   },
@@ -168,6 +168,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [currentSection, setCurrentSection] = useState<DashboardSectionId>(
     (initialSection as DashboardSectionId) || 'overview'
   );
+  const [channelsMenuOpen, setChannelsMenuOpen] = useState(() => groupOf(initialSection as DashboardSectionId) === 'channels');
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
   // Venue des Automatisations : l'onglet Instagram met en avant « Autoriser les commentaires ».
   const [instagramFocus, setInstagramFocus] = useState<'comments' | null>(null);
@@ -182,6 +183,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   useEffect(() => {
     if (initialSection && initialSection !== currentSection) {
       setCurrentSection(initialSection as DashboardSectionId);
+      setChannelsMenuOpen(groupOf(initialSection as DashboardSectionId) === 'channels');
     }
   }, [initialSection]);
 
@@ -211,6 +213,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
+    setChannelsMenuOpen(groupOf(section) === 'channels');
     setMobileMenuOpen(false);
     setAccountMenuOpen(false);
     if (onNavigate) {
@@ -237,7 +240,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const copilotBusyRef = useRef(false);
   const autosavePendingRef = useRef(false);
   const [autosaveNonce, setAutosaveNonce] = useState(0);
-  const handleSaveRef = useRef<(() => Promise<string | undefined>) | null>(null);
+  const handleSaveRef = useRef<((...args: any[]) => Promise<string | undefined>) | null>(null);
   const assistantIdRef = useRef('');
   const assistantLoadedRef = useRef(false);
   // Changent quand l'IA modifie les automatisations / Instagram : l'écran concerné se recharge.
@@ -560,7 +563,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Persistence status
   const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
-  const [savedDbSuccess, setSavedDbSuccess] = useState<boolean>(false);
   const [saveDbError, setSaveDbError] = useState<boolean>(false);
 
   // Crawler & Scanner state
@@ -586,6 +588,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [inputMessage, setInputMessage] = useState<string>('');
   const [isBotTyping, setIsBotTyping] = useState<boolean>(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [leadFollowUpBusy, setLeadFollowUpBusy] = useState<string | null>(null);
+  const [leadFollowUpError, setLeadFollowUpError] = useState<string>('');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'nouveau' | 'qualifie'>('all');
@@ -614,6 +618,17 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     utm_campaign?: string;
     utm_content?: string;
     utm_term?: string;
+    source?: string;
+    channel?: string;
+    salesIntentType?: string;
+    salesStage?: string;
+    followUpStatus?: string;
+    followUpAt?: string;
+    followUpCompletedAt?: string;
+    followUpReason?: string;
+    followUpNote?: string;
+    nextAction?: string;
+    lastInteractionAt?: string;
   }>>([]);
 
   // Load user data from Firestore on mount
@@ -778,7 +793,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           currentPage: data.currentPage || '',
           userAgent: data.userAgent || '',
           language: data.language || '',
-          messages: data.messages || []
+          messages: data.messages || [],
+          source: data.source || '',
+          channel: data.channel || '',
+          salesIntentType: data.salesIntentType || '',
+          salesStage: data.salesStage || '',
+          followUpStatus: data.followUpStatus || '',
+          followUpAt: data.followUpAt || '',
+          followUpCompletedAt: data.followUpCompletedAt || '',
+          followUpReason: data.followUpReason || '',
+          followUpNote: data.followUpNote || '',
+          nextAction: data.nextAction || '',
+          lastInteractionAt: data.lastInteractionAt || '',
         }));
         if (!cancelled) setLeadsList(prospects);
       } catch (error) {
@@ -790,6 +816,29 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     const interval = setInterval(fetchLeads, 8000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [assistantId]);
+
+  const handleCompleteLeadFollowUp = async (leadId: string) => {
+    if (!assistantId || leadFollowUpBusy) return;
+    setLeadFollowUpBusy(leadId);
+    setLeadFollowUpError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId: leadId, followUpStatus: 'done' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Impossible de mettre à jour le suivi.');
+      setLeadsList((current) => current.map((lead) => lead.id === leadId
+        ? { ...lead, followUpStatus: 'done', followUpCompletedAt: data.completedAt, nextAction: 'Suivi terminé' }
+        : lead));
+    } catch (error: any) {
+      setLeadFollowUpError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setLeadFollowUpBusy(null);
+    }
+  };
 
   const handleSaveToDatabase = async (rawNotesOverride?: KnowledgeNote[], rawMetadataOverride?: Partial<{ websiteUrl: string; businessName: string; businessCategory: string; businessDescription: string; siteType: string; siteTypeConfidence: number; scrapingStrategy: string[]; businessInfo: { address?: string; phone?: string; hours?: string; closedDays?: string; } }>): Promise<string | undefined> => {
     if (!user) return undefined;
@@ -838,8 +887,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         if (['basic', 'pro', 'enterprise'].includes(eff)) setActivePlan(eff as PaymentPlanId);
       }
       setSaveDbError(false);
-      setSavedDbSuccess(true);
-      setTimeout(() => setSavedDbSuccess(false), 3000);
       return savedId || undefined;
     } catch (err) {
       console.error('Error saving assistant:', err);
@@ -1354,8 +1401,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     type="button"
                     id={`nav-${item.id}`}
                     title={item.label}
-                    aria-current={isActive ? 'page' : undefined}
-                    onClick={() => handleSectionChange(item.id)}
+                    aria-current={isActive && item.group !== 'channels' ? 'page' : undefined}
+                    aria-expanded={item.group === 'channels' ? channelsMenuOpen : undefined}
+                    aria-controls={item.group === 'channels' ? 'channels-submenu' : undefined}
+                    onClick={() => {
+                      if (item.group === 'channels') {
+                        if (groupOf(currentSection) !== 'channels') {
+                          const keepDrawerOpen = mobileMenuOpen;
+                          handleSectionChange('integration');
+                          if (keepDrawerOpen) setMobileMenuOpen(true);
+                        } else setChannelsMenuOpen((open) => !open);
+                      } else handleSectionChange(item.id);
+                    }}
                     className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] transition-all cursor-pointer ${
                       isActive
                         ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
@@ -1372,9 +1429,38 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     </span>
                     <span className="flex-1 truncate text-left">{item.label}</span>
                     {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
+                    {item.group === 'channels' && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${channelsMenuOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
                   </button>
                 );
               })}
+              <div
+                id="channels-submenu"
+                aria-hidden={!channelsMenuOpen}
+                className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out ${channelsMenuOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-3 pb-1">
+                    {SECTION_GROUPS.channels.tabs.map((tab, index) => {
+                      const selected = currentSection === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          tabIndex={channelsMenuOpen ? 0 : -1}
+                          onClick={() => handleSectionChange(tab.id)}
+                          data-tab={tab.id}
+                          aria-current={selected ? 'page' : undefined}
+                          className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-[13px] transition-all duration-200 ${selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
+                          style={{ transitionDelay: channelsMenuOpen ? `${index * 35}ms` : '0ms', transform: channelsMenuOpen ? 'translateY(0)' : 'translateY(-4px)' }}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#5a2cff]' : 'bg-slate-300'}`} />
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </nav>
         </div>
@@ -1429,19 +1515,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               <button
                 type="button"
                 onClick={() => { void handleSaveToDatabase(); }}
-                title="L’enregistrement a échoué : vérifie ta connexion internet puis clique pour réessayer."
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-100 cursor-pointer"
+                disabled={isSavingDb}
+                aria-label={isSavingDb ? 'Nouvelle tentative en cours' : 'Échec — réessayer'}
+                title={isSavingDb ? 'Nouvelle tentative en cours' : 'L’enregistrement a échoué : vérifie ta connexion internet puis clique pour réessayer.'}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-100 disabled:cursor-wait disabled:opacity-70 cursor-pointer"
               >
-                <AlertCircle className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Échec — réessayer</span>
+                {isSavingDb ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">{isSavingDb ? 'Nouvelle tentative…' : 'Échec — réessayer'}</span>
               </button>
-            ) : (isSavingDb || savedDbSuccess) ? (
-              <span
-                role="status"
-                className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${savedDbSuccess && !isSavingDb ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}
-              >
-                {isSavingDb ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isSavingDb ? 'Enregistrement…' : 'Enregistré'}</span>
+            ) : isSavingDb ? (
+              <span role="status" aria-live="polite" title="Enregistrement en cours" className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="sr-only">Enregistrement…</span>
               </span>
             ) : null}
 
@@ -1533,7 +1618,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
-          {groupOf(currentSection) && (
+          {groupOf(currentSection) === 'assistant' && (
             <SubTabs
               tabs={SECTION_GROUPS[groupOf(currentSection) as string].tabs}
               active={currentSection}
@@ -2625,6 +2710,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             <th className="p-3.5">Téléphone / WhatsApp</th>
                             <th className="p-3.5">Besoin / Canal UTM</th>
                             <th className="p-3.5">Statut</th>
+                            <th className="p-3.5">Suivi</th>
                             <th className="p-3.5">Dernière Activité</th>
                           </tr>
                         </thead>
@@ -2634,6 +2720,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                               const hasContact = (lead.email && lead.email !== 'Non fourni') || (lead.phone && lead.phone !== 'Non fourni');
                               const utmSource = (lead as any).utm_source;
                               const utmCampaign = (lead as any).utm_campaign;
+                              const followUpDate = lead.followUpAt && Number.isFinite(Date.parse(lead.followUpAt))
+                                ? new Date(lead.followUpAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                : '';
 
                               return (
                                 <tr 
@@ -2683,13 +2772,26 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                     </span>
                                   </td>
 
+                                  <td className="p-3.5 min-w-[145px]">
+                                    {lead.followUpStatus === 'pending' ? (
+                                      <>
+                                        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-amber-700">À suivre</span>
+                                        <div className="mt-1 max-w-[180px] truncate text-[10px] font-medium text-slate-600" title={lead.followUpReason || lead.nextAction}>{lead.followUpReason || lead.nextAction || 'Rappel commercial'}</div>
+                                        {followUpDate && <div className="mt-0.5 text-[9px] text-slate-400">Échéance indicative : {followUpDate}</div>}
+                                      </>
+                                    ) : lead.followUpStatus === 'done' ? (
+                                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-emerald-700">Traité</span>
+                                    ) : lead.salesIntentType ? (
+                                      <span className="text-[10px] font-semibold text-purple-600">Intérêt : {lead.salesIntentType}</span>
+                                    ) : <span className="text-[10px] text-slate-300">—</span>}
+                                  </td>
                                   <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">{lead.date}</td>
                                 </tr>
                               );
                             })
                           ) : (
                             <tr>
-                              <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                              <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
                                 Aucun client ne correspond à votre recherche.
                               </td>
                             </tr>
@@ -2830,6 +2932,36 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </div>
                           </div>
                         </div>
+
+                        {(lead.followUpStatus || lead.salesIntentType) && (
+                          <div className={`space-y-3 rounded-xl border p-4 ${lead.followUpStatus === 'pending' ? 'border-amber-200 bg-amber-50/70' : 'border-slate-200 bg-slate-50'}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                                <Clock className="h-3.5 w-3.5 text-amber-500" /> Suivi commercial
+                              </h4>
+                              <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-slate-500">{lead.channel === 'instagram' ? 'Instagram' : lead.channel ? 'Mon site' : lead.source || 'Canal inconnu'}</span>
+                            </div>
+                            {lead.followUpReason && <p className="text-xs font-semibold text-slate-800">{lead.followUpReason}</p>}
+                            {lead.nextAction && <p className="text-xs leading-relaxed text-slate-600"><span className="font-semibold">Prochaine action :</span> {lead.nextAction}</p>}
+                            {lead.followUpNote && <p className="line-clamp-3 text-[10px] text-slate-500">{lead.followUpNote}</p>}
+                            {lead.followUpAt && Number.isFinite(Date.parse(lead.followUpAt)) && (
+                              <p className="text-[10px] text-slate-500">Échéance indicative : {new Date(lead.followUpAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>
+                            )}
+                            {lead.followUpStatus === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => void handleCompleteLeadFollowUp(lead.id)}
+                                disabled={leadFollowUpBusy !== null}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60"
+                              >
+                                {leadFollowUpBusy === lead.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                Marquer le suivi comme traité
+                              </button>
+                            )}
+                            {lead.followUpStatus === 'done' && <p className="text-[10px] font-semibold text-emerald-700">Suivi terminé{lead.followUpCompletedAt ? ` le ${new Date(lead.followUpCompletedAt).toLocaleDateString('fr-FR')}` : ''}.</p>}
+                            {leadFollowUpError && <p role="alert" className="text-[10px] font-medium text-rose-600">{leadFollowUpError}</p>}
+                          </div>
+                        )}
 
                         {/* Les détails techniques intéressent rarement le commerçant : repliés par défaut */}
                         <button
@@ -3085,7 +3217,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   <button onClick={handleSaveToDatabase} disabled={isSavingDb} className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-sm shadow-purple-600/30 disabled:opacity-50 flex items-center gap-2 cursor-pointer">
                     {isSavingDb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Enregistrer le comportement
                   </button>
-                  {savedDbSuccess && <p className="text-sm text-emerald-600 font-medium">✅ Comportement enregistré — actif sur le site ET Instagram.</p>}
                   {behavior.autoInsights && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                       <p className="text-sm font-semibold text-emerald-900">🎯 Ce que le bot a appris de TA cible</p>

@@ -32,13 +32,16 @@ import {
   supabaseGetAssistant,
   supabaseAssistantRowToConfig,
   supabaseListKnowledgeEntries,
+  supabaseListKnowledge,
   supabaseUpsertProspect,
   supabaseRequest,
 } from "../../_shared/supabase.ts";
-import { officialInfoBlock, businessPackBlock, behaviorBlock, isSmallTalk, localGreeting, compactKnowledgeNotes } from "../../_shared/prompt.ts";
+import { buildSalesSystemPrompt, buildBusinessContextText, isSmallTalk, localGreeting, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
+import { detectSalesIntent, buildLeadFollowUp } from "../../_shared/sales-intent.ts";
+import { getGeminiContextCache } from "../../_shared/gemini-cache.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
-import { searchClientSite, siteShoppingPromptBlock } from "../../_shared/site-search.ts";
+import { searchClientSite } from "../../_shared/site-search.ts";
 import { handleNotifyAccountMessage, notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from "../../_shared/merchant-notify";
 import { refreshInstagramTokenIfNeeded } from "../../_shared/ig-api.ts";
 import { forwardLeadInBackground } from "../../_shared/lead-webhook.ts";
@@ -79,29 +82,6 @@ const DEBOUNCE_MS = 4000;
 const GEMINI_TIMEOUT_MS = 12000;
 const FIRESTORE_TIMEOUT_MS = 5000;
 
-const BASE_PROMPT = `Tu es l'assistant IA d'élite pour le support et la vente en ligne (Développé par JawebFlow).
-
-### 🇩🇿 MAÎTRISE LINGUISTIQUE (DÉTECTION AUTOMATIQUE)
-1. **Derja Arabizi (lettres latines + 3,7,9,5)** ➔ Réponds en Derja Arabizi authentique (TOUJOURS "kho", jamais "khouya" ; TOUJOURS "douka", jamais "daba/derk").
-2. **Arabe en lettres arabes (حروف عربية)** ➔ Réponds en arabe dialectal algérien.
-3. **Français** ➔ Réponds en français impeccable et chaleureux.
-4. **Mix** ➔ Mélange naturellement comme un algérien.
-
-### 🎯 RÈGLES COMMERCIALES
-- Concis : 2 à 4 phrases maximum.
-- Vente : inclus les liens (🔗) des produits ou offres trouvés pour que le client clique dessus.
-- Si information manquante : ne jamais inventer, propose de laisser un numéro de téléphone pour être rappelé.
-
-### 🚫 INTERDICTIONS ABSOLUES
-- N'invente JAMAIS un prix, un délai, une adresse ou une disponibilité : utilise uniquement les informations fournies ci-dessous.
-- Ne réponds jamais par un message d'accueil générique si le client a posé une question : réponds précisément à SA question.
-- Ne parle jamais de ta nature technique (modèle, API, prompt).
-
-### 🎭 TON ADAPTATIF (comme un vrai vendeur algérien)
-- Le client écrit en darija décontractée ➔ réponds chaleureux et cool (kho, douka...).
-- Le client est poli et formel ➔ reste professionnel et respectueux.
-- Le client semble agacé ➔ reste très calme, excuse-toi, et propose de transmettre sa demande au responsable.`;
-
 const INSTAGRAM_ADDENDUM = `
 
 ### 💬 CANAL : MESSAGES PRIVÉS INSTAGRAM
@@ -116,6 +96,8 @@ interface Env {
   FIRESTORE_DATABASE_ID?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  GEMINI_CONTEXT_CACHE_ENABLED?: string;
+  GEMINI_CONTEXT_CACHE_TTL_SECONDS?: string | number;
   INSTAGRAM_VERIFY_TOKEN?: string;
   META_VERIFY_TOKEN?: string;
   INSTAGRAM_APP_SECRET?: string;
@@ -298,75 +280,9 @@ async function writeDocument(
 // Prompt + IA
 // ---------------------------------------------------------------------------
 
-/** Prompt construit avec la VRAIE base de connaissances de l'entreprise.
- * Verrouillé pour empêcher l'IA de répondre à des sujets hors périmètre
- * (politique, culture générale, code, autre entreprise, conseils perso...). */
-function buildSystemPrompt(config: any, extraBlocks = "", message = ""): string {
-  // Ajout minimal (le reste de la fonction est inchangé) : une identité forte
-  // en tête, basée sur businessName, pour que le bot se présente comme la
-  // marque du client plutôt que comme "l'assistant JawebFlow" générique.
-  const identity = config?.businessName
-    ? `Tu ES l'assistant officiel de "${config.businessName}"${config?.businessDescription ? ` — ${config.businessDescription}` : ""}. Tu t'exprimes au nom de cette entreprise ("nous"). Ne révèle jamais que tu es une IA générique ou un produit "JawebFlow", même si on te le demande directement.\n\n`
-    : "";
-  let prompt = identity + BASE_PROMPT;
-
-  prompt += `\n\n### 🔒 PÉRIMÈTRE STRICT (VERROUILLÉ)
-Tu ne réponds QU'AUX questions concernant l'entreprise "${config?.businessName || "cette entreprise"}", ses services, ses produits, ses prix, sa livraison, ses garanties et son contact.
-
-Si le visiteur pose une question qui N'A RIEN À VOIR avec l'entreprise (météo, politique, culture générale, code informatique, une autre entreprise, un conseil personnel, etc.), tu dois OBLIGATOIREMENT répondre par une variante de :
-"Je suis là uniquement pour vous renseigner sur nos services 😊. Avez-vous une question sur nos produits, nos tarifs ou notre livraison ?"
-
-Ne réponds JAMAIS à la question hors-sujet, même partiellement. Ne donne aucune information générale qui ne provient pas de la base ci-dessous.`;
-
-  if (config?.customInstructions) prompt += `\n\n### 🧠 INSTRUCTIONS DU CLIENT :\n${config.customInstructions}`;
-  if (config?.businessName) prompt += `\n\n### 🏢 ENTREPRISE :\n"${config.businessName}"`;
-  if (config?.businessCategory) prompt += `\nSecteur : ${config.businessCategory}`;
-  if (config?.businessDescription) prompt += `\n${config.businessDescription}`;
-  if (config?.websiteUrl) prompt += `\nSite web : ${config.websiteUrl}`;
-  if (config?.assistantTone) prompt += `\nTon à adopter : ${config.assistantTone}.`;
-  if (config?.whatsappEscalation) {
-    prompt += `\nPour toute question urgente ou demande de rappel, propose ce numéro : ${config.whatsappEscalation}.`;
-  }
-
-  const notes = Array.isArray(config?.knowledgeNotes)
-    ? config.knowledgeNotes.filter((n: any) => n && n.enabled !== false)
-    : [];
-  if (notes.length > 0) {
-    // 🧮 mêmes règles d'économie que le web : vitales toujours, pertinentes selon
-    // la question, coupées court, filet de sécurité (question floue = tout).
-    prompt += compactKnowledgeNotes(notes, message).replace(
-      "BASE DE CONNAISSANCE DE L'ENTREPRISE",
-      "BASE DE CONNAISSANCE DE L'ENTREPRISE (SEULE SOURCE DE VÉRITÉ AUTORISÉE)"
-    );
-    prompt += "\n⚠️ Tu ne dois RIEN affirmer qui ne soit pas écrit ci-dessus ou dans les sections FAQ/Tarifs/Règles. Si l'information n'y est pas, dis que tu vas vérifier et propose de laisser un numéro de téléphone.";
-  }
-  if (config?.faqText) prompt += `\n\n### ❓ FAQ :\n${String(config.faqText).slice(0, 2000)}`;
-  if (config?.pricingServicesText) prompt += `\n\n### 💰 TARIFS & SERVICES :\n${String(config.pricingServicesText).slice(0, 2000)}`;
-  if (config?.specialRulesText) prompt += `\n\n### ⚠️ RÈGLES SPÉCIALES :\n${config.specialRulesText}`;
-
-  // Infos officielles + pack métier : partagés avec le chat web (mêmes
-  // règles sur tous les canaux, quel que soit le business).
-  prompt += officialInfoBlock(config);
-  prompt += businessPackBlock(config);
-  if (extraBlocks) prompt += extraBlocks;
-
-  // Ajout minimal : rappel en toute fin de prompt (ce que le modèle respecte
-  // le mieux), sans retirer les sections ci-dessus.
-  const hardRules = [config?.customInstructions, config?.specialRulesText].filter(Boolean).join("\n");
-  if (hardRules) {
-    prompt += `\n\n### 🚨 RAPPEL — RÈGLES ABSOLUES DU CLIENT, AUCUNE EXCEPTION :\n${hardRules}\nCes règles priment sur tout le reste en cas de conflit.`;
-  }
-  // 🎭 Comportement du bot (langue, quantité, site, honnêteté, règles libres)
-  prompt += behaviorBlock(config?.behavior);
-
-  if (notes.length === 0 && !config?.faqText && !config?.pricingServicesText && !config?.specialRulesText) {
-    prompt += `\n\n### ⚠️ ATTENTION\nAucune information détaillée n'est encore enregistrée : reste vague sur les prix et les délais, et propose de laisser un numéro de téléphone pour être rappelé. Ne réponds à AUCUNE question générale en l'absence d'informations.`;
-  }
-
-  prompt += `\n\n### 🚫 RAPPEL FINAL
-Si tu hésites entre répondre normalement ou refuser car hors-sujet : REFUSE et recentre la conversation sur l'entreprise.`;
-
-  return prompt + INSTAGRAM_ADDENDUM;
+/** Prompt système partagé avec le site ; les faits dynamiques sont transmis au tour courant. */
+function buildSystemPrompt(config: any): string {
+  return buildSalesSystemPrompt(config, INSTAGRAM_ADDENDUM);
 }
 
 /**
@@ -439,7 +355,9 @@ async function generateReply(
   message: string,
   history: Array<{ role: string; text: string }>,
   image?: { mime: string; base64: string } | null,
-  maxOutputTokens = 450
+  maxOutputTokens = 450,
+  businessContext: Record<string, any> = {},
+  waitUntil?: (promise: Promise<any>) => void,
 ): Promise<{ text: string | null; diagnostics: string[]; usage?: { promptTokens: number; outputTokens: number; model: string } }> {
   const diagnostics: string[] = [];
   if (!env.GEMINI_API_KEY) {
@@ -451,27 +369,33 @@ async function generateReply(
   const contents = history
     .slice(-HISTORY_LIMIT)
     .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.text }] }));
-  const userParts: any[] = [{ text: message }];
-  if (image?.base64) userParts.unshift({ inline_data: { mime_type: image.mime || "image/jpeg", data: image.base64 } });
+  const userParts: any[] = [];
+  const dynamicContext = buildBusinessContextText(businessContext);
+  if (dynamicContext) userParts.push({ text: dynamicContext });
+  if (image?.base64) userParts.push({ inline_data: { mime_type: image.mime || "image/jpeg", data: image.base64 } });
+  userParts.push({ text: message });
   contents.push({ role: "user", parts: userParts });
 
   for (const model of models) {
     const startedAt = Date.now();
     try {
+      const cachedContent = getGeminiContextCache(env, model, systemPrompt, waitUntil);
+      if (cachedContent) diagnostics.push(`${model}: cache Gemini réutilisé`);
+      const payload = {
+        ...(cachedContent ? { cachedContent } : { systemInstruction: { parts: [{ text: systemPrompt }] } }),
+        contents,
+        generationConfig: {
+          temperature: 0.6,
+          maxOutputTokens, // 🧮 450 (700 détaillé) : coût de sortie ÷2
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      };
       const res = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents,
-            generationConfig: {
-              temperature: 0.6,
-              maxOutputTokens, // 🧮 450 (700 détaillé) : coût de sortie ÷2
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          }),
+          body: JSON.stringify(payload),
         },
         GEMINI_TIMEOUT_MS
       );
@@ -711,7 +635,7 @@ export function greetingReply(customGreeting: string | undefined, groupedText: s
   return renderTemplate(custom, { businessName: String(config?.businessName || "") }) || localGreeting(groupedText, config);
 }
 
-async function handleDirectMessage(env: Env, event: any) {
+async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: Promise<any>) => void) {
   const startedAt = Date.now();
   const customerId: string | undefined = event?.sender?.id;
   const instagramAccountId: string | undefined = event?.recipient?.id;
@@ -856,19 +780,35 @@ async function handleDirectMessage(env: Env, event: any) {
     console.warn("[instagram] aucun assistantId enregistré sur la connexion Instagram");
   }
 
-  // Même base normalisée que le widget : le webhook Instagram ne doit pas
-  // continuer à lire une ancienne copie JSON qui contournerait les validations.
+  // RAG : n'envoyer que les faits qui recoupent la question actuelle.
+  const businessContext: Record<string, any> = {};
+  const salesIntent = detectSalesIntent(groupedText);
+  let trackedProspectId: string | null = null;
+  let followUpRecorded = false;
   if (integration.assistantId && supabaseConfigured(env)) {
-    const knowledge = await supabaseListKnowledgeEntries(env, integration.assistantId);
+    const [knowledge, documents] = await Promise.all([
+      supabaseListKnowledgeEntries(env, integration.assistantId),
+      supabaseListKnowledge(env, integration.assistantId),
+    ]);
     if (knowledge.available && knowledge.entries.length > 0) config.knowledgeNotes = knowledge.entries;
+    const relevantNotes = compactKnowledgeNotes(Array.isArray(config.knowledgeNotes) ? config.knowledgeNotes : [], groupedText);
+    if (relevantNotes) businessContext.knowledge = relevantNotes.slice(0, 6_000);
+    const relevantDocuments = selectKnowledgeDocuments(documents, groupedText, 5);
+    if (relevantDocuments.length) {
+      businessContext.siteSources = relevantDocuments.map((doc: any) => ({
+        title: String(doc.title || 'Document').slice(0, 140),
+        excerpt: String(doc.content || '').slice(0, 620),
+        ...(doc.source_url ? { url: String(doc.source_url).slice(0, 400) } : {}),
+      }));
+    }
   }
+  const relevantFaq = selectRelevantText(config?.faqText, groupedText, 4, 900);
+  if (relevantFaq) businessContext.faq = relevantFaq;
+  const relevantPricing = selectRelevantText(config?.pricingServicesText, groupedText, 5, 1_200);
+  if (relevantPricing) businessContext.pricingAndServices = relevantPricing;
 
-  let webMemory = "";
-  // MÉMOIRE UNIFIÉE (site + Instagram) : on cherche ce client dans les
-  // prospects du site — par son identifiant Instagram OU par le téléphone
-  // qu'il vient d'écrire. S'il existe, le bot garde le fil (« ah oui kho,
-  // tu m'avais demandé la robe rouge sur le site ! ») et on LIE les deux
-  // identités pour toujours.
+  // MÉMOIRE UNIFIÉE (site + Instagram) et CRM : relie un client déjà connu,
+  // conserve son fil et enregistre aussi les intentions d'achat sans contact.
   if (integration.assistantId && supabaseConfigured(env)) {
     try {
       const phoneInMsg = groupedText.match(/(?:(?:\+|00)213|0)\s?[5-7](?:[\s.-]?[0-9]){8}/);
@@ -877,60 +817,80 @@ async function handleDirectMessage(env: Env, event: any) {
       const byIg = await supabaseRequest(env, `${pBase}&data->>igUserId=eq.${encodeURIComponent(customerId)}&select=id,data&limit=1`);
       if (byIg.ok) known = (await byIg.json())?.[0] || null;
       if (!known && phoneInMsg) {
-        const phone = phoneInMsg[0].replace(/[\s.-]/g, "");
+        const phone = phoneInMsg[0].replace(/[\s.-]/g, '');
         const byPhone = await supabaseRequest(env, `${pBase}&data->>phone=eq.${encodeURIComponent(phone)}&select=id,data&limit=1`);
         if (byPhone.ok) known = (await byPhone.json())?.[0] || null;
       }
       if (known?.data) {
         const d = known.data;
         const priorMsgs = Array.isArray(d.messages)
-          ? d.messages.slice(-4).map((m: any) => `- ${m.sender === "user" ? "Client" : "Assistant"} : ${String(m.text || "").slice(0, 120)}`).join("\n")
-          : "";
+          ? d.messages.slice(-4).map((m: any) => `- ${m.sender === 'user' ? 'Client' : 'Assistant'} : ${String(m.text || '').slice(0, 120)}`).join('\n')
+          : '';
         if (priorMsgs || d.need || d.phone) {
-          webMemory += `\n\n### 🧠 MÉMOIRE CLIENT — DÉJÀ EN CONTACT VIA LE SITE WEB
-Nom : ${d.name || "inconnu"} | Téléphone : ${d.phone || (phoneInMsg ? phoneInMsg[0] : "")}${d.city ? ` | Ville : ${d.city}` : ""} | Demande : ${String(d.need || "").slice(0, 200)}
-${priorMsgs ? `Derniers échanges sur le site :\n${priorMsgs}\n` : ""}
-Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
-          console.log("[instagram] mémoire site reconnue pour", customerId);
+          businessContext.customerMemory = {
+            name: String(d.name || '').slice(0, 120),
+            phone: String(d.phone || (phoneInMsg ? phoneInMsg[0] : '')).slice(0, 40),
+            city: String(d.city || '').slice(0, 100),
+            initialRequest: String(d.need || '').slice(0, 200),
+            ...(priorMsgs ? { recentMessages: priorMsgs.slice(0, 1_400) } : {}),
+            instruction: 'Le client revient d’un autre canal. Continue naturellement le fil, sans répéter ni révéler plus de données personnelles que nécessaire.',
+          };
+          console.log('[instagram] mémoire site reconnue pour', customerId);
         }
       }
-      // 📇 FICHE CLIENT ALIMENTÉE PAR LA DISCUSSION : nom (« je m'appelle
-      // Malek »), ville (« j'habite à Blida »), email, téléphone — et les
-      // CORRECTIONS sont appliquées sur la même fiche (jamais dupliquée :
-      // l'id est déterministe par client Instagram).
+
       const facts = extractLeadFacts(groupedText);
-      const leadMessages = groupedText ? [{ sender: "user", text: groupedText.slice(0, 500), timestamp: new Date().toISOString() }] : [];
       const factsPatch: Record<string, any> = {
         ...(facts.phone ? { phone: facts.phone } : {}),
         ...(facts.name ? { name: facts.name } : {}),
         ...(facts.city ? { city: facts.city } : {}),
         ...(facts.email ? { email: facts.email } : {}),
       };
-      if (known?.id) {
-        await supabaseUpsertProspect(env, known.id, integration.assistantId, { igUserId: customerId, ...factsPatch, ...(leadMessages.length ? { messages: leadMessages } : {}) });
-        if (Object.keys(factsPatch).length) console.log("[instagram] fiche client enrichie/corrigée :", JSON.stringify(factsPatch));
-        // 🔔 Un téléphone vient d'être capté -> alerte lead au marchand
-        if (factsPatch.phone && !known?.data?.phone) {
-          try { await notifyLead(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
-          try { await forwardLeadInBackground(env, integration.assistantId, { ...factsPatch, need: groupedText.slice(0, 200), source: "Instagram", contactKey: customerId }); } catch { /* best-effort */ }
-        }
-      } else if (phoneInMsg) {
-        const linkedId = `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200);
-        await supabaseUpsertProspect(env, linkedId, integration.assistantId, {
+      const hasFacts = Boolean(facts.phone || facts.name || facts.city || facts.email);
+      if (known?.id || hasFacts || salesIntent) {
+        const now = new Date();
+        const isNew = !known?.id;
+        // Le fil de DM est un moyen de contact exploitable même sans téléphone.
+        const contactAvailable = Boolean(customerId || facts.phone || facts.email || known?.data?.phone || known?.data?.email);
+        const followUpPatch = salesIntent
+          ? buildLeadFollowUp(salesIntent, groupedText, 'Instagram', now, contactAvailable)
+          : (isNew && contactAvailable ? buildLeadFollowUp(null, groupedText, 'Instagram', now, true) : {});
+        const prospectId = known?.id || `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+        await supabaseUpsertProspect(env, prospectId, integration.assistantId, {
+          source: known?.data?.source || 'Instagram', channel: 'instagram', igUserId: customerId,
           ...factsPatch,
-          phone: phoneInMsg[0].replace(/[\s.-]/g, ""),
-          igUserId: customerId,
-          status: "qualifie",
-          need: groupedText.slice(0, 2000),
-          ...(leadMessages.length ? { messages: leadMessages } : {}),
+          ...(phoneInMsg && !facts.phone ? { phone: phoneInMsg[0].replace(/[\s.-]/g, '') } : {}),
+          ...(isNew || salesIntent ? { status: 'qualifie', need: groupedText.slice(0, 2_000) } : {}),
+          ...(salesIntent ? { salesIntentType: salesIntent.type } : {}),
+          ...(Object.keys(followUpPatch).length ? followUpPatch : {}),
+          lastInteractionAt: now.toISOString(),
+          ...(groupedText ? { messages: [{ sender: 'user', text: groupedText.slice(0, 500), timestamp: now.toISOString() }] } : {}),
         });
-        console.log("[instagram] nouvelle identité liée (téléphone) :", linkedId);
-        // 🔔 Lead Instagram -> le marchand reçoit les détails en DM (compte JawebFlow)
-        try { await notifyLead(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram" }); } catch { /* best-effort */ }
-        try { await forwardLeadInBackground(env, integration.assistantId, { ...factsPatch, phone: phoneInMsg[0].replace(/[\s.-]/g, ""), need: groupedText.slice(0, 200), source: "Instagram", contactKey: customerId }); } catch { /* best-effort */ }
+        trackedProspectId = prospectId;
+        followUpRecorded = Boolean(followUpPatch.followUpStatus);
+        if (followUpRecorded) businessContext.followUpRecorded = {
+          status: 'pending', reason: followUpPatch.followUpReason,
+          nextAction: followUpPatch.nextAction,
+          note: 'Le suivi est enregistré pour le commerçant dans son espace prospects. Ne prétends pas qu’un rappel client est déjà effectué ou planifié.',
+        };
+        if (Object.keys(factsPatch).length) console.log('[instagram] fiche client enrichie/corrigée :', JSON.stringify(factsPatch));
+
+        const newlyCapturedContact = Boolean((facts.phone && !known?.data?.phone) || (facts.email && !known?.data?.email));
+        if (newlyCapturedContact || salesIntent?.priority === 'high') {
+          const leadPayload = {
+            ...factsPatch,
+            ...(phoneInMsg && !facts.phone ? { phone: phoneInMsg[0].replace(/[\s.-]/g, '') } : {}),
+            need: groupedText.slice(0, 200), source: 'Instagram',
+            ...(salesIntent ? { salesIntentType: salesIntent.type, nextAction: salesIntent.nextAction } : {}),
+          };
+          try { await notifyLead(env, integration.assistantId, leadPayload); } catch { /* best-effort */ }
+          try {
+            await forwardLeadInBackground(env, integration.assistantId, { ...leadPayload, contactKey: customerId }, waitUntil);
+          } catch { /* best-effort */ }
+        }
       }
     } catch (memErr: any) {
-      console.warn("[instagram] mémoire client indisponible:", memErr?.message || memErr);
+      console.warn('[instagram] mémoire client indisponible:', memErr?.message || memErr);
     }
   }
 
@@ -993,48 +953,68 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
     } catch { /* ne jamais bloquer le bot pour ça */ }
   }
 
-  sendTypingOn(integration.igToken, customerId).catch(() => {});
-
-  // "Tout passe par mon site" : si le client envoie une PHOTO sans texte,
-  // on la fait décrire par Gemini (vision) pour en faire une requête de
-  // recherche, puis on cherche le produit EN DIRECT sur le site du client.
-  let extraBlocks = "";
-  let incoming = groupedText;
-  let imageDescription = "";
-  // 🧮 POIDS DE QUOTA (même règle que le web) : photo = 4 · recherche produits = +2 · message = 1
-  let shoppingRan = false;
-  if (config?.siteShopping && config?.websiteUrl && config?.behavior?.websiteMentions !== "never") {
-    // 📸 FIX : la photo est décrite DÈS QU'IL Y EN A UNE — photo seule OU
-    // photo + texte (« c'est quoi ça ? »). Avant, un texte accompagnant la
-    // photo rendait le bot AVEUGLE (jamais de vision).
-    if (hasAttachment && message?.mid && env.GEMINI_API_KEY) {
-      imageDescription = (await describeAttachmentImage(env, integration.igToken, message.mid)) || "";
-      if (imageDescription) console.log("[instagram] photo décrite :", imageDescription);
-    }
-    // la requête de recherche combine CE QUE LE CLIENT A ÉCRIT + CE QU'ON VOIT
-    const shoppingQuery = [groupedText, imageDescription].filter(Boolean).join(" ").trim();
-    if (shoppingQuery) {
-      shoppingRan = true;
-      const found = await searchClientSite(config, shoppingQuery);
-      extraBlocks = siteShoppingPromptBlock(found, config);
-      if (found.length) console.log(`[instagram] ${found.length} produit(s) trouvé(s) sur le site`);
-    }
-    if (!extraBlocks) {
-      extraBlocks = `\n\n### 🛒 COMMANDES VIA LE SITE : toutes les commandes se font sur le site ${config.websiteUrl}. Guide systématiquement le client vers le site pour commander.`;
-    }
-  }
-  extraBlocks += webMemory;
-
-  // 🙋 TRANSFERT HUMAIN : réponse immédiate (0 IA, 0 quota) + le marchand est
-  // prévenu en DM par le compte JawebFlow (1 fois / 2 h par client).
+  // 🙋 TRANSFERT HUMAIN : consigner la demande puis répondre sans appel IA.
   if (groupedText && isHumanTransfer(groupedText)) {
+    const now = new Date();
+    let prospectId = trackedProspectId;
+    if (integration.assistantId && supabaseConfigured(env)) {
+      try {
+        prospectId ||= `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+        const followUp = buildLeadFollowUp(
+          { type: 'appointment', priority: 'high', nextAction: 'Recontacter le client pour poursuivre sa demande' },
+          groupedText, 'Instagram', now, true,
+        );
+        await supabaseUpsertProspect(env, prospectId, integration.assistantId, {
+          source: 'Instagram', channel: 'instagram', igUserId: customerId,
+          status: 'qualifie', salesIntentType: 'human_transfer', salesStage: 'qualified',
+          need: groupedText.slice(0, 2_000), lastInteractionAt: now.toISOString(),
+          ...followUp,
+          messages: trackedProspectId
+            ? [{ sender: 'bot', text: HUMAN_TRANSFER_REPLY, timestamp: now.toISOString() }]
+            : [
+                { sender: 'user', text: groupedText.slice(0, 500), timestamp: now.toISOString() },
+                { sender: 'bot', text: HUMAN_TRANSFER_REPLY, timestamp: now.toISOString() },
+              ],
+        });
+        trackedProspectId = prospectId;
+        followUpRecorded = true;
+      } catch (error: any) {
+        console.warn('[instagram][lead] demande de transfert non enregistrée:', error?.message || error);
+      }
+    }
     await sendInstagramMessage(integration.igToken, customerId, HUMAN_TRANSFER_REPLY);
     try { await notifyHumanTransfer(env, integration.assistantId, `Client Instagram (${customerId})`, groupedText); } catch { /* best-effort */ }
     try {
-      const msgs = [...stored.filter((m: any) => m?.role === "user" || m?.role === "model"), { role: "user", text: groupedText.slice(0, 500), ts: new Date().toISOString() }, { role: "model", text: HUMAN_TRANSFER_REPLY, ts: new Date().toISOString() }].slice(-HISTORY_LIMIT);
+      const msgs = [...stored.filter((m: any) => m?.role === 'user' || m?.role === 'model'), { role: 'user', text: groupedText.slice(0, 500), ts: now.toISOString() }, { role: 'model', text: HUMAN_TRANSFER_REPLY, ts: now.toISOString() }].slice(-HISTORY_LIMIT);
       await saveThread(env, integration.integrationId, customerId, { messages: msgs, handledMids: newMids });
     } catch { /* historique non bloquant */ }
     return;
+  }
+
+  sendTypingOn(integration.igToken, customerId).catch(() => {});
+
+  // Recherche RAG en direct sur le catalogue du marchand ; seuls les résultats
+  // pertinents sont joints à ce tour (jamais injectés dans le prompt système).
+  let incoming = groupedText;
+  let imageDescription = '';
+  let shoppingRan = false;
+  if (config?.siteShopping && config?.websiteUrl && config?.behavior?.websiteMentions !== 'never') {
+    if (hasAttachment && message?.mid && env.GEMINI_API_KEY) {
+      imageDescription = (await describeAttachmentImage(env, integration.igToken, message.mid)) || '';
+      if (imageDescription) console.log('[instagram] photo décrite :', imageDescription);
+    }
+    const shoppingQuery = [groupedText, imageDescription].filter(Boolean).join(' ').trim();
+    if (shoppingQuery) {
+      shoppingRan = true;
+      const found = await searchClientSite(config, shoppingQuery);
+      if (found.length) {
+        businessContext.siteProducts = found.slice(0, 5).map((product) => ({
+          title: String(product.title || 'Article').slice(0, 180),
+          url: String(product.url || '').slice(0, 500),
+        }));
+        console.log(`[instagram] ${found.length} produit(s) trouvé(s) sur le site`);
+      }
+    }
   }
 
   // 🆓 politesse pure -> réponse locale gratuite (pas d'IA, pas de quota).
@@ -1048,7 +1028,16 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
       } catch { /* ignore */ }
     }
     console.log("[instagram] politesse -> réponse locale sans IA");
-    await sendInstagramMessage(integration.igToken, customerId, greetingReply(integration.customGreeting, groupedText, config));
+    const greeting = greetingReply(integration.customGreeting, groupedText, config);
+    await sendInstagramMessage(integration.igToken, customerId, greeting);
+    if (trackedProspectId && integration.assistantId && supabaseConfigured(env)) {
+      const write = supabaseUpsertProspect(env, trackedProspectId, integration.assistantId, {
+        lastInteractionAt: new Date().toISOString(),
+        messages: [{ sender: 'bot', text: greeting.slice(0, 500), timestamp: new Date().toISOString() }],
+      });
+      if (waitUntil) waitUntil(write.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error)));
+      else await write.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error));
+    }
     return;
   }
 
@@ -1069,11 +1058,13 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
   console.log(`[instagram] appel IA démarré (${Date.now() - startedAt}ms écoulées)`);
   const { text: aiText, diagnostics, usage: aiUsage } = await generateReply(
     env,
-    buildSystemPrompt(config, extraBlocks, incoming),
+    buildSystemPrompt(config),
     incoming,
     history,
     inlineImage,
-    config?.behavior?.length === "detailed" ? 700 : 450
+    config?.behavior?.length === 'detailed' ? 700 : 450,
+    businessContext,
+    waitUntil,
   );
   console.log(`[instagram] diagnostics IA (${Date.now() - startedAt}ms écoulées):`, diagnostics.join(" | "));
 
@@ -1089,6 +1080,15 @@ Ce client revient : continue le fil naturellement, ne repars PAS de zéro.`;
 
   const sent = await sendInstagramMessage(integration.igToken, customerId, replyText);
   console.log(`[instagram] message envoyé=${sent} (${Date.now() - startedAt}ms écoulées)`);
+
+  if (sent && trackedProspectId && integration.assistantId && supabaseConfigured(env)) {
+    const recordReply = supabaseUpsertProspect(env, trackedProspectId, integration.assistantId, {
+      lastInteractionAt: new Date().toISOString(),
+      messages: [{ sender: 'bot', text: String(replyText).slice(0, 500), timestamp: new Date().toISOString() }],
+    });
+    if (waitUntil) waitUntil(recordReply.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error)));
+    else await recordReply.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error));
+  }
 
   // Boucle d'apprentissage : si l'IA n'avait pas l'info, la question file
   // dans l'onglet "Apprentissage IA" (partagé avec le chat web).
@@ -1228,7 +1228,7 @@ export async function onRequestPost(context: {
             await handlePostbackEvent(context.env, event);
             continue;
           }
-          await handleDirectMessage(context.env, event);
+          await handleDirectMessage(context.env, event, context.waitUntil?.bind(context));
         } catch (e: any) {
           console.error("[instagram] traitement d'un message échoué:", e?.message || e);
         }

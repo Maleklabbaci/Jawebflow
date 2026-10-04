@@ -248,6 +248,6 @@ describe('dans le tableau de bord', () => {
     fireEvent.click(screen.getByRole('button', { name: /Connecter Instagram/ }));
     await settle(60);
     expect(document.querySelector('header h1')!.textContent).toBe('Canaux');
-    expect(document.querySelector('[data-tab="instagram"]')!.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('[data-tab="instagram"]')!.getAttribute('aria-current')).toBe('page');
   });
 });
