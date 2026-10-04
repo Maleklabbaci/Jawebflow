@@ -26,6 +26,45 @@ const has = (text: string, terms: string[]) => {
   });
 };
 
+/** Le bot doit avoir explicitement demandé une confirmation juste avant. */
+export function isOrderConfirmationQuestion(input: unknown): boolean {
+  const text = normalize(input);
+  return [
+    'confirmez vous cette commande',
+    'confirmez vous la commande',
+    'souhaitez vous confirmer la commande',
+    'voulez vous confirmer cette commande',
+    'tu confirmes cette commande',
+    'tu confirmes la commande',
+    'tu veux confirmer la commande',
+    'nconfirou la commande',
+    'هل تؤكد الطلبية',
+    'هل تؤكد الطلب',
+    'هل تريد تأكيد الطلب',
+  ].some((phrase) => text.includes(normalize(phrase)));
+}
+
+/** Réponse courte affirmative : exploitable seulement si un brouillon attend confirmation. */
+export function isAffirmative(input: unknown): boolean {
+  const text = normalize(input);
+  if (text.split(' ').length > 5) return false;
+  return new Set([
+    'oui', 'oui je confirme', 'oui confirme', 'oui bien sur', 'je confirme', 'ok je confirme', 'c est bon', 'd accord', 'ca me va', 'vas y', 'allons y', 'ok', 'okay',
+    'yes', 'yes i confirm', 'i confirm', 'confirm', 'sure', 'go ahead', 'let s do it', 'نعم', 'نعم اؤكد', 'ايه', 'اي', 'اكيد', 'موافق', 'تمام',
+  ]).has(text);
+}
+
+/** Confirmations explicites utilisables sans question précédente. */
+export function isExplicitOrderConfirmation(input: unknown): boolean {
+  const text = normalize(input);
+  return has(text, [
+    'je confirme la commande', 'je confirme cette commande', 'je valide la commande',
+    'je passe ma commande', 'je passe commande', 'confirmez ma commande',
+    'i confirm the order', 'place the order', 'confirm my order',
+    'نأكد الطلبية', 'اكد طلبيتي',
+  ]);
+}
+
 /**
  * Recognise quelques formulations fréquentes en français, darija et arabe.
  * Ce signal sert uniquement à organiser un suivi ; il ne remplace jamais la
@@ -36,8 +75,8 @@ export function detectSalesIntent(input: unknown): SalesIntent | null {
   if (!text) return null;
 
   if (has(text, [
-    'commander', 'commande', 'je prends', 'je veux acheter', 'acheter', 'acheter le', 'je le veux', 'je la veux',
-    'nchri', 'nheb nchri', 'nheb nakhod', 'bghit nchri', 'bghit nakhod', 'نحب نشري', 'نطلب', 'طلبية', 'نشري', 'نحب ناخذ', 'ناخذ',
+    'commander', 'commande', 'je prends', 'je la prends', 'je le prends', 'je les prends', 'je veux acheter', 'acheter', 'acheter le', 'je le veux', 'je la veux',
+    'i will take it', 'i want to buy', 'nchri', 'nheb nchri', 'nheb nakhod', 'bghit nchri', 'bghit nakhod', 'نحب نشري', 'نطلب', 'طلبية', 'نشري', 'نحب ناخذ', 'ناخذ',
   ])) {
     return { type: 'purchase', priority: 'high', nextAction: 'Confirmer la commande et les détails de livraison' };
   }
@@ -54,6 +93,49 @@ export function detectSalesIntent(input: unknown): SalesIntent | null {
     return { type: 'purchase', priority: 'normal', nextAction: 'Reprendre contact pour aider le client à finaliser son choix' };
   }
   return null;
+}
+
+export type PendingOrderRequest = {
+  id: string;
+  reference: string;
+  status: 'pending_merchant_confirmation';
+  channel: string;
+  summary: string;
+  customerName: string;
+  phone: string;
+  city: string;
+  totalAmount: null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Enregistre une demande uniquement après une confirmation explicite du client. */
+export function createPendingOrderRequest(input: {
+  id: string;
+  channel: string;
+  summary: string;
+  customerName?: string;
+  phone?: string;
+  city?: string;
+  now?: Date;
+}): PendingOrderRequest {
+  const id = String(input.id || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+  const suffix = id.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase() || 'NOUVEAU';
+  const now = input.now || new Date();
+  const timestamp = now.toISOString();
+  return {
+    id,
+    reference: `JF-${suffix}`,
+    status: 'pending_merchant_confirmation',
+    channel: String(input.channel || '').slice(0, 40),
+    summary: String(input.summary || '').trim().slice(0, 2_000),
+    customerName: String(input.customerName || '').slice(0, 120),
+    phone: String(input.phone || '').slice(0, 40),
+    city: String(input.city || '').slice(0, 100),
+    totalAmount: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
 }
 
 export function buildLeadFollowUp(

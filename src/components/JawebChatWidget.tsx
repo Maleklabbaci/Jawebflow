@@ -113,13 +113,17 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
           return id;
         } catch { return 'web_anon'; }
       })();
+      const messageId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          assistantId: businessName,
+          assistantId,
           message: text,
           sessionId: sessionKey,
+          messageId,
           ...(imgToSend ? { image: imgToSend } : {})
         })
       });

@@ -55,7 +55,8 @@ import {
   SlidersHorizontal,
   Activity,
   ChevronDown,
-  Share2
+  Share2,
+  ShoppingCart
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -72,9 +73,27 @@ import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
+import { SubTabs } from './dashboard/SubTabs';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 
-export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+
+type LeadOrder = {
+  id: string;
+  reference: string;
+  status: string;
+  channel: string;
+  summary: string;
+  customerName: string;
+  phone: string;
+  city: string;
+  deliveryAddress?: string;
+  totalAmount: number | null;
+  createdAt: string;
+  updatedAt: string;
+  cancellationReason?: string;
+  changeHistory?: Array<{ type: string; details?: string; reason?: string; confirmedAt?: string }>;
+};
 
 /**
  * Menu de l'espace client.
@@ -85,8 +104,8 @@ export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge
 type NavItem = { id: DashboardSectionId; label: string; icon: React.ComponentType<{ className?: string }>; pro?: boolean };
 
 /**
- * UNE SEULE plateforme, 6 entrées de menu :
- *   Accueil · Résumé · Mon assistant · Tester · Canaux · Clients
+ * UNE SEULE plateforme, entrées de menu simples :
+ *   Accueil · Résumé · Mon assistant · Tester · Canaux · Clients · Commandes
  * « Mon assistant » et « Canaux » regroupent plusieurs écrans, affichés en petits onglets.
  */
 const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: DashboardSectionId; label: string }> }> = {
@@ -113,15 +132,14 @@ const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: Dashboar
 const groupOf = (id: DashboardSectionId): string | null =>
   Object.keys(SECTION_GROUPS).find((g) => SECTION_GROUPS[g].tabs.some((t) => t.id === id)) || null;
 
-const menuGroupOf = (id: DashboardSectionId): string | null => groupOf(id) || (id === 'leads' ? 'clients' : null);
-
 const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
   { id: 'summary', label: 'Résumé', icon: TrendingUp },
   { id: 'knowledge', label: 'Mon assistant', icon: Bot, group: 'assistant' },
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
   { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
-  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true, group: 'clients' },
+  { id: 'leads', label: 'Clients', icon: BarChart3, pro: true },
+  { id: 'orders', label: 'Commandes', icon: ShoppingCart, pro: true },
 ];
 
 interface DashboardPlatformProps {
@@ -169,7 +187,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [currentSection, setCurrentSection] = useState<DashboardSectionId>(
     (initialSection as DashboardSectionId) || 'overview'
   );
-  const [openGroup, setOpenGroup] = useState<string | null>(() => menuGroupOf(initialSection as DashboardSectionId));
+  const [channelsMenuOpen, setChannelsMenuOpen] = useState(() => groupOf(initialSection as DashboardSectionId) === 'channels');
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
   // Venue des Automatisations : l'onglet Instagram met en avant « Autoriser les commentaires ».
   const [instagramFocus, setInstagramFocus] = useState<'comments' | null>(null);
@@ -184,7 +202,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   useEffect(() => {
     if (initialSection && initialSection !== currentSection) {
       setCurrentSection(initialSection as DashboardSectionId);
-      setOpenGroup(menuGroupOf(initialSection as DashboardSectionId));
+      setChannelsMenuOpen(groupOf(initialSection as DashboardSectionId) === 'channels');
     }
   }, [initialSection]);
 
@@ -214,7 +232,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   const handleSectionChange = (section: DashboardSectionId) => {
     setCurrentSection(section);
-    setOpenGroup(menuGroupOf(section));
+    setChannelsMenuOpen(groupOf(section) === 'channels');
     setMobileMenuOpen(false);
     setAccountMenuOpen(false);
     if (onNavigate) {
@@ -591,6 +609,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [leadFollowUpBusy, setLeadFollowUpBusy] = useState<string | null>(null);
   const [leadFollowUpError, setLeadFollowUpError] = useState<string>('');
+  const [orderActionBusy, setOrderActionBusy] = useState<string | null>(null);
+  const [orderActionError, setOrderActionError] = useState<string>('');
+  const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
+  const [handoffError, setHandoffError] = useState<string>('');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'nouveau' | 'qualifie'>('all');
@@ -630,6 +652,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     followUpNote?: string;
     nextAction?: string;
     lastInteractionAt?: string;
+    sessionId?: string;
+    igUserId?: string;
+    handoffStatus?: string;
+    instagramOrigin?: { caption?: string; permalink?: string; thumbnail?: string; mediaId?: string; type?: string };
+    orders?: LeadOrder[];
   }>>([]);
 
   // Load user data from Firestore on mount
@@ -806,6 +833,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           followUpNote: data.followUpNote || '',
           nextAction: data.nextAction || '',
           lastInteractionAt: data.lastInteractionAt || '',
+          sessionId: data.sessionId || '',
+          igUserId: data.igUserId || '',
+          handoffStatus: data.handoffStatus || 'bot',
+          instagramOrigin: data.instagramOrigin || null,
+          orders: Array.isArray(data.orders) ? data.orders : [],
         }));
         if (!cancelled) setLeadsList(prospects);
       } catch (error) {
@@ -838,6 +870,51 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setLeadFollowUpError(error?.message || 'Erreur réseau. Réessaie.');
     } finally {
       setLeadFollowUpBusy(null);
+    }
+  };
+
+  const updateOrderStatus = async (prospectId: string, orderId: string, orderStatus: string) => {
+    const actionKey = `${prospectId}:${orderId}`;
+    if (!assistantId || orderActionBusy) return;
+    setOrderActionBusy(actionKey);
+    setOrderActionError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId, orderId, orderStatus }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) throw new Error(result?.error || 'Impossible de mettre à jour la commande.');
+      setLeadsList((current) => current.map((lead) => lead.id === prospectId
+        ? { ...lead, orders: (lead.orders || []).map((order) => order.id === orderId ? { ...order, status: orderStatus, updatedAt: result.updatedAt } : order) }
+        : lead));
+    } catch (error: any) {
+      setOrderActionError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setOrderActionBusy(null);
+    }
+  };
+
+  const setLeadHandoff = async (lead: any, action: 'takeover' | 'resume') => {
+    if (!assistantId || handoffBusy) return;
+    setHandoffBusy(lead.id);
+    setHandoffError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId: lead.id, action }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) throw new Error(result?.error || 'Impossible de changer la prise en main.');
+      setLeadsList((current) => current.map((item) => item.id === lead.id ? { ...item, handoffStatus: result.handoffStatus } : item));
+    } catch (error: any) {
+      setHandoffError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setHandoffBusy(null);
     }
   };
 
@@ -1251,7 +1328,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assistantId: assistantId || businessName || 'asst_default',
+          sessionId: `dashboard_simulator_${assistantId || 'preview'}`,
+          isSimulator: true,
           message: userText,
+          history: messages.slice(-6).map(({ sender, text }) => ({ sender, text })),
           website: websiteUrl,
           knowledgeNotes: knowledgeNotes.filter(n => n.enabled)
         })
@@ -1348,10 +1428,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     return null;
   })();
 
-  const renewalDate = (usageInfo as any)?.daysLeft != null ? new Date(Date.now() + (usageInfo as any).daysLeft * 86400000) : null;
-  const renewalShort = renewalDate ? renewalDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null;
-  const renewalLong = renewalDate ? renewalDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-
   return (
     <div className="dash-theme min-h-screen bg-white text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
       
@@ -1393,79 +1469,79 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             </div>
           </div>
 
-          {/* Navigation : 6 entrées, libellés simples */}
+          {/* Navigation : libellés simples, dont la vue Commandes */}
           <nav className="px-3 pb-4 pt-3" aria-label="Menu principal">
             <div className="space-y-1">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
-                const group = item.group;
-                const isActive = group ? menuGroupOf(currentSection) === group : currentSection === item.id;
-                const isOpen = !!group && openGroup === group;
-                const badge = item.id === 'leads' && leadsList.length > 0 ? String(leadsList.length) : null;
-                const subItems: Array<{ key: string; label: string; selected: boolean; onSelect: () => void }> = !group ? [] : group === 'clients'
-                  ? [
-                      { key: 'analytics', label: "Vue d'ensemble", selected: currentSection === 'leads' && insightsTab === 'analytics', onSelect: () => { setInsightsTab('analytics'); handleSectionChange('leads'); } },
-                      { key: 'prospects', label: 'Mes clients', selected: currentSection === 'leads' && insightsTab === 'prospects', onSelect: () => { setInsightsTab('prospects'); handleSectionChange('leads'); } },
-                    ]
-                  : SECTION_GROUPS[group].tabs.map((tab) => ({ key: tab.id, label: tab.label, selected: currentSection === tab.id, onSelect: () => handleSectionChange(tab.id) }));
+                const isActive = item.group ? groupOf(currentSection) === item.group : currentSection === item.id;
+                const badge = item.id === 'leads' ? String(leadsList.length) : item.id === 'orders' ? String(leadsList.reduce((count, lead) => count + (lead.orders?.length || 0), 0)) : item.id === 'knowledge' ? String(knowledgeNotes.filter(n => n.enabled).length) : null;
                 return (
-                  <div key={item.id}>
-                    <button
-                      type="button"
-                      id={`nav-${item.id}`}
-                      title={item.label}
-                      aria-current={isActive && !group ? 'page' : undefined}
-                      aria-expanded={group ? isOpen : undefined}
-                      aria-controls={group ? `submenu-${group}` : undefined}
-                      onClick={() => {
-                        if (!group) { handleSectionChange(item.id); return; }
-                        setOpenGroup((g) => (g === group ? null : group));
-                      }}
-                      className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] outline-none transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 focus-visible:ring-offset-2 ${
-                        isActive
-                          ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
-                          : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
-                      }`}
-                    >
-                      <Icon className={`h-[19px] w-[19px] shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
-                      <span className="flex-1 truncate text-left">{item.label}</span>
-                      {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
-                      {badge && (
-                        <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${isActive ? 'bg-white/25 text-white' : 'bg-[#efe9ff] text-[#5a2cff]'}`}>
+                  <button
+                    key={item.id}
+                    type="button"
+                    id={`nav-${item.id}`}
+                    title={item.label}
+                    aria-current={isActive && item.group !== 'channels' ? 'page' : undefined}
+                    aria-expanded={item.group === 'channels' ? channelsMenuOpen : undefined}
+                    aria-controls={item.group === 'channels' ? 'channels-submenu' : undefined}
+                    onClick={() => {
+                      if (item.group === 'channels') {
+                        if (groupOf(currentSection) !== 'channels') {
+                          const keepDrawerOpen = mobileMenuOpen;
+                          handleSectionChange('integration');
+                          if (keepDrawerOpen) setMobileMenuOpen(true);
+                        } else setChannelsMenuOpen((open) => !open);
+                      } else handleSectionChange(item.id);
+                    }}
+                    className={`group flex h-11 w-full items-center gap-3 rounded-full px-4 text-[14px] transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] font-semibold text-white shadow-[0_8px_18px_-8px_rgba(110,50,255,0.6)]'
+                        : 'font-normal text-slate-500 hover:bg-[#f4f2ff] hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="relative shrink-0">
+                      <Icon className={`h-[19px] w-[19px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
+                      {badge && badge !== '0' && (
+                        <span className={`absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums ${isActive ? 'bg-white text-[#5a2cff]' : 'bg-purple-600 text-white'}`}>
                           {badge}
                         </span>
                       )}
-                      {group && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
-                    </button>
-                    {group && (
-                      <div
-                        id={`submenu-${group}`}
-                        aria-hidden={!isOpen}
-                        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-                      >
-                        <div className="min-h-0 overflow-hidden">
-                          <div className="ml-[25px] mt-1 space-y-0.5 border-l border-slate-200 pl-[10px] pb-1">
-                            {subItems.map((sub, index) => (
-                              <button
-                                key={sub.key}
-                                type="button"
-                                tabIndex={isOpen ? 0 : -1}
-                                onClick={sub.onSelect}
-                                data-tab={sub.key}
-                                aria-current={sub.selected ? 'page' : undefined}
-                                className={`flex h-9 w-full items-center rounded-full px-[11px] text-left text-[13px] outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 ${sub.selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-[#f7f5ff] hover:text-slate-900'}`}
-                                style={{ transitionDelay: isOpen ? `${index * 35}ms` : '0ms', transform: isOpen ? 'translateY(0)' : 'translateY(-4px)' }}
-                              >
-                                <span className="truncate">{sub.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    </span>
+                    <span className="flex-1 truncate text-left">{item.label}</span>
+                    {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
+                    {item.group === 'channels' && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${channelsMenuOpen ? 'rotate-180' : ''} ${isActive ? 'text-white' : 'text-slate-400'}`} />}
+                  </button>
                 );
               })}
+              <div
+                id="channels-submenu"
+                aria-hidden={!channelsMenuOpen}
+                className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out ${channelsMenuOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-3 pb-1">
+                    {SECTION_GROUPS.channels.tabs.map((tab, index) => {
+                      const selected = currentSection === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          tabIndex={channelsMenuOpen ? 0 : -1}
+                          onClick={() => handleSectionChange(tab.id)}
+                          data-tab={tab.id}
+                          aria-current={selected ? 'page' : undefined}
+                          className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-[13px] transition-all duration-200 ${selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
+                          style={{ transitionDelay: channelsMenuOpen ? `${index * 35}ms` : '0ms', transform: channelsMenuOpen ? 'translateY(0)' : 'translateY(-4px)' }}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#5a2cff]' : 'bg-slate-300'}`} />
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </nav>
         </div>
@@ -1487,8 +1563,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       <div className={`flex-1 min-w-0 lg:ml-64 bg-white flex flex-col ${currentSection === 'overview' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
         
         {/* Sticky Top Header Bar */}
-        <header className="sticky top-0 z-20 h-[72px] shrink-0 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex h-full w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-8">
+        <header className="sticky top-0 z-20 flex h-[72px] shrink-0 items-center justify-between gap-4 bg-white/95 px-4 backdrop-blur sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -1502,16 +1577,17 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               <h1 className="dash-title truncate text-lg sm:text-2xl">
                 {currentSection === 'overview' && 'Accueil'}
                 {currentSection === 'summary' && 'Résumé'}
+                {groupOf(currentSection) === 'assistant' && SECTION_GROUPS.assistant.title}
+                {groupOf(currentSection) === 'channels' && SECTION_GROUPS.channels.title}
                 {currentSection === 'simulator' && 'Tester mon assistant'}
+                {currentSection === 'leads' && 'Mes clients'}
+                {currentSection === 'orders' && 'Commandes'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
-                {currentSection === 'leads' && (insightsTab === 'prospects' ? 'Mes clients' : "Vue d'ensemble")}
-                {groupOf(currentSection) && SECTION_GROUPS[groupOf(currentSection) as string].tabs.find((t) => t.id === currentSection)?.label}
               </h1>
-              <p className="dash-subtitle truncate text-xs">
-                {groupOf(currentSection) ? `${SECTION_GROUPS[groupOf(currentSection) as string].title} · ` : currentSection === 'leads' ? 'Clients · ' : ''}
-                {businessName || 'Assistant en configuration'}
-              </p>
+              {currentSection !== 'overview' && (
+                <p className="dash-subtitle truncate text-xs">{businessName || 'Assistant en configuration'}</p>
+              )}
             </div>
           </div>
 
@@ -1614,7 +1690,6 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               )}
             </div>
           </div>
-        </div>
         </header>
 
         {/* Feuille lavande aux grands angles arrondis (comme les plateformes modernes) */}
@@ -1625,6 +1700,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: ACCUEIL — version simple, orientée résultats
               ================================================================= */}
+          {groupOf(currentSection) === 'assistant' && (
+            <SubTabs
+              tabs={SECTION_GROUPS[groupOf(currentSection) as string].tabs}
+              active={currentSection}
+              onChange={(id) => handleSectionChange(id)}
+            />
+          )}
+
           {currentSection === 'overview' && (
             // « Bonjour {prénom} » + grand champ de texte : le chat « Mon IA » s'affiche ici (voir <CopilotChat mode="page" />).
             <div ref={setCopilotHost} className="h-full" data-testid="copilot-home-host" />
@@ -2539,22 +2622,42 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
             return (
               <div className="space-y-6 animate-in fade-in duration-200">
+                {/* Insights vs CRM Tabs */}
+                <div className="flex w-full gap-2 sm:w-max">
+                  <button
+                    onClick={() => setInsightsTab('analytics')}
+                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
+                      insightsTab === 'analytics' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
+                    }`}
+                  >
+                    Vue d'ensemble
+                  </button>
+                  <button
+                    onClick={() => setInsightsTab('prospects')}
+                    className={`flex-1 sm:flex-none px-5 py-2 rounded-full text-sm transition-all ${
+                      insightsTab === 'prospects' ? 'bg-white text-[#5a2cff] font-semibold shadow-[0_6px_18px_-10px_rgba(90,44,255,0.55)]' : 'text-slate-500 hover:bg-white/70'
+                    }`}
+                  >
+                    Mes clients
+                  </button>
+                </div>
+
                 {insightsTab === 'analytics' ? (
                   <InsightsDashboard user={user} />
                 ) : (
                   <>
                     {/* Export : une carte simple, deux boutons */}
                 <div className="flex flex-col gap-4 rounded-[24px] bg-white p-5 shadow-[0_1px_2px_rgba(27,22,71,0.04)] sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-base">Exporter mes contacts</h3>
+                  <div>
+                    <h3 className="text-base">Mes clients intéressés</h3>
                     <p className="mt-0.5 text-sm text-slate-500">{totalTracked} client{totalTracked > 1 ? 's' : ''} enregistré{totalTracked > 1 ? 's' : ''}. Télécharge la liste pour l’ouvrir dans Excel ou l’importer dans tes contacts.</p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2.5 sm:flex-nowrap">
+                  <div className="flex flex-wrap gap-2.5">
                     <button
                       type="button"
                       onClick={handleExportCSV}
                       disabled={leadsList.length === 0}
-                      className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
+                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_22px_-12px_rgba(110,50,255,0.7)] transition hover:brightness-110 disabled:opacity-40 cursor-pointer"
                     >
                       <Download className="h-4 w-4" /> Télécharger la liste
                     </button>
@@ -2562,7 +2665,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       type="button"
                       onClick={handleExportAdsCSV}
                       disabled={leadsList.length === 0}
-                      className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[#f1eaff] px-5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
+                      className="inline-flex items-center gap-2 rounded-full bg-[#f1eaff] px-5 py-2.5 text-sm font-semibold text-purple-700 transition hover:bg-[#e8dcff] disabled:opacity-40 cursor-pointer"
                     >
                       <Target className="h-4 w-4" /> Pour mes publicités
                     </button>
@@ -2942,6 +3045,42 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           </div>
                         )}
 
+                        {lead.channel === 'instagram' && lead.igUserId && (
+                          <section className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900">Conversation Instagram</h4>
+                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${lead.handoffStatus === 'human' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                {lead.handoffStatus === 'human' ? 'Prise en main humaine' : 'Bot actif'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] leading-relaxed text-indigo-800">
+                              {lead.handoffStatus === 'human'
+                                ? 'Le bot est en pause pour ce client. Réponds directement depuis Instagram, puis rends la conversation au bot lorsque tu as terminé.'
+                                : 'Tu peux mettre le bot en pause et reprendre la conversation directement dans Instagram.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void setLeadHandoff(lead, lead.handoffStatus === 'human' ? 'resume' : 'takeover')}
+                              disabled={handoffBusy !== null}
+                              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-semibold text-white transition disabled:cursor-wait disabled:opacity-60 ${lead.handoffStatus === 'human' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                            >
+                              {handoffBusy === lead.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+                              {lead.handoffStatus === 'human' ? 'Rendre la main au bot' : 'Reprendre la main'}
+                            </button>
+                            {handoffError && <p role="alert" className="text-[10px] font-medium text-rose-600">{handoffError}</p>}
+                          </section>
+                        )}
+
+                        {lead.instagramOrigin && (
+                          <section className="space-y-2 rounded-xl border border-pink-200 bg-pink-50/60 p-4">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-pink-900">Publication à l’origine de la conversation</h4>
+                            {lead.instagramOrigin.thumbnail && <img src={lead.instagramOrigin.thumbnail} alt="Miniature de la publication Instagram" loading="lazy" className="max-h-40 w-full rounded-lg object-cover" />}
+                            {lead.instagramOrigin.caption && <p className="line-clamp-3 text-xs text-slate-700">{lead.instagramOrigin.caption}</p>}
+                            <p className="text-[10px] font-semibold text-pink-800">{lead.instagramOrigin.type || 'Contenu Instagram'}{lead.instagramOrigin.mediaId ? ` · ${lead.instagramOrigin.mediaId}` : ''}</p>
+                            {lead.instagramOrigin.permalink && <a href={lead.instagramOrigin.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-pink-700 hover:text-pink-900">Ouvrir la publication <ExternalLink className="h-3 w-3" /></a>}
+                          </section>
+                        )}
+
                         {/* Les détails techniques intéressent rarement le commerçant : repliés par défaut */}
                         <button
                           type="button"
@@ -3209,10 +3348,121 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           )}
 
           {/* =================================================================
+              SECTION: COMMANDES (confirmées explicitement par le client)
+              ================================================================= */}
+          {currentSection === 'orders' && (() => {
+            const orders = leadsList.flatMap((lead) => (lead.orders || []).map((order) => ({ lead, order })))
+              .sort((a, b) => Date.parse(b.order.createdAt || '') - Date.parse(a.order.createdAt || ''));
+            const labels: Record<string, string> = {
+              pending_merchant_confirmation: 'À confirmer par la boutique',
+              confirmed: 'Confirmée', preparing: 'En préparation', shipped: 'Expédiée', delivered: 'Livrée', cancelled: 'Annulée',
+            };
+            const steps = ['pending_merchant_confirmation', 'confirmed', 'preparing', 'shipped', 'delivered'];
+            const nextStatuses: Record<string, Array<{ status: string; label: string; destructive?: boolean }>> = {
+              pending_merchant_confirmation: [{ status: 'confirmed', label: 'Confirmer la commande' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
+              confirmed: [{ status: 'preparing', label: 'Démarrer la préparation' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
+              preparing: [{ status: 'shipped', label: 'Marquer comme expédiée' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
+              shipped: [{ status: 'delivered', label: 'Marquer comme livrée' }],
+              delivered: [], cancelled: [],
+            };
+            return (
+              <div className="mx-auto max-w-6xl space-y-6 animate-in fade-in duration-200">
+                <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-purple-600" /><h2 className="text-lg font-bold text-slate-900">Commandes via l’assistant</h2></div>
+                    <p className="mt-1 text-sm text-slate-500">Seules les demandes confirmées explicitement par le client apparaissent ici. Vérifie prix et disponibilité avant de confirmer.</p>
+                  </div>
+                  <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">{orders.length} commande{orders.length === 1 ? '' : 's'}</span>
+                </div>
+                {orderActionError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{orderActionError}</p>}
+                {orders.length ? (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {orders.map(({ lead, order }) => {
+                      const currentStep = steps.indexOf(order.status);
+                      const busyKey = `${lead.id}:${order.id}`;
+                      const created = order.createdAt && Number.isFinite(Date.parse(order.createdAt))
+                        ? new Date(order.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : 'Date indisponible';
+                      return (
+                        <article key={`${lead.id}:${order.id}`} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{order.reference || order.id} · {order.channel || lead.channel || 'Assistant'}</p>
+                              <h3 className="mt-1 text-base font-bold text-slate-900">{order.customerName || lead.name}</h3>
+                              <p className="text-xs text-slate-500">{created}</p>
+                            </div>
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${order.status === 'pending_merchant_confirmation' ? 'border-amber-200 bg-amber-50 text-amber-800' : order.status === 'cancelled' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                              {labels[order.status] || order.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
+                            <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Téléphone</span><span className="font-semibold text-slate-800">{order.phone || lead.phone || 'Non fourni'}</span></div>
+                            <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Ville</span><span className="font-semibold text-slate-800">{order.city || lead.city || 'Non précisée'}</span></div>
+                            {order.deliveryAddress && <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Adresse de livraison</span><span className="font-semibold text-slate-800">{order.deliveryAddress}</span></div>}
+                            <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Montant</span><span className="font-semibold text-slate-800">{typeof order.totalAmount === 'number' ? `${new Intl.NumberFormat('fr-DZ').format(order.totalAmount)} DA` : 'À vérifier avec le client — montant non confirmé'}</span></div>
+                          </div>
+                          <div>
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suivi de commande</p>
+                            {order.status === 'cancelled' ? <p className="text-xs font-semibold text-rose-700">Cette demande a été annulée.</p> : (
+                              <div className="grid grid-cols-5 gap-1">
+                                {steps.map((step, index) => {
+                                  const complete = currentStep >= 0 && index <= currentStep;
+                                  return <div key={step} className="min-w-0"><div className={`h-1.5 rounded-full ${complete ? 'bg-purple-600' : 'bg-slate-200'}`} /><p className={`mt-1 truncate text-[8px] ${complete ? 'font-bold text-purple-700' : 'text-slate-400'}`}>{labels[step]}</p></div>;
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <div className="rounded-xl border border-slate-100 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Résumé transmis par le client</p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{order.summary || lead.need || 'Aucun détail produit enregistré.'}</p>
+                          </div>
+                          {Array.isArray(order.changeHistory) && order.changeHistory.length > 0 && (
+                            <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Changements confirmés par le client</p>
+                              {[...order.changeHistory].slice(-3).reverse().map((change, index) => (
+                                <div key={`${change.type}:${change.confirmedAt || index}`} className="text-xs text-slate-700">
+                                  <span className="font-semibold">{change.type === 'customer_cancellation' ? 'Annulation' : 'Modification'}{change.confirmedAt ? ` · ${new Date(change.confirmedAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+                                  {(change.details || change.reason) && <p className="mt-0.5 whitespace-pre-wrap">{change.details || change.reason}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {lead.instagramOrigin && (
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-pink-100 bg-pink-50/60 p-3 text-xs">
+                              <span className="font-semibold text-pink-900">Origine : {lead.instagramOrigin.type || 'publication Instagram'}</span>
+                              {lead.instagramOrigin.permalink && <a href={lead.instagramOrigin.permalink} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 font-semibold text-pink-700">Ouvrir <ExternalLink className="h-3 w-3" /></a>}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                            <button type="button" onClick={() => { setSelectedLeadId(lead.id); setInsightsTab('prospects'); handleSectionChange('leads'); }} className="text-xs font-semibold text-purple-700 hover:text-purple-900">Voir la conversation</button>
+                            <div className="flex flex-wrap gap-2">
+                              {(nextStatuses[order.status] || []).map((action) => (
+                                <button key={action.status} type="button" onClick={() => void updateOrderStatus(lead.id, order.id, action.status)} disabled={orderActionBusy !== null} className={`rounded-lg px-3 py-2 text-[10px] font-bold transition disabled:cursor-wait disabled:opacity-60 ${action.destructive ? 'border border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                                  {orderActionBusy === busyKey ? <Loader2 className="mr-1 inline h-3 w-3 animate-spin" /> : null}{action.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+                    <ShoppingCart className="mx-auto h-9 w-9 text-slate-300" />
+                    <h3 className="mt-3 font-bold text-slate-800">Aucune commande pour le moment</h3>
+                    <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">Une commande apparaîtra ici uniquement après une confirmation claire du client dans une conversation avec l’assistant.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* =================================================================
               SECTION: BILLING & PLAN (Professional SaaS Billing Dashboard)
               ================================================================= */}
           {currentSection === 'billing' && (
-            <div className="space-y-8 animate-in fade-in duration-200">
+            <div className="p-4 sm:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-200">
               
               {/* Notification Banner */}
               {billingNotification && (
@@ -3274,25 +3524,28 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   {/* Page Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
-                      {activePlan === 'free' ? 'Formule gratuite' : 'Abonnement actif'}
+                      Abonnement Actif
                     </span>
-                    {renewalShort && <span className="text-xs text-slate-400">· Renouvellement le {renewalShort}</span>}
+                    <span className="text-xs text-slate-400">· Renouvellement le 28/09/2026</span>
                   </div>
-                  <p className="text-sm text-slate-500">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                    Mon Plan & Facturation
+                  </h1>
+                  <p className="text-sm text-slate-500 mt-1">
                     Gérez vos crédits de conversation, votre abonnement et accédez à vos factures.
                   </p>
                 </div>
 
                 {/* Billing Cycle Toggle */}
-                <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white shadow-[0_1px_2px_rgba(27,22,71,0.06)] shrink-0 self-start sm:self-auto">
+                <div className="inline-flex items-center p-1 rounded-xl bg-slate-200/70 border border-slate-300 shrink-0 self-start sm:self-auto">
                   <button
                     type="button"
                     onClick={() => setBillingCycle('monthly')}
-                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                       billingCycle === 'monthly'
-                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-sm'
+                        ? 'bg-white text-slate-900 shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -3301,9 +3554,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   <button
                     type="button"
                     onClick={() => setBillingCycle('yearly')}
-                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                       billingCycle === 'yearly'
-                        ? 'bg-gradient-to-r from-[#a23dff] to-[#5a2cff] text-white shadow-sm'
+                        ? 'bg-purple-600 text-white shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -3319,7 +3572,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* Active Plan Overview Card */}
-                <div className="lg:col-span-1 bg-[#1b1647] rounded-[24px] p-6 text-white flex flex-col justify-between">
+                <div className="lg:col-span-1 bg-slate-900 rounded-xl p-6 text-white flex flex-col justify-between">
                   
                   <div>
                     <div className="flex items-center justify-between mb-4">
@@ -3357,7 +3610,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     <div className="space-y-2.5 pt-4 border-t border-white/10 text-xs text-purple-100">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-400">Prochain paiement</span>
-                        <span className="font-semibold">{renewalLong}</span>
+                        <span className="font-semibold">28 Sept. 2026</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Statut</span>
+                        <span className="font-medium text-emerald-300">Actif</span>
                       </div>
                     </div>
                   </div>
@@ -3376,8 +3633,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 </div>
 
                 {/* Mon utilisation : deux chiffres, pas plus */}
-                <div className="lg:col-span-2 bg-white rounded-[24px] p-6 shadow-[0_1px_2px_rgba(27,22,71,0.04)] flex flex-col">
-                  <div className="flex flex-1 flex-col">
+                <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-200 flex flex-col justify-between">
+                  <div>
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <h2 className="text-base font-semibold text-slate-900">Mon utilisation</h2>
@@ -3388,8 +3645,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       </span>
                     </div>
 
-                    <div className="grid flex-1 grid-cols-1 gap-4">
-                      <div className="flex flex-col justify-center gap-3 rounded-2xl bg-[#f7f8fd] p-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="p-4 rounded-lg border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-slate-600">Clients intéressés</span>
                           <span className="font-semibold text-slate-900 tabular-nums">
@@ -3400,9 +3657,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </span>
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-white rounded-full overflow-hidden">
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-[#5a2cff] rounded-full"
+                            className="h-full bg-slate-900 rounded-full"
                             style={{
                               width: `${activePlan === 'free' ? 0 : activePlan === 'basic' ? Math.min(100, Math.round((leadsList.length / 1000) * 100)) : activePlan === 'pro' ? Math.min(100, Math.round((leadsList.length / 5000) * 100)) : 4}%`
                             }}
@@ -3411,7 +3668,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         <p className="text-xs text-slate-400">Depuis le début de votre abonnement</p>
                       </div>
 
-                      <div className="flex flex-col justify-center gap-3 rounded-2xl bg-[#f7f8fd] p-5">
+                      <div className="p-4 rounded-lg border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-slate-600">Informations enregistrées</span>
                           <span className="font-semibold text-slate-900 tabular-nums">
@@ -3422,9 +3679,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </span>
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-white rounded-full overflow-hidden">
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-[#5a2cff] rounded-full"
+                            className="h-full bg-slate-900 rounded-full"
                             style={{ width: `${Math.min(100, (knowledgeNotes.filter(n => n.enabled).length / (activePlan === 'free' ? 3 : activePlan === 'basic' ? 10 : 50)) * 100)}%` }}
                           />
                         </div>
@@ -3437,7 +3694,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
               {/* Plans Comparison Section */}
               <div className="space-y-6 pt-4">
-                <div>
+                <div className="text-center max-w-xl mx-auto">
                   <h2 className="text-xl font-extrabold text-slate-900">Changer de formule</h2>
                   <p className="text-xs text-slate-500 mt-1">
                     Vous pouvez changer de formule ou arrêter à tout moment.

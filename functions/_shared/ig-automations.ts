@@ -399,7 +399,7 @@ export async function processCommentEvent(env: any, entryId: string, value: any)
       await appendThread(env, account.userId, priv.recipientId || contactId, [{ role: 'model', text: dm.text }]);
     }
 
-    console.log(`[ig-auto] commentaire ${commentId} → « ${a.name} » : ${outcome}${errors.length ? ` (${errors.join(' | ')})` : ''}`);
+    console.log(`[ig-auto] commentaire traité par « ${a.name} » : ${outcome}${errors.length ? ` (${errors.join(' | ')})` : ''}`);
     return { status: outcome, eventId };
   } catch (e: any) {
     console.error('[ig-auto] erreur inattendue (commentaire):', e?.stack || e?.message || e);
@@ -491,7 +491,7 @@ export async function runDmAutomations(env: any, account: IgAccount, event: any)
     if (r.ok) {
       await appendThread(env, account.userId, senderId, [{ role: 'user', text }, { role: 'model', text: dm.text }], mid);
     }
-    console.log(`[ig-auto] message de ${senderId} → « ${a.name} » : ${r.ok ? 'réponse envoyée' : `échec (${r.error?.raw})`}`);
+    console.log(`[ig-auto] message privé traité par « ${a.name} » : ${r.ok ? 'réponse envoyée' : 'échec'}`);
     return 'handled';
   } catch (e: any) {
     console.error('[ig-auto] erreur inattendue (message privé):', e?.stack || e?.message || e);

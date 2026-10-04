@@ -227,8 +227,15 @@ export async function supabaseUpsertProspect(
   const mergedMessages = Array.isArray(patch.messages) || Array.isArray(existing.messages)
     ? [...(Array.isArray(existing.messages) ? existing.messages : []), ...(Array.isArray(patch.messages) ? patch.messages : [])].slice(-20)
     : undefined;
+  const mergedOrders = Array.isArray(patch.orders) || Array.isArray(existing.orders)
+    ? Array.from(new Map([
+        ...(Array.isArray(existing.orders) ? existing.orders : []),
+        ...(Array.isArray(patch.orders) ? patch.orders : []),
+      ].filter((order: any) => order && typeof order.id === 'string').map((order: any) => [order.id, order])).values()).slice(-50)
+    : undefined;
   const data = { ...existing, ...patch };
   if (mergedMessages) data.messages = mergedMessages;
+  if (mergedOrders) data.orders = mergedOrders;
   const row = {
     id: docId,
     assistant_id: assistantId,
