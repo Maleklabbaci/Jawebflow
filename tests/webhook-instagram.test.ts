@@ -160,6 +160,37 @@ describe('webhook : messages privés et stories', () => {
     expect(gemini.calls[1].body.generationConfig.maxOutputTokens).toBe(180);
   });
 
+  it('permet au client Instagram d’expliquer puis de confirmer l’annulation de sa commande', async () => {
+    const prospectId = 'asst1_ig_IGSID_SARA';
+    fx.supabase.seed('prospects', [{
+      id: prospectId,
+      assistant_id: 'asst1',
+      data: {
+        igUserId: 'IGSID_SARA',
+        sessionId: 'ig_IGSID_SARA',
+        orders: [{ id: 'ig-order-1', reference: 'JF-IGORDER1', status: 'confirmed', summary: 'Veste noire', createdAt: '2026-10-01T10:00:00.000Z' }],
+      },
+    }]);
+
+    await deliver(messagingPayload(dmEvent({ text: 'Je veux annuler ma commande', mid: 'ig-cancel-1' })));
+    let prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0].status).toBe('confirmed');
+    expect(prospect?.data.orderChangeDraft.status).toBe('awaiting_reason');
+    expect(fx.meta.sent('messages').at(-1)?.body.message.text).toContain('Qu’est-ce qui vous pousse');
+
+    await deliver(messagingPayload(dmEvent({ text: 'Le prix est trop élevé', mid: 'ig-cancel-2' })));
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0].status).toBe('confirmed');
+    expect(prospect?.data.orderChangeDraft.status).toBe('awaiting_confirmation');
+    expect(fx.meta.sent('messages').at(-1)?.body.message.text).toContain('option moins chère');
+
+    await deliver(messagingPayload(dmEvent({ text: 'oui', mid: 'ig-cancel-3' })));
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0]).toMatchObject({ status: 'cancelled', cancellationReason: 'Le prix est trop élevé' });
+    expect(prospect?.data.orderChangeDraft).toBeNull();
+    expect(fx.meta.sent('messages').at(-1)?.body.message.text).toContain('est annulée');
+  });
+
   it('les copies (« échos ») de nos propres messages sont ignorées : pas de boucle', async () => {
     seedAutomation(fx.supabase, {
       trigger_type: 'dm_keyword',

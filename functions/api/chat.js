@@ -13,6 +13,7 @@ import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
 import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, createPendingOrderRequest } from '../_shared/sales-intent.ts';
+import { processOrderChangeMessage } from '../_shared/order-changes.ts';
 import { getGeminiContextCache } from '../_shared/gemini-cache.ts';
 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
@@ -92,11 +93,12 @@ export async function onRequestPost(context) {
     const chatModel = env.GEMINI_MODEL || DEFAULT_CHAT_MODEL;
     const salesIntent = detectSalesIntent(message);
 
-    if (!apiKey || !message?.trim()) {
-      if (!apiKey) diagnostics.push('GEMINI_API_KEY absente côté Pages Functions');
-      console.error('[chat] requête refusée:', diagnostics.join(' | ') || 'message vide');
+    if (!message?.trim()) {
+      diagnostics.push('message vide');
+      console.error('[chat] requête refusée:', diagnostics.join(' | '));
       return reply("Saha kho ! Kifach n9der n3awnek ? 😄", diagnostics);
     }
+    if (!apiKey) diagnostics.push('GEMINI_API_KEY absente côté Pages Functions');
 
     // Isolation stricte : sans assistantId valide, on ne pioche dans AUCUNE base
     // (avant, un fallback partagé pouvait mélanger les données entre clients).
@@ -137,11 +139,65 @@ export async function onRequestPost(context) {
     //     le widget désactive alors la saisie). Les assistants de démo publique
     //     (identifiants demo_*) restent illimités pour la vitrine du site.
     const isDemoAssistant = /^(demo[_-]|jawebflow_)/.test(assistantId);
-    if (!isDemoAssistant) {
-      if (!configLoaded) {
-        diagnostics.push(`assistant ${assistantId} introuvable : réponse IA refusée`);
-        return reply("Cet assistant n'est pas configuré ou a été désactivé. Contactez le support JawebFlow.", diagnostics);
+    if (!isDemoAssistant && !configLoaded) {
+      diagnostics.push(`assistant ${assistantId} introuvable : réponse IA refusée`);
+      return reply("Cet assistant n'est pas configuré ou a été désactivé. Contactez le support JawebFlow.", diagnostics);
+    }
+
+    // Gestion locale des commandes : aucun nouvel appel IA n'est nécessaire,
+    // et la modification reste disponible même si le quota IA est épuisé.
+    // L'identifiant de session du widget isole strictement les clients.
+    if (!simulatorRequest && !isDemoAssistant && !isHumanTransfer(message) && assistantId && configLoaded && supabaseConfigured(env) && String(sessionId || '').trim()) {
+      let orderFlowRequested = false;
+      try {
+        const sessionKey = String(sessionId).trim();
+        let prospectId = webProspectId(assistantId, sessionKey);
+        const prospectRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(prospectId)}&assistant_id=eq.${encodeURIComponent(assistantId)}&select=id,data`);
+        const prospectRows = prospectRes.ok ? await prospectRes.json().catch(() => []) : [];
+        let prospect = prospectRows?.[0];
+        if (!prospect?.id) {
+          const bySession = await supabaseRequest(env, `prospects?assistant_id=eq.${encodeURIComponent(assistantId)}&data->>sessionId=eq.${encodeURIComponent(sessionKey)}&select=id,data&limit=1`);
+          const sessionRows = bySession.ok ? await bySession.json().catch(() => []) : [];
+          prospect = sessionRows?.[0];
+          if (prospect?.id) prospectId = prospect.id;
+        }
+        if (prospect?.id && prospect?.data?.handoffStatus !== 'human') {
+          const now = new Date();
+          const nowIso = now.toISOString();
+          const orderFlow = processOrderChangeMessage({
+            message,
+            orders: Array.isArray(prospect.data.orders) ? prospect.data.orders : [],
+            draft: prospect.data.orderChangeDraft || null,
+            now,
+          });
+          if (orderFlow.handled) {
+            orderFlowRequested = true;
+            await supabaseUpsertProspect(env, prospectId, assistantId, {
+              ...(Array.isArray(orderFlow.orders) ? { orders: orderFlow.orders } : {}),
+              orderChangeDraft: orderFlow.orderChangeDraft ?? null,
+              lastInteractionAt: nowIso,
+              messages: [
+                { sender: 'user', text: String(message).slice(0, 500), timestamp: nowIso },
+                { sender: 'bot', text: String(orderFlow.reply || '').slice(0, 500), timestamp: nowIso },
+              ],
+            });
+            diagnostics.push('gestion de commande mise à jour sans appel IA');
+            const logTurn = supabaseLogConversation(env, {
+              assistantId, channel: 'web_widget', sessionId: sessionKey,
+              message, response: orderFlow.reply || '', model: 'order-management', weight: 1,
+            });
+            if (typeof context.waitUntil === 'function') context.waitUntil(logTurn.catch(() => {}));
+            else await logTurn.catch(() => {});
+            return reply(orderFlow.reply || 'Votre demande de commande est mise à jour.', diagnostics);
+          }
+        }
+      } catch (orderError) {
+        diagnostics.push(`gestion de commande indisponible: ${orderError?.message || orderError}`);
+        if (orderFlowRequested) return reply("Je n’ai pas pu enregistrer ce changement pour le moment. La commande n’a pas été modifiée ; réessayez dans un instant ou contactez la boutique.", diagnostics);
       }
+    }
+
+    if (!isDemoAssistant) {
       if (supabaseConfigured(env)) {
         const limits = await supabaseGetPlanLimits(env);
         // SANS plan enregistré => 'basic' (fail-safe) : les assistants créés
@@ -212,6 +268,9 @@ export async function onRequestPost(context) {
         humanTransfer: true, diagnostics,
       }), { status: 200, headers: cors });
     }
+
+    // Les opérations déterministes sur une commande restent possibles sans Gemini.
+    if (!apiKey) return reply("Saha kho, l’assistant rencontre un souci technique. Réessayez dans un instant ou contactez la boutique. 🙏", diagnostics);
 
     // 2. Prompt stable séparé des faits récupérés pour ce message (RAG).
     const systemPrompt = buildStaticSystemPrompt(config);

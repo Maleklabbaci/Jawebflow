@@ -39,6 +39,7 @@ import {
 import { buildSalesSystemPrompt, buildBusinessContextText, isSmallTalk, localGreeting, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
 import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, createPendingOrderRequest } from "../../_shared/sales-intent.ts";
+import { detectOrderManagementIntent, processOrderChangeMessage } from "../../_shared/order-changes.ts";
 import { getGeminiContextCache } from "../../_shared/gemini-cache.ts";
 import { summarizeInstagramMessageShape } from "../../_shared/instagram-message-shape.ts";
 import { runBackgroundLearning } from "../../_shared/learning.ts";
@@ -681,11 +682,13 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
 
   // Une reprise en main par le commerçant met en pause l'IA ET les règles
   // automatiques de ce fil jusqu'à ce que le marchand rende la main.
+  let pendingOrderManagement = false;
   if (integration.assistantId && supabaseConfigured(env)) {
     try {
       const handoffRes = await supabaseRequest(env, `prospects?assistant_id=eq.${encodeURIComponent(integration.assistantId)}&data->>igUserId=eq.${encodeURIComponent(customerId)}&select=id,data&limit=1`);
       const handoffRows = handoffRes.ok ? await handoffRes.json().catch(() => []) : [];
       const handoffLead = handoffRows?.[0];
+      pendingOrderManagement = Boolean(handoffLead?.data?.orderChangeDraft);
       if (handoffLead?.data?.handoffStatus === 'human') {
         if ((text || hasUserMedia) && handoffLead.id) {
           const now = new Date().toISOString();
@@ -703,7 +706,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
   // 🎯 AUTOMATISATIONS (style ManyChat) : mots-clés, réponses et mentions de
   // stories. Elles passent AVANT l'IA et ne dépendent PAS du réglage « IA »
   // ci-dessous : un marchand peut couper l'IA et garder ses règles.
-  if (integration.userId) {
+  if (integration.userId && !pendingOrderManagement && !detectOrderManagementIntent(text)) {
     const account: IgAccount = {
       userId: integration.userId,
       igUserId: instagramAccountId,
@@ -816,6 +819,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
   let trackedProspectId: string | null = null;
   let followUpRecorded = false;
   let createdOrder: ReturnType<typeof createPendingOrderRequest> | null = null;
+  let orderChangeHandled = false;
   const latestUserText = String(pendingMessages[pendingMessages.length - 1]?.text || groupedText);
   if (integration.assistantId && supabaseConfigured(env)) {
     const [knowledge, documents] = await Promise.all([
@@ -845,13 +849,67 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
     try {
       const phoneInMsg = groupedText.match(/(?:(?:\+|00)213|0)\s?[5-7](?:[\s.-]?[0-9]){8}/);
       let known: any = null;
+      let knownByInstagram = false;
       const pBase = `prospects?assistant_id=eq.${encodeURIComponent(integration.assistantId)}`;
       const byIg = await supabaseRequest(env, `${pBase}&data->>igUserId=eq.${encodeURIComponent(customerId)}&select=id,data&limit=1`);
-      if (byIg.ok) known = (await byIg.json())?.[0] || null;
+      if (byIg.ok) {
+        known = (await byIg.json())?.[0] || null;
+        knownByInstagram = Boolean(known?.id);
+      }
       if (!known && phoneInMsg) {
         const phone = phoneInMsg[0].replace(/[\s.-]/g, '');
         const byPhone = await supabaseRequest(env, `${pBase}&data->>phone=eq.${encodeURIComponent(phone)}&select=id,data&limit=1`);
         if (byPhone.ok) known = (await byPhone.json())?.[0] || null;
+      }
+      if (knownByInstagram && (known?.data?.orderChangeDraft || detectOrderManagementIntent(groupedText))) {
+        const orderFlow = processOrderChangeMessage({
+          message: groupedText,
+          orders: Array.isArray(known?.data?.orders) ? known.data.orders : [],
+          draft: known?.data?.orderChangeDraft || null,
+        });
+        if (orderFlow.handled) {
+          orderChangeHandled = true;
+          const nowIso = new Date().toISOString();
+          const orderReply = String(orderFlow.reply || 'Votre demande de commande est mise à jour.');
+          trackedProspectId = known.id;
+          await supabaseUpsertProspect(env, known.id, integration.assistantId, {
+            ...(Array.isArray(orderFlow.orders) ? { orders: orderFlow.orders } : {}),
+            orderChangeDraft: orderFlow.orderChangeDraft ?? null,
+            lastInteractionAt: nowIso,
+            messages: [{ sender: 'user', text: groupedText.slice(0, 500), timestamp: nowIso }],
+          });
+          let sent = false;
+          try { sent = await sendInstagramMessage(integration.igToken, customerId, orderReply); } catch { /* l'état CRM reste la source de vérité */ }
+          if (sent) {
+            try {
+              await supabaseUpsertProspect(env, known.id, integration.assistantId, {
+                lastInteractionAt: new Date().toISOString(),
+                messages: [{ sender: 'bot', text: orderReply.slice(0, 500), timestamp: new Date().toISOString() }],
+              });
+            } catch { /* le fil peut être reconstruit depuis la conversation Instagram */ }
+          }
+          try {
+            await supabaseLogConversation(env, {
+              assistantId: integration.assistantId, channel: 'instagram', sessionId: `ig_${customerId}`,
+              message: groupedText, response: orderReply, model: 'order-management', weight: 1,
+            });
+          } catch { /* le changement de commande ne dépend pas du compteur de quota */ }
+          const orderThreadMessages = [
+            ...freshStored.filter((entry: any) => entry?.role === 'user' || entry?.role === 'model'),
+            { role: 'user', text: groupedText.slice(0, 500), ts: nowIso },
+            ...(sent ? [{ role: 'model', text: orderReply, ts: nowIso }] : []),
+          ].slice(-THREAD_KEEP);
+          try {
+            await saveThread(env, integration.integrationId, customerId, {
+              messages: orderThreadMessages,
+              pendingMessages: [],
+              handledMids: [...handledMids, ...newMids].slice(-30),
+            });
+          } catch (error: any) {
+            console.warn('[instagram][order] conversation non archivée:', error?.message || error);
+          }
+          return;
+        }
       }
       if (known?.data) {
         const d = known.data;
@@ -962,6 +1020,23 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
       }
     } catch (memErr: any) {
       console.warn('[instagram] mémoire client indisponible:', memErr?.message || memErr);
+      if (orderChangeHandled) {
+        const failureText = 'Je n’ai pas pu enregistrer ce changement pour le moment. La commande n’a pas été modifiée ; réessayez dans un instant ou contactez la boutique.';
+        let sent = false;
+        try { sent = await sendInstagramMessage(integration.igToken, customerId, failureText); } catch { /* best-effort */ }
+        try {
+          await saveThread(env, integration.integrationId, customerId, {
+            messages: [
+              ...freshStored.filter((entry: any) => entry?.role === 'user' || entry?.role === 'model'),
+              { role: 'user', text: groupedText.slice(0, 500), ts: new Date().toISOString() },
+              ...(sent ? [{ role: 'model', text: failureText, ts: new Date().toISOString() }] : []),
+            ].slice(-THREAD_KEEP),
+            pendingMessages: [],
+            handledMids: [...handledMids, ...newMids].slice(-30),
+          });
+        } catch { /* le webhook ne doit pas retraiter le message en boucle */ }
+        return;
+      }
     }
   }
 

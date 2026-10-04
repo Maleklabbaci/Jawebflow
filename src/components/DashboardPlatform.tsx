@@ -87,9 +87,12 @@ type LeadOrder = {
   customerName: string;
   phone: string;
   city: string;
+  deliveryAddress?: string;
   totalAmount: number | null;
   createdAt: string;
   updatedAt: string;
+  cancellationReason?: string;
+  changeHistory?: Array<{ type: string; details?: string; reason?: string; confirmedAt?: string }>;
 };
 
 /**
@@ -3395,6 +3398,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
                             <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Téléphone</span><span className="font-semibold text-slate-800">{order.phone || lead.phone || 'Non fourni'}</span></div>
                             <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Ville</span><span className="font-semibold text-slate-800">{order.city || lead.city || 'Non précisée'}</span></div>
+                            {order.deliveryAddress && <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Adresse de livraison</span><span className="font-semibold text-slate-800">{order.deliveryAddress}</span></div>}
                             <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Montant</span><span className="font-semibold text-slate-800">{typeof order.totalAmount === 'number' ? `${new Intl.NumberFormat('fr-DZ').format(order.totalAmount)} DA` : 'À vérifier avec le client — montant non confirmé'}</span></div>
                           </div>
                           <div>
@@ -3412,6 +3416,17 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Résumé transmis par le client</p>
                             <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{order.summary || lead.need || 'Aucun détail produit enregistré.'}</p>
                           </div>
+                          {Array.isArray(order.changeHistory) && order.changeHistory.length > 0 && (
+                            <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Changements confirmés par le client</p>
+                              {[...order.changeHistory].slice(-3).reverse().map((change, index) => (
+                                <div key={`${change.type}:${change.confirmedAt || index}`} className="text-xs text-slate-700">
+                                  <span className="font-semibold">{change.type === 'customer_cancellation' ? 'Annulation' : 'Modification'}{change.confirmedAt ? ` · ${new Date(change.confirmedAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+                                  {(change.details || change.reason) && <p className="mt-0.5 whitespace-pre-wrap">{change.details || change.reason}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           {lead.instagramOrigin && (
                             <div className="flex items-center justify-between gap-2 rounded-xl border border-pink-100 bg-pink-50/60 p-3 text-xs">
                               <span className="font-semibold text-pink-900">Origine : {lead.instagramOrigin.type || 'publication Instagram'}</span>
