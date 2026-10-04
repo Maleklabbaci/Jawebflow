@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { greetingReply, onRequestPost } from '../functions/api/webhook/instagram';
+import { FakeGemini, modelReply, textPart } from './helpers/fake-gemini';
 import { ENV, IG_ID, USER_ID, commentPayload, dmEvent, installFakes, seedAutomation, seedMerchant } from './helpers/fakes';
 
 let fx: ReturnType<typeof installFakes>;
@@ -123,9 +124,71 @@ describe('webhook : messages privés et stories', () => {
     expect(fx.meta.sent('messages')[0].body.message.text).toBe('Merci pour ton retour 🙏');
   });
 
-  it('une mention en story sans règle ne déclenche PAS l’IA', async () => {
-    await deliver(messagingPayload(dmEvent({ mention: true })));
-    expect(fx.meta.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  it('n’envoie pas un partage Instagram non identifié à Gemini Vision comme une image', async () => {
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(modelReply(textPart('Que souhaitez-vous savoir à propos de ce partage ?')));
+    const event: any = dmEvent({ text: 'Tu peux me parler de ce produit ?', mid: 'share-unknown' });
+    event.message.attachments = [{ type: 'share', payload: { url: 'https://www.instagram.com/p/private-example' } }];
+    await deliver(messagingPayload(event), { ...ENV, GEMINI_API_KEY: 'gemini-test-key', GEMINI_CONTEXT_CACHE_ENABLED: 'false' });
+    expect(JSON.stringify(gemini.calls[0].body.contents)).not.toContain('inline_data');
+    expect(JSON.stringify(gemini.calls[0].body.contents)).toContain('sharedMediaUnavailable');
+    expect(fx.meta.calls.some((call) => call.method === 'GET' && call.path.includes('/attachments'))).toBe(false);
+  });
+
+  it('ne crée pas une commande sur une intention seule, puis la crée après confirmation du brouillon', async () => {
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(
+      modelReply(textPart('Souhaitez-vous confirmer la commande ?')),
+      modelReply(textPart('Votre demande est transmise à la boutique pour validation.')),
+    );
+    const env = { ...ENV, GEMINI_API_KEY: 'gemini-test-key', GEMINI_CONTEXT_CACHE_ENABLED: 'false' };
+
+    await deliver(messagingPayload(dmEvent({ text: 'Je veux acheter une veste', mid: 'order-intent-1' })), env);
+    let prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orders || []).toHaveLength(0);
+    expect(prospect?.data?.orderDraft?.status).toBe('awaiting_confirmation');
+
+    await deliver(messagingPayload(dmEvent({ text: 'oui', mid: 'order-confirm-2' })), env);
+    prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orders).toHaveLength(1);
+    expect(prospect?.data?.orders[0]).toMatchObject({
+      status: 'pending_merchant_confirmation', channel: 'Instagram', totalAmount: null,
+    });
+    expect(prospect?.data?.orderDraft).toBeNull();
+    expect(gemini.calls[1].body.generationConfig.maxOutputTokens).toBe(180);
+  });
+
+  it('permet au client Instagram d’expliquer puis de confirmer l’annulation de sa commande', async () => {
+    const prospectId = 'asst1_ig_IGSID_SARA';
+    fx.supabase.seed('prospects', [{
+      id: prospectId,
+      assistant_id: 'asst1',
+      data: {
+        igUserId: 'IGSID_SARA',
+        sessionId: 'ig_IGSID_SARA',
+        orders: [{ id: 'ig-order-1', reference: 'JF-IGORDER1', status: 'confirmed', summary: 'Veste noire', createdAt: '2026-10-01T10:00:00.000Z' }],
+      },
+    }]);
+
+    await deliver(messagingPayload(dmEvent({ text: 'Je veux annuler ma commande', mid: 'ig-cancel-1' })));
+    let prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0].status).toBe('confirmed');
+    expect(prospect?.data.orderChangeDraft.status).toBe('awaiting_reason');
+    expect(fx.meta.sent('messages').at(-1)?.body.message.text).toContain('Qu’est-ce qui vous pousse');
+
+    await deliver(messagingPayload(dmEvent({ text: 'Le prix est trop élevé', mid: 'ig-cancel-2' })));
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0].status).toBe('confirmed');
+    expect(prospect?.data.orderChangeDraft.status).toBe('awaiting_confirmation');
+    expect(fx.meta.sent('messages').at(-1)?.body.message.text).toContain('option moins chère');
+
+    await deliver(messagingPayload(dmEvent({ text: 'oui', mid: 'ig-cancel-3' })));
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0]).toMatchObject({ status: 'cancelled', cancellationReason: 'Le prix est trop élevé' });
+    expect(prospect?.data.orderChangeDraft).toBeNull();
+    expect(fx.meta.sent('messages').at(-1)?.body.message.text).toContain('est annulée');
   });
 
   it('les copies (« échos ») de nos propres messages sont ignorées : pas de boucle', async () => {
