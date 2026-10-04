@@ -215,9 +215,14 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(document.querySelector('main')?.textContent).toContain('Mes clients intéressés');
     expect(document.querySelector('tbody')?.textContent).toContain('Sara');
     expect(screen.getByText('À suivre')).toBeTruthy();
+    expect(screen.queryByTestId('client-detail-panel')).toBeNull();
     fireEvent.click(document.querySelector('tbody tr')!);
     await settle(40);
     expect(screen.getByText('Suivi commercial')).toBeTruthy();
+    expect(screen.getByTestId('clients-split-layout').className).toContain('items-start');
+    expect(screen.getByTestId('clients-split-layout').className).toContain('xl:grid-cols-[minmax(0,1fr)_360px]');
+    expect(screen.getByTestId('clients-list-card').className).toContain('self-start');
+    expect(screen.getByTestId('client-detail-panel').getAttribute('aria-label')).toBe('Détails de Sara');
     expect(screen.getByText('Confirmer la commande et les détails de livraison')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Marquer le suivi comme traité' }));
     await settle(80);

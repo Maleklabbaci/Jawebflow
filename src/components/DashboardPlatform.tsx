@@ -2717,11 +2717,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   </div>
                 </div>
 
-                {/* 3. Main Split View Layout */}
-                <div className="flex flex-col lg:flex-row gap-6">
-                  
+                {/* Liste prioritaire; la fiche sélectionnée reste dans une colonne stable. */}
+                <div
+                  data-testid="clients-split-layout"
+                  className={`grid min-w-0 items-start gap-5 ${selectedLeadId ? 'grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-1'}`}
+                >
                   {/* CRM Table List */}
-                  <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4 flex-1 transition-all`}>
+                  <div data-testid="clients-list-card" className="min-w-0 self-start space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
                       <div>
                         <h3 className="font-bold text-slate-900 text-lg">Mes clients intéressés</h3>
@@ -2880,7 +2882,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     </div>
                   </div>
 
-                  {/* Lead Details Bento Drawer Card */}
+                  {/* Détails du prospect : largeur fixe, sans étirer la carte de liste. */}
                   {selectedLeadId && (() => {
                     const lead = leadsList.find(l => l.id === selectedLeadId) as any;
                     if (!lead) return null;
@@ -2915,8 +2917,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     }
 
                     return (
-                      <div className="w-full lg:w-[45%] xl:w-[40%] bg-white border border-slate-200 rounded-2xl shadow-md p-6 space-y-6 flex flex-col animate-in slide-in-from-right duration-250">
-                        
+                      <aside data-testid="client-detail-panel" aria-label={`Détails de ${lead.name}`} className="min-w-0 w-full self-start rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 space-y-5 flex flex-col animate-in slide-in-from-right duration-250">
                         {/* Drawer Header */}
                         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                           <div className="flex items-center gap-3">
@@ -2930,8 +2931,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           </div>
                           <button
                             type="button"
+                            aria-label="Fermer les détails du prospect"
                             onClick={() => setSelectedLeadId(null)}
-                            className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
                           >
                             ✕
                           </button>
@@ -3255,7 +3257,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           </div>
                         </div>
 
-                      </div>
+                      </aside>
                     );
                   })()}
 
