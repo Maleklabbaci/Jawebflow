@@ -11,6 +11,8 @@
 
 import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
+import { evaluateWidgetAccess } from '../_shared/widget-access.ts';
+import { rateLimited } from '../_shared/rate-limit.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
 import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from '../_shared/sales-intent.ts';
 import { processOrderChangeMessage } from '../_shared/order-changes.ts';
@@ -86,7 +88,7 @@ export async function onRequestPost(context) {
   let followUpRecorded = false;
 
   try {
-    const { message, assistantId, history, image, sessionId, messageId, isSimulator } = await context.request.json();
+    const { message, assistantId, history, image, sessionId, messageId, isSimulator, key, origin } = await context.request.json();
     const simulatorRequest = isSimulator === true;
     const env = context.env;
     const apiKey = env.GEMINI_API_KEY;
@@ -130,6 +132,27 @@ export async function onRequestPost(context) {
       } else {
         diagnostics.push(`config assistant non chargée: ${configRead.error}`);
         console.error(`[chat] config ${assistantId} non chargée:`, configRead.error);
+      }
+    }
+
+    // 1.4 ISOLATION + DÉBIT : clé widget / domaines autorisés, puis limite d'appels.
+    //     Une grande société multi-clients ne doit pas pouvoir voir son assistant
+    //     appelé depuis n'importe quel site ni voir son quota Gemini grillé.
+    if (!simulatorRequest && configLoaded) {
+      const providedOrigin = origin || context.request.headers?.get?.('origin') || '';
+      const access = evaluateWidgetAccess(config, { key, origin: providedOrigin });
+      if (!access.allowed) {
+        diagnostics.push(`accès widget refusé (${access.reason})`);
+        return new Response(JSON.stringify({
+          error: access.reason === 'key' ? 'Clé widget invalide pour cet assistant.' : 'Domaine non autorisé pour cet assistant.',
+          diagnostics,
+        }), { status: 403, headers: cors });
+      }
+      let rlHost = '';
+      try { rlHost = new URL(String(providedOrigin || '')).host; } catch { rlHost = ''; }
+      if (rateLimited(`chat:${assistantId}:${rlHost}`)) {
+        diagnostics.push('limite de débit dépassée');
+        return new Response(JSON.stringify({ error: 'Trop de requêtes, merci de patienter une minute.', diagnostics }), { status: 429, headers: cors });
       }
     }
 

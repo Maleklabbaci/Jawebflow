@@ -113,3 +113,30 @@ describe('/api/leads — suivi sécurisé', () => {
     expect(shipping.status).toBe(409);
   });
 });
+
+describe('/api/leads — pagination (échelle grande société)', () => {
+  const get = (query: string) => onRequestGet({
+    env: ENV,
+    request: new Request(`https://jawebflow.test/api/leads?assistantId=asst1&${query}`, {
+      method: 'GET', headers: { Authorization: 'Bearer BEARER_U1' },
+    }),
+  } as any);
+
+  it('page par page avec total et hasMore, sans tronquer à 200', async () => {
+    fx.supabase.seed('prospects', [1, 2, 3].map((i) => ({
+      id: `pg${i}`, assistant_id: 'asst1', updated_at: `2026-10-0${i}T10:00:00.000Z`,
+      data: { name: `Client ${i}`, phone: `055000000${i}` },
+    })));
+
+    const first = await get('limit=2&offset=0');
+    const b1 = await first.json() as any;
+    expect(b1.total).toBe(3);
+    expect(b1.prospects).toHaveLength(2);
+    expect(b1.hasMore).toBe(true);
+
+    const second = await get('limit=2&offset=2');
+    const b2 = await second.json() as any;
+    expect(b2.prospects).toHaveLength(1);
+    expect(b2.hasMore).toBe(false);
+  });
+});

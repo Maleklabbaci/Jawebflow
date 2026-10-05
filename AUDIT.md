@@ -202,3 +202,28 @@ dernier message du client. La relance « 1 h » passe toujours ; la « 24 h » e
 limite de la fenêtre et peut être refusée par Meta — elle est tentée puis marquée
 envoyée pour ne pas boucler. Le widget web n'a pas de canal sortant : seules les
 discussions Instagram sont relancées.
+
+---
+
+## 9. Prêt « grande société » (hors paiement, reporté) — 5 octobre 2026
+
+### Échelle : fin du plafond de 200 prospects
+- `supabaseListProspects(env, id, { limit, offset })` page désormais ; `listAllProspects`
+  parcourt TOUT (garde-fou 5000) pour les tâches de fond (relances, résumés).
+- `/api/leads` accepte `?limit&offset` et renvoie `{ prospects, total, hasMore }`.
+- Tableau de bord : bouton « Charger plus de clients » (monte la limite par +200).
+
+### Isolation des clients + débit sur `/api/chat`
+- `widget-access.ts` : chaque assistant peut définir `widgetKey` et `allowedDomains`
+  (liste de domaines, sous-domaines compris). `/api/chat` renvoie **403** si la clé ou
+  le domaine ne correspond pas ; rien n'est configuré → laissé passer (rétrocompatibilité).
+- `rate-limit.ts` : limite glissante (60/min par assistant+origine) → **429**. En mémoire
+  par isolate (best-effort) ; complétez avec une règle de rate limiting Cloudflare (WAF).
+- Le widget envoie son `origin` pour que la restriction de domaine s'applique.
+
+**Pour activer l'isolation :** dans la config de l'assistant (jsonb `config`), définir
+`widgetKey` (clé publique que seul votre widget envoie) et `allowedDomains`
+(ex. `["https://votre-site.dz"]`).
+
+**Reste à faire (non traité ici) :** rôles d'équipe (admin/agent/lecture seule) et,
+explicitement reporté à votre demande, la sécurisation des paiements (§4.7).

@@ -617,6 +617,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [inputMessage, setInputMessage] = useState<string>('');
   const [isBotTyping, setIsBotTyping] = useState<boolean>(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [leadsLimit, setLeadsLimit] = useState(200);
+  const [leadsHasMore, setLeadsHasMore] = useState(false);
   const [leadFollowUpBusy, setLeadFollowUpBusy] = useState<string | null>(null);
   const [leadFollowUpError, setLeadFollowUpError] = useState<string>('');
   const [orderActionBusy, setOrderActionBusy] = useState<string | null>(null);
@@ -808,11 +810,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const res = await fetch(`/api/leads?assistantId=${encodeURIComponent(assistantId)}`, {
+        const res = await fetch(`/api/leads?assistantId=${encodeURIComponent(assistantId)}&limit=${leadsLimit}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!res.ok || cancelled) return;
-        const { prospects: rows } = await res.json();
+        const { prospects: rows, hasMore } = await res.json();
         const prospects = (rows || []).map((data: any) => ({
           id: data.id,
           name: data.name || 'Nom à confirmer',
@@ -849,7 +851,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           instagramOrigin: data.instagramOrigin || null,
           orders: Array.isArray(data.orders) ? data.orders : [],
         }));
-        if (!cancelled) setLeadsList(prospects);
+        if (!cancelled) { setLeadsList(prospects); setLeadsHasMore(Boolean(hasMore)); }
       } catch (error) {
         console.warn('Error fetching prospects:', error);
       }
@@ -858,7 +860,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     fetchLeads();
     const interval = setInterval(fetchLeads, 8000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [assistantId]);
+  }, [assistantId, leadsLimit]);
 
   const handleCompleteLeadFollowUp = async (leadId: string) => {
     if (!assistantId || leadFollowUpBusy) return;
@@ -2919,6 +2921,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </tbody>
                       </table>
                     </div>
+
+                    {leadsHasMore && (
+                      <button
+                        type="button"
+                        onClick={() => setLeadsLimit((n) => n + 200)}
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-purple-700 hover:bg-purple-50"
+                      >
+                        Charger plus de clients
+                      </button>
+                    )}
                   </div>
 
                   {/* Lead Details Bento Drawer Card */}

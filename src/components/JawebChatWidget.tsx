@@ -124,6 +124,9 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
           message: text,
           sessionId: sessionKey,
           messageId,
+          // L'origine permet au serveur d'appliquer la restriction de domaine
+          // configurée par le marchand (isolation des clients).
+          origin: typeof window !== 'undefined' ? window.location.origin : '',
           // Historique court : le serveur s'en sert pour savoir que la
           // conversation est déjà lancée (et ne jamais renvoyer la salutation).
           history: messages.slice(-6).map((entry) => ({ sender: entry.sender === 'user' ? 'user' : 'bot', text: entry.text })),

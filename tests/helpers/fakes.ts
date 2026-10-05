@@ -151,13 +151,16 @@ export class FakeSupabase {
     }
     if (this.failTables.has(table)) return j({ message: 'boom' }, 500);
 
-    if (method === 'GET') {
+    if (method === 'GET' || method === 'HEAD') {
       const all = this.filter(table, url.searchParams, false);
       const limit = Number(url.searchParams.get('limit'));
-      const rows = limit ? all.slice(0, limit) : all;
-      const res = j(this.project(rows, url.searchParams.get('select')));
+      const offset = Number(url.searchParams.get('offset')) || 0;
+      const rows = limit ? all.slice(offset, offset + limit) : all.slice(offset);
+      const res = method === 'HEAD'
+        ? new Response(null, { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : j(this.project(rows, url.searchParams.get('select')));
       // Comme PostgREST : le nombre TOTAL de lignes (avant la limite) dans « Content-Range ».
-      if (prefer.includes('count=exact')) res.headers.set('Content-Range', rows.length ? `0-${rows.length - 1}/${all.length}` : `*/${all.length}`);
+      if (prefer.includes('count=exact')) res.headers.set('Content-Range', rows.length ? `${offset}-${offset + rows.length - 1}/${all.length}` : `*/${all.length}`);
       return res;
     }
 

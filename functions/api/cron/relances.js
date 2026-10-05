@@ -12,7 +12,7 @@
  * canal sortant). Voir functions/_shared/relances.ts pour la fenêtre Meta 24 h.
  */
 
-import { supabaseRequest, supabaseConfigured, supabaseListProspects, supabaseUpsertProspect } from '../../_shared/supabase.ts';
+import { supabaseRequest, supabaseConfigured, listAllProspects, supabaseUpsertProspect } from '../../_shared/supabase.ts';
 import { dueRelances, relanceText } from '../../_shared/relances.ts';
 import { sendMessage } from '../../_shared/ig-api.ts';
 
@@ -42,7 +42,7 @@ async function handle(context) {
     const igToken = integration?.access_token;
     if (!assistantId || !igToken) continue;
 
-    const prospects = await supabaseListProspects(env, assistantId);
+    const prospects = await listAllProspects(env, assistantId);
     for (const prospect of prospects) {
       const psid = prospect.igUserId;
       if (prospect.channel !== 'instagram' || !psid) continue;

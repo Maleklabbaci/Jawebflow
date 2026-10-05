@@ -256,6 +256,21 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(screen.getAllByText('Je veux la veste noire').length).toBeGreaterThan(0);
   });
 
+  it('la liste Clients pagine : « Charger plus » augmente la limite de chargement', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({
+      prospects: [{ id: 'p1', name: 'A', phone: '0550', email: 'Non fourni', need: 'x', status: 'qualifie', channel: 'instagram', updatedAt: '2026-10-05T10:00:00.000Z' }],
+      total: 300, offset: 0, limit: 200, hasMore: true,
+    }), { status: 200 }));
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+    fireEvent.click(screen.getByText('Charger plus de clients'));
+    await settle(120);
+    const calls = be.api.filter((r) => r.url.includes('/api/leads'));
+    expect(calls.some((r) => r.url.includes('limit=400'))).toBe(true);
+  });
+
   it('un client sans nom n’est plus étiqueté « Visiteur Anonyme »', async () => {
     be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
       id: 'p5', phone: '0550000000', email: 'Non fourni', need: 'Question',
