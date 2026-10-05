@@ -60,6 +60,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
+import { resolveTeamRole, roleCan, type TeamRole } from '../lib/roles';
+import { buildCoachPlan, coachHeadline } from '../../functions/_shared/bot-coach';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
@@ -236,6 +238,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   }, [accountMenuOpen]);
 
   const handleSectionChange = (section: DashboardSectionId) => {
+    if (section === 'simulator') {
+      try { localStorage.setItem('jawebflow_coach_tested', '1'); } catch { /* stockage indisponible */ }
+      setSimulatorTested(true);
+    }
     setCurrentSection(section);
     setOpenGroup(menuGroupOf(section));
     setMobileMenuOpen(false);
@@ -252,6 +258,40 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Assistant Configuration State
   const [assistantId, setAssistantId] = useState<string>('');
+  const [loadedAssistant, setLoadedAssistant] = useState<any>(null);
+  const [widgetKey, setWidgetKey] = useState('');
+  const [allowedDomains, setAllowedDomains] = useState('');
+  const [teamRoles, setTeamRoles] = useState<Record<string, TeamRole>>({});
+  const [newRoleEmail, setNewRoleEmail] = useState('');
+  const [newRoleValue, setNewRoleValue] = useState<TeamRole>('agent');
+  const [secBusy, setSecBusy] = useState(false);
+  const [secMsg, setSecMsg] = useState('');
+  const currentRole: TeamRole = !loadedAssistant
+    ? 'admin' // pendant le chargement : ne rien masquer
+    : resolveTeamRole({
+        ownerUid: loadedAssistant?.userId, currentUid: user?.uid, email: user?.email, teamRoles,
+      });
+
+  // ── LE COACH : ce qu'il reste à faire pour que le robot vende ────────────
+  const [simulatorTested, setSimulatorTested] = useState<boolean>(() => {
+    try { return localStorage.getItem('jawebflow_coach_tested') === '1'; } catch { return false; }
+  });
+  // (calculé au rendu : les états qu'il lit sont déclarés plus bas)
+  const computeCoachPlan = () => buildCoachPlan({
+    businessName,
+    businessCategory,
+    businessDescription,
+    websiteUrl,
+    businessInfo,
+    knowledgeCount: Array.isArray(knowledgeNotes) ? knowledgeNotes.length : 0,
+    openQuestions: learningQuestions,
+    rulesText: specialRulesText,
+    assistantTone,
+    whatsappEscalation,
+    widgetKey,
+    allowedDomains,
+    simulatorTested,
+  });
   const [assistantLoaded, setAssistantLoaded] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // « Parler à mon IA »
@@ -617,6 +657,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [inputMessage, setInputMessage] = useState<string>('');
   const [isBotTyping, setIsBotTyping] = useState<boolean>(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [leadsLimit, setLeadsLimit] = useState(200);
+  const [leadsHasMore, setLeadsHasMore] = useState(false);
   const [leadFollowUpBusy, setLeadFollowUpBusy] = useState<string | null>(null);
   const [leadFollowUpError, setLeadFollowUpError] = useState<string>('');
   const [orderActionBusy, setOrderActionBusy] = useState<string | null>(null);
@@ -682,6 +724,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             const activeId = localStorage.getItem(`jawebflow_active_assistant_${user.uid}`);
             const current = assistants.find(item => item.id === activeId) || assistants[0];
             setAssistantId(current.id || '');
+            // setState idempotents : sinon un nouvel objet à chaque passe relance
+            // le rendu en boucle (l'effet de chargement tourne sur [user, profile]).
+            setLoadedAssistant((prev: any) => (prev && prev.id === current.id ? prev : current));
+            setWidgetKey(String((current as any).widgetKey || ''));
+            setAllowedDomains(Array.isArray((current as any).allowedDomains) ? ((current as any).allowedDomains as string[]).join(', ') : String((current as any).allowedDomains || ''));
+            setTeamRoles((prev) => {
+              const next = ((current as any).teamRoles || {}) as Record<string, TeamRole>;
+              return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+            });
             if (current.id) localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, current.id);
             setWidgetId(current.widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`);
             const asstPlan = String(current.plan || '').toLowerCase();
@@ -751,6 +802,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     }
   };
 
+  useEffect(() => {
+    if (assistantId) void fetchLearningQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assistantId]);
+
   const handleResolveLearning = async (q: any) => {
     const answer = (learningDrafts[q.id] || '').trim();
     if (!answer) {
@@ -808,11 +864,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const res = await fetch(`/api/leads?assistantId=${encodeURIComponent(assistantId)}`, {
+        const res = await fetch(`/api/leads?assistantId=${encodeURIComponent(assistantId)}&limit=${leadsLimit}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!res.ok || cancelled) return;
-        const { prospects: rows } = await res.json();
+        const { prospects: rows, hasMore } = await res.json();
         const prospects = (rows || []).map((data: any) => ({
           id: data.id,
           name: data.name || 'Nom à confirmer',
@@ -849,7 +905,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           instagramOrigin: data.instagramOrigin || null,
           orders: Array.isArray(data.orders) ? data.orders : [],
         }));
-        if (!cancelled) setLeadsList(prospects);
+        if (!cancelled) { setLeadsList(prospects); setLeadsHasMore(Boolean(hasMore)); }
       } catch (error) {
         console.warn('Error fetching prospects:', error);
       }
@@ -858,7 +914,36 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     fetchLeads();
     const interval = setInterval(fetchLeads, 8000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [assistantId]);
+  }, [assistantId, leadsLimit]);
+
+  /** Fusionne des champs dans la config jsonb de l'assistant (isolation, rôles). */
+  const saveAssistantConfigPatch = async (patch: Record<string, unknown>) => {
+    if (!assistantId) throw new Error('Assistant non chargé.');
+    const { data } = await supabase.from('assistants').select('config').eq('id', assistantId).maybeSingle();
+    const merged = { ...((data?.config as Record<string, unknown>) || {}), ...patch };
+    const { error } = await supabase.from('assistants').update({ config: merged }).eq('id', assistantId);
+    if (error) throw new Error(error.message);
+    setLoadedAssistant((prev: any) => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const handleSaveWidgetSecurity = async () => {
+    setSecBusy(true); setSecMsg('');
+    try {
+      const domains = allowedDomains.split(/[\n,]+/).map((d) => d.trim()).filter(Boolean);
+      await saveAssistantConfigPatch({ widgetKey, allowedDomains: domains });
+      setSecMsg('Sécurité du widget enregistrée ✅');
+    } catch (e: any) { setSecMsg(`⚠️ ${e?.message || 'Erreur d’enregistrement.'}`); }
+    finally { setSecBusy(false); }
+  };
+
+  const handleSaveTeamRoles = async () => {
+    setSecBusy(true); setSecMsg('');
+    try {
+      await saveAssistantConfigPatch({ teamRoles });
+      setSecMsg('Rôles de l’équipe enregistrés ✅');
+    } catch (e: any) { setSecMsg(`⚠️ ${e?.message || 'Erreur d’enregistrement.'}`); }
+    finally { setSecBusy(false); }
+  };
 
   const handleCompleteLeadFollowUp = async (leadId: string) => {
     if (!assistantId || leadFollowUpBusy) return;
@@ -1641,7 +1726,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             ) : null}
 
             {/* Abonnement & factures */}
-            <button
+            {currentRole === 'admin' && (<button
               type="button"
               id="nav-billing"
               title="Abonnement & factures"
@@ -1656,7 +1741,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             >
               <CreditCard className="h-4 w-4" />
               <span className="hidden xl:inline">Abonnement & factures</span>
-            </button>
+            </button>)}
 
             {/* Mon profil */}
             <div className="relative" ref={accountMenuRef}>
@@ -1739,6 +1824,45 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               ================================================================= */}
           {currentSection === 'summary' && (
             <div className="space-y-6 animate-in fade-in duration-200">
+
+              {/* LE COACH : ce qu'il reste à faire pour développer le robot */}
+              {(() => {
+                const plan = computeCoachPlan();
+                return (
+                  <div className="rounded-xl border border-purple-200 bg-white p-5" data-testid="bot-coach-card">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-base font-bold text-slate-900">🎯 Développez votre robot</h2>
+                      <span className="text-xs font-bold text-purple-700">{plan.score} % prêt</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">{coachHeadline(plan)}</p>
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-purple-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff]" style={{ width: `${plan.score}%` }} />
+                    </div>
+                    <ul className="mt-4 space-y-2">
+                      {plan.next.slice(0, 4).map((step) => (
+                        <li key={step.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">{step.title}</p>
+                            <p className="text-xs text-slate-500">{step.why}{step.detail ? ` ${step.detail}` : ''}</p>
+                          </div>
+                          {step.section && (
+                            <button type="button" onClick={() => handleSectionChange(step.section as DashboardSectionId)} className="shrink-0 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700">
+                              Ouvrir
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {plan.next.length === 0 ? (
+                      <p className="mt-3 text-xs font-semibold text-emerald-700">Tout est en place : votre robot est opérationnel. ✅</p>
+                    ) : (
+                      <button type="button" onClick={() => handleSectionChange('overview')} className="mt-3 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
+                        Demander à « Mon IA » de s’en occuper
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Message d'accueil + action principale */}
               <div className="rounded-xl border border-slate-200 bg-white p-6">
@@ -2737,6 +2861,43 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       </div>
                     </div>
 
+                    {/* Petite liste des discussions des clients ayant validé une action */}
+                    {(() => {
+                      const actionLeads = leadsList.filter((l) => (l.orders || []).length > 0);
+                      if (actionLeads.length === 0) return null;
+                      return (
+                        <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-3">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 text-purple-600" />
+                            <h4 className="text-xs font-bold text-purple-900">Discussions — clients ayant validé une action</h4>
+                            <span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-purple-700">{actionLeads.length}</span>
+                          </div>
+                          <ul className="mt-2 space-y-1.5">
+                            {actionLeads.slice(0, 5).map((lead) => {
+                              const orders = lead.orders || [];
+                              const lastOrder = orders[orders.length - 1];
+                              const recap = buildDealRecap(lastOrder?.summary) || lead.need || '';
+                              return (
+                                <li key={lead.id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[11px] font-bold text-slate-800">{lead.name}</p>
+                                    {recap && <p className="truncate text-[10px] text-slate-500">{recap}</p>}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedLeadId(lead.id)}
+                                    className="shrink-0 text-[10px] font-semibold text-purple-700 hover:text-purple-900"
+                                  >
+                                    Voir la conversation
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      );
+                    })()}
+
                     {/* Filter and Search Bar */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       
@@ -2882,6 +3043,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </tbody>
                       </table>
                     </div>
+
+                    {leadsHasMore && (
+                      <button
+                        type="button"
+                        onClick={() => setLeadsLimit((n) => n + 200)}
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-purple-700 hover:bg-purple-50"
+                      >
+                        Charger plus de clients
+                      </button>
+                    )}
                   </div>
 
                   {/* Lead Details Bento Drawer Card */}
@@ -3456,7 +3627,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: BILLING & PLAN (Professional SaaS Billing Dashboard)
               ================================================================= */}
-          {currentSection === 'billing' && (
+          {currentSection === 'billing' && currentRole === 'admin' && (
             <div className="space-y-8 animate-in fade-in duration-200">
               
               {/* Notification Banner */}
@@ -4090,6 +4261,54 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               ================================================================= */}
           {currentSection === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-200">
+              {currentRole === 'admin' && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Sécurité & équipe</h3>
+                    <p className="text-xs text-slate-500">Isolez votre assistant (clé widget + domaines autorisés) et donnez des rôles à votre équipe.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600">Clé widget</label>
+                      <div className="mt-1 flex gap-2">
+                        <input value={widgetKey} onChange={(e) => setWidgetKey(e.target.value)} placeholder="Laisser vide pour désactiver" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs" />
+                        <button type="button" onClick={() => setWidgetKey(`wk_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`)} className="shrink-0 rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200">Générer</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600">Domaines autorisés (virgules ou retours à la ligne)</label>
+                      <textarea value={allowedDomains} onChange={(e) => setAllowedDomains(e.target.value)} rows={2} placeholder="https://votre-site.dz" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs" />
+                    </div>
+                  </div>
+                  <button type="button" disabled={secBusy} onClick={() => void handleSaveWidgetSecurity()} className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-60">{secBusy ? '…' : 'Enregistrer la sécurité'}</button>
+
+                  <div className="border-t border-slate-100 pt-4">
+                    <p className="text-[11px] font-bold text-slate-600">Rôles de l'équipe</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <input value={newRoleEmail} onChange={(e) => setNewRoleEmail(e.target.value)} placeholder="email@societe.dz" className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs" />
+                      <select value={newRoleValue} onChange={(e) => setNewRoleValue(e.target.value as TeamRole)} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs">
+                        <option value="agent">Agent</option>
+                        <option value="viewer">Lecture seule</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <button type="button" onClick={() => { const em = newRoleEmail.trim().toLowerCase(); if (!em) return; setTeamRoles((r) => ({ ...r, [em]: newRoleValue })); setNewRoleEmail(''); }} className="rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200">Ajouter</button>
+                    </div>
+                    <ul className="mt-2 space-y-1">
+                      {Object.entries(teamRoles).map(([email, role]) => (
+                        <li key={email} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1 text-xs">
+                          <span className="font-medium text-slate-700">{email}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-slate-500">{role}</span>
+                            <button type="button" aria-label={`Retirer ${email}`} onClick={() => setTeamRoles((r) => { const n = { ...r }; delete n[email]; return n; })} className="font-bold text-rose-600">✕</button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button type="button" disabled={secBusy} onClick={() => void handleSaveTeamRoles()} className="mt-2 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-60">{secBusy ? '…' : 'Enregistrer les rôles'}</button>
+                  </div>
+                  {secMsg && <p className="text-xs font-semibold text-slate-700">{secMsg}</p>}
+                </div>
+              )}
               <AccountProfileView
                 onAssistantProfileUpdate={async ({ companyName: nextCompanyName, phoneNumber }) => {
                   if (!assistantLoaded) throw new Error('Votre assistant se charge encore. Réessayez dans quelques instants.');

@@ -225,6 +225,52 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
   });
 
+  it('la liste Clients montre une petite liste « Discussions » pour ceux qui ont validé une action', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [
+      {
+        id: 'pA', name: 'Sara', phone: '0550123456', email: 'Non fourni', need: 'Veste',
+        status: 'qualifie', channel: 'instagram', updatedAt: '2026-10-05T10:00:00.000Z',
+        orders: [{ id: 'o1', reference: 'JF-ORDER1', status: 'pending_merchant_confirmation', channel: 'instagram', kind: 'order', kindLabel: 'Commande', summary: 'Client : Je veux la veste noire', customerName: 'Sara', createdAt: '2026-10-05T09:00:00.000Z', updatedAt: '2026-10-05T09:00:00.000Z' }],
+        messages: [{ sender: 'user', text: 'Je veux la veste noire', timestamp: '2026-10-05T09:00:00.000Z' }],
+      },
+      {
+        id: 'pB', name: 'Client Simple', phone: '0550999999', email: 'Non fourni', need: 'Question',
+        status: 'nouveau', channel: 'instagram', updatedAt: '2026-10-05T10:00:00.000Z',
+        messages: [{ sender: 'user', text: 'Question', timestamp: '2026-10-05T10:00:00.000Z' }],
+      },
+    ] }), { status: 200 }));
+
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+
+    expect(screen.getByText('Discussions — clients ayant validé une action')).toBeTruthy();
+    // Seul le client ayant validé une action apparaît dans la petite liste.
+    const list = document.querySelector('ul li button');
+    expect(screen.getAllByText('Voir la conversation').length).toBe(1);
+
+    fireEvent.click(screen.getByText('Voir la conversation'));
+    await settle(60);
+    expect(screen.getByText('Conversation')).toBeTruthy();
+    expect(screen.getAllByText('Je veux la veste noire').length).toBeGreaterThan(0);
+  });
+
+  it('la liste Clients pagine : « Charger plus » augmente la limite de chargement', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({
+      prospects: [{ id: 'p1', name: 'A', phone: '0550', email: 'Non fourni', need: 'x', status: 'qualifie', channel: 'instagram', updatedAt: '2026-10-05T10:00:00.000Z' }],
+      total: 300, offset: 0, limit: 200, hasMore: true,
+    }), { status: 200 }));
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+    fireEvent.click(screen.getByText('Charger plus de clients'));
+    await settle(120);
+    const calls = be.api.filter((r) => r.url.includes('/api/leads'));
+    expect(calls.some((r) => r.url.includes('limit=400'))).toBe(true);
+  });
+
   it('un client sans nom n’est plus étiqueté « Visiteur Anonyme »', async () => {
     be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
       id: 'p5', phone: '0550000000', email: 'Non fourni', need: 'Question',

@@ -177,3 +177,84 @@ rendez-vous. La nature est maintenant déduite de ce qui a réellement été con
   darija et arabe, transitions d'état par nature, affichage du tableau de bord.
 - Non vérifié ici : aucun test contre un vrai compte Instagram/Gemini ni un projet
   Supabase réel — la validation repose sur la suite du dépôt.
+
+---
+
+## 8. Relances automatiques (1 h / 24 h) — 5 octobre 2026
+
+Quand un client **valide une action** (commande, visite, rendez-vous, réservation,
+devis) sur Instagram, deux relances sont planifiées sur sa fiche (`relances`) :
+**+1 h** et **+24 h**. La tâche `GET /api/cron/relances?token=…` (à appeler toutes
+les ~10 min par cron-job.org / n8n / ViaSocket) envoie en DM les relances arrivées à
+échéance puis les marque envoyées.
+
+- `functions/_shared/relances.ts` : planification (`buildRelances`), échéance
+  (`dueRelances`) et textes (`relanceText`, qui reprend la bonne nature).
+- `functions/api/webhook/instagram.ts` : crée les relances à la validation.
+- `functions/api/cron/relances.js` : l'envoi planifié (auth par `CRON_SECRET`).
+
+**À configurer pour activer :** ajouter `CRON_SECRET` dans Cloudflare Pages, puis
+créer une tâche planifiée appelant `/api/cron/relances?token=<CRON_SECRET>` toutes les
+10 minutes.
+
+**Limite Meta :** Instagram n'autorise un message sortant que dans les 24 h suivant le
+dernier message du client. La relance « 1 h » passe toujours ; la « 24 h » est à la
+limite de la fenêtre et peut être refusée par Meta — elle est tentée puis marquée
+envoyée pour ne pas boucler. Le widget web n'a pas de canal sortant : seules les
+discussions Instagram sont relancées.
+
+---
+
+## 9. Prêt « grande société » (hors paiement, reporté) — 5 octobre 2026
+
+### Échelle : fin du plafond de 200 prospects
+- `supabaseListProspects(env, id, { limit, offset })` page désormais ; `listAllProspects`
+  parcourt TOUT (garde-fou 5000) pour les tâches de fond (relances, résumés).
+- `/api/leads` accepte `?limit&offset` et renvoie `{ prospects, total, hasMore }`.
+- Tableau de bord : bouton « Charger plus de clients » (monte la limite par +200).
+
+### Isolation des clients + débit sur `/api/chat`
+- `widget-access.ts` : chaque assistant peut définir `widgetKey` et `allowedDomains`
+  (liste de domaines, sous-domaines compris). `/api/chat` renvoie **403** si la clé ou
+  le domaine ne correspond pas ; rien n'est configuré → laissé passer (rétrocompatibilité).
+- `rate-limit.ts` : limite glissante (60/min par assistant+origine) → **429**. En mémoire
+  par isolate (best-effort) ; complétez avec une règle de rate limiting Cloudflare (WAF).
+- Le widget envoie son `origin` pour que la restriction de domaine s'applique.
+
+**Pour activer l'isolation :** dans la config de l'assistant (jsonb `config`), définir
+`widgetKey` (clé publique que seul votre widget envoie) et `allowedDomains`
+(ex. `["https://votre-site.dz"]`).
+
+**Reste à faire (non traité ici) :** rôles d'équipe (admin/agent/lecture seule) et,
+explicitement reporté à votre demande, la sécurisation des paiements (§4.7).
+
+### Rôles d'équipe + écran « Sécurité & équipe » (même passe)
+- `src/lib/roles.ts` : `resolveTeamRole` (propriétaire = admin ; sinon `teamRoles`
+  email→rôle ; à défaut lecture seule) et `roleCan` (permissions par rôle).
+- Tableau de bord : carte **« Sécurité & équipe »** (admin) dans « Mon profil » pour
+  régler `widgetKey` + `allowedDomains` (bouton Générer) et assigner des rôles
+  (`teamRoles`). L'abonnement/facturation est masqué aux non-admins.
+
+## 10. Le coach du bot — la plateforme développe le robot du marchand (5 octobre 2026)
+
+**But :** le marchand ne sait pas quoi ajouter pour que son robot vende. La
+plateforme le lui dit, et « Mon IA » peut le faire à sa place.
+
+- `functions/_shared/bot-coach.ts` : `buildCoachPlan()` analyse l'état RÉEL de
+  l'assistant et renvoie un plan ordonné (10 points : fiches de connaissances,
+  informations officielles, questions restées sans réponse, règles du commerçant,
+  site, Instagram, clé/domaines du widget, relais humain, ton, test au simulateur)
+  avec pour chacun *quoi / pourquoi / comment / quel écran*, plus un score
+  « prêt à X % ». `coachPlanText()` en fait un texte lisible.
+- **« Mon IA » oriente le marchand** : `CopilotSnapshot.coach` (questions ouvertes,
+  ton, relais humain, clé/domaines) alimente `buildContextBlock()`, qui ajoute
+  « Robot prêt à X % » + « CE QU’IL RESTE À AMÉLIORER ». La consigne n°10 lui dit
+  de ne donner **que deux points à la fois** et de proposer d'agir avec ses outils.
+- **Tableau de bord** : carte « 🎯 Développez votre robot » dans « Résumé »
+  (score, barre de progression, 4 étapes avec bouton « Ouvrir » sur le bon écran,
+  et « Demander à « Mon IA » de s’en occuper »). Ouvrir le simulateur marque
+  l'étape « testé » (localStorage).
+- Les questions en attente sont chargées dès qu'un assistant est actif
+  (`/api/learning`), donc le score est juste sans ouvrir l'onglet « Apprentissage ».
+
+Tests : `tests/bot-coach.test.ts` (7) + carte du coach dans `dashboard-smoke`.
