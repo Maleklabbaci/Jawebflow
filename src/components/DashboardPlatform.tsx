@@ -74,6 +74,7 @@ import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
+import { DEAL_KIND_LABELS, DEAL_NEXT_ACTIONS, DEAL_STEPS, SALES_INTENT_LABELS, buildDealRecap, dealKindOf, dealStatusLabel, type DealKind } from '../../functions/_shared/sales-intent';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
 
@@ -81,6 +82,9 @@ type LeadOrder = {
   id: string;
   reference: string;
   status: string;
+  /** Ce que le client a validé : commande, visite, rendez-vous, réservation, devis. */
+  kind?: string;
+  kindLabel?: string;
   channel: string;
   summary: string;
   customerName: string;
@@ -140,7 +144,7 @@ const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
   { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
   { id: 'leads', label: 'Clients', icon: BarChart3, pro: true, group: 'clients' },
-  { id: 'orders', label: 'Commandes', icon: ShoppingCart, pro: true },
+  { id: 'orders', label: 'Commandes & RDV', icon: ShoppingCart, pro: true },
 ];
 
 interface DashboardPlatformProps {
@@ -811,7 +815,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const { prospects: rows } = await res.json();
         const prospects = (rows || []).map((data: any) => ({
           id: data.id,
-          name: data.name || 'Visiteur Anonyme',
+          name: data.name || 'Nom à confirmer',
           city: data.city || '',
           phone: data.phone || 'Non fourni',
           email: data.email || 'Non fourni',
@@ -1604,7 +1608,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 {currentSection === 'simulator' && 'Tester mon assistant'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
-                {currentSection === 'orders' && 'Commandes'}
+                {currentSection === 'orders' && 'Commandes & RDV'}
                 {currentSection === 'leads' && (insightsTab === 'prospects' ? 'Mes clients' : "Vue d'ensemble")}
                 {groupOf(currentSection) && SECTION_GROUPS[groupOf(currentSection) as string].tabs.find((t) => t.id === currentSection)?.label}
               </h1>
@@ -2861,7 +2865,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                     ) : lead.followUpStatus === 'done' ? (
                                       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-emerald-700">Traité</span>
                                     ) : lead.salesIntentType ? (
-                                      <span className="text-[10px] font-semibold text-purple-600">Intérêt : {lead.salesIntentType}</span>
+                                      <span className="text-[10px] font-semibold text-purple-600">Intérêt : {SALES_INTENT_LABELS[lead.salesIntentType] || lead.salesIntentType}</span>
                                     ) : <span className="text-[10px] text-slate-300">—</span>}
                                   </td>
                                   <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">{lead.date}</td>
@@ -2952,7 +2956,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                 {lead.city && (
                                   <span className="px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-semibold">📍 {lead.city}</span>
                                 )}
-                                {lead.name !== 'Visiteur Anonyme' && (
+                                {lead.name !== 'Nom à confirmer' && (
                                   <button
                                     type="button"
                                     onClick={() => handleCopyField(lead.name, 'name')}
@@ -3040,6 +3044,23 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             {lead.followUpStatus === 'done' && <p className="text-[10px] font-semibold text-emerald-700">Suivi terminé{lead.followUpCompletedAt ? ` le ${new Date(lead.followUpCompletedAt).toLocaleDateString('fr-FR')}` : ''}.</p>}
                             {leadFollowUpError && <p role="alert" className="text-[10px] font-medium text-rose-600">{leadFollowUpError}</p>}
                           </div>
+                        )}
+
+                        {Array.isArray(lead.orders) && lead.orders.length > 0 && (
+                          <section className="space-y-2 rounded-xl border border-purple-200 bg-purple-50/60 p-4">
+                            <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-900">
+                              <ShoppingCart className="h-3.5 w-3.5 text-purple-600" /> Ce que ce client a validé
+                            </h4>
+                            {lead.orders.map((order: LeadOrder) => (
+                              <div key={order.id} className="flex items-start justify-between gap-2 rounded-lg bg-white/80 px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-bold text-slate-800">{order.kindLabel || DEAL_KIND_LABELS[dealKindOf(order)]}</p>
+                                  <p className="truncate text-[10px] text-slate-500">{order.reference || order.id}{order.createdAt && Number.isFinite(Date.parse(order.createdAt)) ? ` · ${new Date(order.createdAt).toLocaleDateString('fr-FR')}` : ''}</p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[9px] font-bold text-purple-800">{dealStatusLabel(order.kind, order.status)}</span>
+                              </div>
+                            ))}
+                          </section>
                         )}
 
                         {lead.channel === 'instagram' && lead.igUserId && (
@@ -3356,105 +3377,76 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {currentSection === 'orders' && (() => {
             const orders = leadsList.flatMap((lead) => (lead.orders || []).map((order) => ({ lead, order })))
               .sort((a, b) => Date.parse(b.order.createdAt || '') - Date.parse(a.order.createdAt || ''));
-            const labels: Record<string, string> = {
-              pending_merchant_confirmation: 'À confirmer par la boutique',
-              confirmed: 'Confirmée', preparing: 'En préparation', shipped: 'Expédiée', delivered: 'Livrée', cancelled: 'Annulée',
-            };
-            const steps = ['pending_merchant_confirmation', 'confirmed', 'preparing', 'shipped', 'delivered'];
-            const nextStatuses: Record<string, Array<{ status: string; label: string; destructive?: boolean }>> = {
-              pending_merchant_confirmation: [{ status: 'confirmed', label: 'Confirmer la commande' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
-              confirmed: [{ status: 'preparing', label: 'Démarrer la préparation' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
-              preparing: [{ status: 'shipped', label: 'Marquer comme expédiée' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
-              shipped: [{ status: 'delivered', label: 'Marquer comme livrée' }],
-              delivered: [], cancelled: [],
-            };
+            // Ce que le client a validé n'est pas toujours une « commande » :
+            // visite (immobilier), rendez-vous (agence, cabinet), réservation
+            // (restaurant, salle) ou devis. Chaque nature a son suivi et ses mots.
+            const kindOf = (order: LeadOrder): DealKind => dealKindOf(order);
+            const labelOf = (order: LeadOrder) => order.kindLabel || DEAL_KIND_LABELS[kindOf(order)];
+            const kindsPresent: DealKind[] = Array.from(new Set<DealKind>(orders.map(({ order }: { order: LeadOrder }) => kindOf(order))));
             return (
               <div className="mx-auto max-w-6xl space-y-6 animate-in fade-in duration-200">
                 <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-purple-600" /><h2 className="text-lg font-bold text-slate-900">Commandes via l’assistant</h2></div>
-                    <p className="mt-1 text-sm text-slate-500">Seules les demandes confirmées explicitement par le client apparaissent ici. Vérifie prix et disponibilité avant de confirmer.</p>
+                    <div className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-purple-600" /><h2 className="text-lg font-bold text-slate-900">Commandes, visites et rendez-vous</h2></div>
+                    <p className="mt-1 text-sm text-slate-500">Chaque demande confirmée explicitement par le client arrive ici avec sa nature exacte : commande, visite, rendez-vous, réservation ou devis. Vérifie les détails avant de confirmer.</p>
                   </div>
-                  <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">{orders.length} commande{orders.length === 1 ? '' : 's'}</span>
+                  <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">{orders.length} demande{orders.length === 1 ? '' : 's'}</span>
                 </div>
+                {kindsPresent.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {kindsPresent.map((kind) => (
+                      <span key={kind} className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-600">
+                        {DEAL_KIND_LABELS[kind]} · {orders.filter(({ order }) => kindOf(order) === kind).length}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {orderActionError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{orderActionError}</p>}
                 {orders.length ? (
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <ul className="space-y-3">
                     {orders.map(({ lead, order }) => {
-                      const currentStep = steps.indexOf(order.status);
+                      const kind = kindOf(order);
+                      const nextStatuses = DEAL_NEXT_ACTIONS[kind][order.status] || [];
                       const busyKey = `${lead.id}:${order.id}`;
+                      const status = dealStatusLabel(kind, order.status);
+                      const recap = buildDealRecap(order.summary) || lead.need || 'Aucun détail enregistré.';
                       const created = order.createdAt && Number.isFinite(Date.parse(order.createdAt))
-                        ? new Date(order.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : 'Date indisponible';
+                        ? new Date(order.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                        : '';
+                      const facts = [order.customerName || 'Nom à confirmer', order.phone, order.city].filter(Boolean).join(' · ');
                       return (
-                        <article key={`${lead.id}:${order.id}`} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{order.reference || order.id} · {order.channel || lead.channel || 'Assistant'}</p>
-                              <h3 className="mt-1 text-base font-bold text-slate-900">{order.customerName || lead.name}</h3>
-                              <p className="text-xs text-slate-500">{created}</p>
+                        <li key={`${lead.id}:${order.id}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center rounded-full bg-purple-600 px-2.5 py-0.5 text-[10px] font-bold text-white">{labelOf(order)}</span>
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${order.status === 'cancelled' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{status}</span>
+                              <span className="text-[11px] font-bold text-slate-500">{order.reference || order.id}</span>
+                              {created && <span className="text-[11px] text-slate-400">{created}</span>}
                             </div>
-                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${order.status === 'pending_merchant_confirmation' ? 'border-amber-200 bg-amber-50 text-amber-800' : order.status === 'cancelled' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-                              {labels[order.status] || order.status}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
-                            <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Téléphone</span><span className="font-semibold text-slate-800">{order.phone || lead.phone || 'Non fourni'}</span></div>
-                            <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Ville</span><span className="font-semibold text-slate-800">{order.city || lead.city || 'Non précisée'}</span></div>
-                            {order.deliveryAddress && <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Adresse de livraison</span><span className="font-semibold text-slate-800">{order.deliveryAddress}</span></div>}
-                            <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Montant</span><span className="font-semibold text-slate-800">{typeof order.totalAmount === 'number' ? `${new Intl.NumberFormat('fr-DZ').format(order.totalAmount)} DA` : 'À vérifier avec le client — montant non confirmé'}</span></div>
-                          </div>
-                          <div>
-                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suivi de commande</p>
-                            {order.status === 'cancelled' ? <p className="text-xs font-semibold text-rose-700">Cette demande a été annulée.</p> : (
-                              <div className="grid grid-cols-5 gap-1">
-                                {steps.map((step, index) => {
-                                  const complete = currentStep >= 0 && index <= currentStep;
-                                  return <div key={step} className="min-w-0"><div className={`h-1.5 rounded-full ${complete ? 'bg-purple-600' : 'bg-slate-200'}`} /><p className={`mt-1 truncate text-[8px] ${complete ? 'font-bold text-purple-700' : 'text-slate-400'}`}>{labels[step]}</p></div>;
-                                })}
-                              </div>
-                            )}
-                          </div>
-                          <div className="rounded-xl border border-slate-100 p-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Résumé transmis par le client</p>
-                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{order.summary || lead.need || 'Aucun détail produit enregistré.'}</p>
-                          </div>
-                          {Array.isArray(order.changeHistory) && order.changeHistory.length > 0 && (
-                            <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Changements confirmés par le client</p>
-                              {[...order.changeHistory].slice(-3).reverse().map((change, index) => (
-                                <div key={`${change.type}:${change.confirmedAt || index}`} className="text-xs text-slate-700">
-                                  <span className="font-semibold">{change.type === 'customer_cancellation' ? 'Annulation' : 'Modification'}{change.confirmedAt ? ` · ${new Date(change.confirmedAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</span>
-                                  {(change.details || change.reason) && <p className="mt-0.5 whitespace-pre-wrap">{change.details || change.reason}</p>}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {lead.instagramOrigin && (
-                            <div className="flex items-center justify-between gap-2 rounded-xl border border-pink-100 bg-pink-50/60 p-3 text-xs">
-                              <span className="font-semibold text-pink-900">Origine : {lead.instagramOrigin.type || 'publication Instagram'}</span>
-                              {lead.instagramOrigin.permalink && <a href={lead.instagramOrigin.permalink} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 font-semibold text-pink-700">Ouvrir <ExternalLink className="h-3 w-3" /></a>}
-                            </div>
-                          )}
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                            <button type="button" onClick={() => { setSelectedLeadId(lead.id); setInsightsTab('prospects'); handleSectionChange('leads'); }} className="text-xs font-semibold text-purple-700 hover:text-purple-900">Voir la conversation</button>
                             <div className="flex flex-wrap gap-2">
-                              {(nextStatuses[order.status] || []).map((action) => (
-                                <button key={action.status} type="button" onClick={() => void updateOrderStatus(lead.id, order.id, action.status)} disabled={orderActionBusy !== null} className={`rounded-lg px-3 py-2 text-[10px] font-bold transition disabled:cursor-wait disabled:opacity-60 ${action.destructive ? 'border border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                              {nextStatuses.map((action) => (
+                                <button key={action.status} type="button" onClick={() => void updateOrderStatus(lead.id, order.id, action.status)} disabled={orderActionBusy !== null} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition disabled:cursor-wait disabled:opacity-60 ${action.destructive ? 'border border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
                                   {orderActionBusy === busyKey ? <Loader2 className="mr-1 inline h-3 w-3 animate-spin" /> : null}{action.label}
                                 </button>
                               ))}
                             </div>
                           </div>
-                        </article>
+                          <p className="mt-2 truncate text-sm font-semibold text-slate-900" title={order.summary}>{recap}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                            {facts && <span>{facts}</span>}
+                            {typeof order.totalAmount === 'number' && order.totalAmount > 0 && <span className="font-semibold text-slate-700">{order.totalAmount.toLocaleString('fr-FR')} DA</span>}
+                            {order.deliveryAddress && <span className="truncate">Livraison : {order.deliveryAddress}</span>}
+                            <button type="button" onClick={() => { setSelectedLeadId(lead.id); setInsightsTab('prospects'); handleSectionChange('leads'); }} className="font-semibold text-purple-700 hover:text-purple-900">Voir la conversation</button>
+                          </div>
+                        </li>
                       );
                     })}
-                  </div>
+                  </ul>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
                     <ShoppingCart className="mx-auto h-9 w-9 text-slate-300" />
-                    <h3 className="mt-3 font-bold text-slate-800">Aucune commande pour le moment</h3>
-                    <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">Une commande apparaîtra ici uniquement après une confirmation claire du client dans une conversation avec l’assistant.</p>
+                    <h3 className="mt-3 font-bold text-slate-800">Aucune demande pour le moment</h3>
+                    <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">Une commande, une visite, un rendez-vous ou une réservation apparaîtra ici dès qu’un client l’aura confirmée clairement dans une conversation avec l’assistant.</p>
                   </div>
                 )}
               </div>

@@ -2061,9 +2061,19 @@ ${businessKnowledge ? `\nBASE DE CONNAISSANCES DE LA BOUTIQUE :\n${businessKnowl
 ${igEvolvingContext.historyExcerpt ? `• Historique Instagram récent :\n${igEvolvingContext.historyExcerpt}` : ""}`
                   }
                 });
-                botReplyText = aiRes.text || `Salam ! Bienvenue chez ${storeName}. Comment puis-je vous aider ? ${businessSiteUrl ? `Vous pouvez aussi visiter notre site : ${businessSiteUrl}` : ''}`;
+                // ⛔ Le message de bienvenue n'est envoyé QU'au premier contact :
+                // si la conversation est déjà lancée, une panne de l'IA ne doit
+                // surtout pas renvoyer « Bienvenue chez… » (cela coupait net la
+                // discussion en cours et faisait perdre la vente/le rendez-vous).
+                const igConversationStarted = Boolean(String(igEvolvingContext?.historyExcerpt || '').trim());
+                botReplyText = aiRes.text || (igConversationStarted
+                  ? `Pardon, votre dernier message n'est pas passé de mon côté 🙏 Pouvez-vous me le répéter ?`
+                  : `Salam ! Bienvenue chez ${storeName}. Comment puis-je vous aider ? ${businessSiteUrl ? `Vous pouvez aussi visiter notre site : ${businessSiteUrl}` : ''}`);
               } catch (aiErr) {
-                botReplyText = `Salam ! Merci pour votre message chez ${storeName}. Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h (Paiement à la livraison & BaridiMob). ${businessSiteUrl ? `Découvrez nos offres sur notre site : ${businessSiteUrl}` : 'En quoi puis-je vous aider ?'}`;
+                const igConversationStarted = Boolean(String(igEvolvingContext?.historyExcerpt || '').trim());
+                botReplyText = igConversationStarted
+                  ? `Petit souci technique de mon côté 🙏 Pouvez-vous répéter votre demande ? Je reste là.`
+                  : `Salam ! Merci pour votre message chez ${storeName}. Nous livrons dans les 58 wilayas d'Algérie sous 24h à 48h (Paiement à la livraison & BaridiMob). ${businessSiteUrl ? `Découvrez nos offres sur notre site : ${businessSiteUrl}` : 'En quoi puis-je vous aider ?'}`;
               }
 
               // 2. Send the reply back directly via Meta Instagram Graph API if token is configured
