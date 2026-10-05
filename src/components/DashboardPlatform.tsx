@@ -2737,6 +2737,43 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       </div>
                     </div>
 
+                    {/* Petite liste des discussions des clients ayant validé une action */}
+                    {(() => {
+                      const actionLeads = leadsList.filter((l) => (l.orders || []).length > 0);
+                      if (actionLeads.length === 0) return null;
+                      return (
+                        <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-3">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 text-purple-600" />
+                            <h4 className="text-xs font-bold text-purple-900">Discussions — clients ayant validé une action</h4>
+                            <span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-purple-700">{actionLeads.length}</span>
+                          </div>
+                          <ul className="mt-2 space-y-1.5">
+                            {actionLeads.slice(0, 5).map((lead) => {
+                              const orders = lead.orders || [];
+                              const lastOrder = orders[orders.length - 1];
+                              const recap = buildDealRecap(lastOrder?.summary) || lead.need || '';
+                              return (
+                                <li key={lead.id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[11px] font-bold text-slate-800">{lead.name}</p>
+                                    {recap && <p className="truncate text-[10px] text-slate-500">{recap}</p>}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedLeadId(lead.id)}
+                                    className="shrink-0 text-[10px] font-semibold text-purple-700 hover:text-purple-900"
+                                  >
+                                    Voir la conversation
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      );
+                    })()}
+
                     {/* Filter and Search Bar */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       
