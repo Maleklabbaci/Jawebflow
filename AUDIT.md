@@ -281,3 +281,22 @@ Eh je veux parler au telephone … ») :
 
 Tests : `tests/sales-intent.test.ts` (+3) et `tests/leads-api.test.ts` (+2 : envoi
 Instagram + cas site sans envoi). 581 tests / 37 fichiers, tsc 0.
+
+## 12. Garde-fous anti « commandes » parasites + honnêteté produits (5 octobre 2026)
+
+Suite à des cartes aberrantes (« Salam · Salam · Tu me connais » en *Commande*, un
+appel devenu *Commande*, et le bot qui invente une marque de streetwear pour une
+agence de marketing) :
+
+1. **`hasDealSignal()`** (sales-intent.ts) : une demande n'est finalisée que si le
+   fil porte une vraie intention (achat, visite, rdv, réservation, appel, date…).
+   Branché comme condition de création dans `chat.js` et `webhook/instagram.ts` :
+   une conversation de salutations ne crée **plus jamais** de commande.
+2. **`hasDateSignal()` + `refineDealKind()`** : « le 07 octobre », « demain »,
+   « 14h » sans mot d'achat → nature **Rendez-vous**, plus « Commande ».
+3. **Honnêteté produits** (prompt.ts) : consigne stricte de ne jamais citer une
+   marque / produit / prix absent de la base de connaissances ; si la base est
+   vide, présenter l'activité générale sans inventer de catalogue.
+
+Tests : `sales-intent` (+ garde-fou signal/date/nature) et `chat-orders-api`
+(+ « un oui dans des salutations ne crée aucune commande »). 586 tests / 37 fichiers.

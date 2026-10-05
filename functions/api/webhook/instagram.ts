@@ -38,7 +38,7 @@ import {
 } from "../../_shared/supabase.ts";
 import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localGreeting, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
-import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName, refineDealKind } from "../../_shared/sales-intent.ts";
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName, refineDealKind, hasDealSignal } from "../../_shared/sales-intent.ts";
 import { buildRelances } from "../../_shared/relances.ts";
 import { detectOrderManagementIntent, processOrderChangeMessage } from "../../_shared/order-changes.ts";
 import { getGeminiContextCache } from "../../_shared/gemini-cache.ts";
@@ -996,7 +996,13 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
           ...savedMessages.map((entry: any) => `${entry.sender === 'bot' ? 'Assistant' : 'Client'} : ${String(entry.text || '').slice(0, 350)}`),
           `Client : ${groupedText.slice(0, 500)}`,
         ].join('\n').slice(-2_000);
-        if (orderConfirmed) {
+        // GARDE-FOU : pas de « commande » créée depuis une simple conversation
+        // de salutations — il faut une vraie intention commerciale dans le fil.
+        const clientGateText = [
+          ...savedMessages.filter((e: any) => e.sender !== 'bot').map((e: any) => String(e.text || '')),
+          groupedText,
+        ].join(' ');
+        if (orderConfirmed && hasDealSignal(clientGateText)) {
           const orderEventId = newMids[newMids.length - 1] || message?.mid || crypto.randomUUID();
           createdOrder = createPendingOrderRequest({
             id: `ig_${orderEventId}`,

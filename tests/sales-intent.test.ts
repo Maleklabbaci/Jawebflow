@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, extractClientName, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, refineDealKind, dealConfirmationMessage } from '../functions/_shared/sales-intent';
+import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, extractClientName, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, refineDealKind, dealConfirmationMessage, hasDealSignal, hasDateSignal } from '../functions/_shared/sales-intent';
 
 describe('détection et suivi commercial', () => {
   it('repère une volonté d’achat en français, darija translittérée et arabe', () => {
@@ -212,5 +212,29 @@ describe('récap et nature réelle de la demande', () => {
     expect(dealConfirmationMessage('order', 'Yacine')).toContain('commande est confirmée');
     expect(dealConfirmationMessage('appointment')).toContain('rendez-vous est confirmé');
     expect(dealConfirmationMessage('visit')).toContain('visite est confirmée');
+  });
+});
+
+describe('garde-fou : pas de commande sans intention réelle', () => {
+  it('les salutations et le small talk ne portent aucun signal de demande', () => {
+    expect(hasDealSignal('Salam')).toBe(false);
+    expect(hasDealSignal('Tu me connais ?')).toBe(false);
+    expect(hasDealSignal('comment ça va')).toBe(false);
+    expect(hasDealSignal('oui')).toBe(false);
+  });
+
+  it('une date, un appel ou un achat portent un signal', () => {
+    expect(hasDateSignal('Le 07 octobre')).toBe(true);
+    expect(hasDateSignal('demain')).toBe(true);
+    expect(hasDateSignal('a 14h')).toBe(true);
+    expect(hasDealSignal('On vas dire le 10 octobre')).toBe(true);
+    expect(hasDealSignal('je veux parler au telephone')).toBe(true);
+    expect(hasDealSignal('je veux acheter cette veste')).toBe(true);
+  });
+
+  it("une date sans mot d'achat est un rendez-vous, pas une commande", () => {
+    expect(refineDealKind('order', 'Le 07 octobre')).toBe('appointment');
+    expect(refineDealKind('order', 'demain nimporte quel heure')).toBe('appointment');
+    expect(refineDealKind('order', 'je commande la veste')).toBe('order');
   });
 });

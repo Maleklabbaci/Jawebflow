@@ -141,10 +141,42 @@ export function refineDealKind(kind: DealKind | null | undefined, clientText: un
   if (!kind) return null;
   const t = normalize(clientText);
   if (!t) return kind;
-  if (kind === 'order' && !has(t, ORDER_TERMS) && !has(t, BUY_VERBS) && has(t, PHONE_TALK)) {
+  if (kind === 'order' && !has(t, ORDER_TERMS) && !has(t, BUY_VERBS) && (has(t, PHONE_TALK) || hasDateSignal(t))) {
     return 'appointment';
   }
   return kind;
+}
+
+const DATE_MONTHS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
+const DATE_WORDS = ['demain', 'aujourd', 'apres-demain', 'matin', 'midi', 'apres-midi', 'soir', 'heure', 'heures', 'semaine', 'week-end', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
+/** Le client évoque une date / un créneau (« le 07 octobre », « demain », « 14h »). */
+export function hasDateSignal(input: unknown): boolean {
+  const t = normalize(input);
+  if (!t) return false;
+  if (has(t, [...DATE_MONTHS, ...DATE_WORDS])) return true;
+  return /\b(?:le|a|a partir du|vers)\s+\d{1,2}\b/.test(t) || /\b\d{1,2}\s?(?:h|heure)\b/.test(t);
+}
+
+/**
+ * Le fil de discussion porte-t-il une VRAIE demande commerciale (achat, visite,
+ * rendez-vous, réservation, devis, appel, date…) ? Sert de garde-fou : une
+ * conversation de salutations (« salam », « tu me connais ? ») ne doit JAMAIS
+ * créer de « commande » dans le suivi du marchand.
+ */
+export function hasDealSignal(input: unknown): boolean {
+  const t = normalize(input);
+  if (!t) return false;
+  const intent = detectSalesIntent(t);
+  const strongIntent = Boolean(intent && ['purchase', 'visit', 'booking', 'appointment'].includes(intent.type));
+  return (
+    detectDealKind(t) !== null
+    || strongIntent
+    || has(t, ORDER_TERMS)
+    || has(t, BUY_VERBS)
+    || has(t, PHONE_TALK)
+    || hasDateSignal(t)
+  );
 }
 
 /** Message envoyé au client quand le marchand confirme la demande. */

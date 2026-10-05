@@ -207,3 +207,19 @@ describe('/api/chat — politesse et nature de la validation', () => {
     expect(prospect?.data.orderDraft).toBeNull();
   });
 });
+
+describe('garde-fou anti « commande » depuis le small talk', () => {
+  it('un « oui » dans une conversation de salutations ne crée aucune commande', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'asst1_web_session-order-test', assistant_id: 'asst1', updated_at: '2026-10-03T10:00:00.000Z',
+      data: { name: 'Andelmalek', orderDraft: { status: 'awaiting_confirmation', kind: 'order', channel: 'Site web', summary: 'Client : Salam', updatedAt: '2026-10-05T00:00:00.000Z' } },
+    }]);
+    const res = await send('oui', 'greet-nocreate-1', [
+      { sender: 'user', text: 'Salam' },
+      { sender: 'bot', text: 'Confirmez-vous ?' },
+    ]);
+    expect(res.status).toBe(200);
+    const prospect = fx.supabase.rows('prospects').find((r) => r.id === 'asst1_web_session-order-test');
+    expect(prospect?.data.orders || []).toHaveLength(0);
+  });
+});
