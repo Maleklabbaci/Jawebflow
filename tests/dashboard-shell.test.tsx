@@ -225,6 +225,35 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
   });
 
+  it('la liste résume la discussion au lieu de l’afficher en entier', async () => {
+    const transcript = [
+      'Client : Salam', 'Assistant : Marhba bik !', 'Client : Oui demain',
+      'Client : Oui nimporte quel heure', 'Assistant : C’est noté !', 'Client : Je valide le rendez-vous',
+    ].join('\n');
+    const order = {
+      id: 'rdv-1', reference: 'JF-RDV001', status: 'pending_merchant_confirmation', channel: 'instagram',
+      kind: 'appointment', kindLabel: 'Rendez-vous',
+      summary: transcript, customerName: 'Anis', phone: '0550112233', city: 'Oran',
+      totalAmount: null, createdAt: '2026-10-05T09:00:00.000Z', updatedAt: '2026-10-05T09:00:00.000Z',
+    };
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
+      id: 'p4', name: 'Anis', phone: '0550112233', email: 'Non fourni', need: 'Appel de rappel',
+      status: 'qualifie', channel: 'instagram', city: 'Oran', orders: [order], updatedAt: order.updatedAt,
+    }] }), { status: 200 }));
+
+    render(<DashboardPlatform initialSection="orders" />);
+    await settle(300);
+    const main = document.querySelector('main')?.textContent || '';
+    // Le résumé garde l'information utile…
+    expect(main).toContain('demain');
+    expect(main).toContain('nimporte quel heure');
+    // …mais pas la discussion.
+    expect(main).not.toContain('Marhba bik');
+    expect(main).not.toContain('Assistant :');
+    expect(main).not.toContain('Je valide le rendez-vous');
+    expect(screen.getByText('RDV à confirmer')).toBeTruthy();
+  });
+
   it('la fiche client rappelle ce que le client a validé (visite, pas commande)', async () => {
     be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
       id: 'p3', name: 'Karim', phone: '0550998877', email: 'Non fourni', need: 'Je veux visiter l’appartement',
@@ -273,8 +302,7 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(document.getElementById('nav-orders')?.textContent).toContain('1');
     expect(screen.getByText(/JF-ORDER1/)).toBeTruthy();
     expect(screen.getByText('Veste noire, taille M')).toBeTruthy();
-    expect(screen.getByText('12 rue des Fleurs')).toBeTruthy();
-    expect(screen.getByText('Adresse confirmée par la cliente')).toBeTruthy();
+    expect(screen.getByText(/12 rue des Fleurs/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer la commande' }));
     await settle(100);
@@ -305,7 +333,7 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(screen.getByText('Commandes, visites et rendez-vous')).toBeTruthy();
     expect(screen.getByText('Visite')).toBeTruthy();
     expect(screen.getAllByText('Visite à confirmer').length).toBeGreaterThan(0);
-    expect(screen.getByText('Suivi — visite')).toBeTruthy();
+    expect(screen.getByText('JF-VISIT01')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Confirmer la visite' })).toBeTruthy();
     expect(screen.queryByText('Confirmer la commande')).toBeNull();
   });

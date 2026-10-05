@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildLeadFollowUp, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion } from '../functions/_shared/sales-intent';
+import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion } from '../functions/_shared/sales-intent';
 
 describe('détection et suivi commercial', () => {
   it('repère une volonté d’achat en français, darija translittérée et arabe', () => {
@@ -148,5 +148,25 @@ describe('la réponse proposée par le bot est bien comprise comme un oui', () =
     expect(isAffirmative('confirme la modification')).toBe(true);
     expect(isAffirmative('Oui, annuler')).toBe(false); // l'annulation a sa propre confirmation explicite
     expect(isAffirmative('non')).toBe(false);
+  });
+});
+
+describe('résumé court d’une demande pour la liste', () => {
+  it('jette la discussion et ne garde que l’information utile', () => {
+    const transcript = [
+      'Client : Oui demain', 'Assistant : C’est noté !', 'Client : Oui oui',
+      'Client : Oui nimporte quel heure', 'Assistant : Parfait.', 'Client : Je valide la commande',
+    ].join('\n');
+    const recap = buildDealRecap(transcript);
+    expect(recap).toContain('demain');
+    expect(recap).toContain('nimporte quel heure');
+    expect(recap).not.toContain('Assistant');
+    expect(recap).not.toContain('C’est noté');
+    expect(recap).not.toContain('Je valide la commande');
+  });
+
+  it('un résumé déjà court est rendu tel quel', () => {
+    expect(buildDealRecap('Veste noire, taille M')).toBe('Veste noire, taille M');
+    expect(buildDealRecap('')).toBe('');
   });
 });

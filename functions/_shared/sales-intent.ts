@@ -120,6 +120,35 @@ export function dealKindLabel(kind: unknown): string {
   return isDealKind(kind) ? DEAL_KIND_LABELS[kind] : DEAL_KIND_LABELS.order;
 }
 
+const CLIENT_LINE = /^(?:client|visiteur|moi|me)\s*[:\-–]\s*(.+)$/i;
+const ASSISTANT_LINE = /^(?:assistant|bot|ia)\s*[:\-–]/i;
+const LEADING_YES = /^(?:oui+|ok+|okay|d accord|dacc|safi|waf9t|bien sur|d'accord)\b[, ]*/i;
+
+/**
+ * Résumé COURT de ce que le client a validé, pour la liste des demandes.
+ * Le commerçant ne veut pas relire toute la discussion : on ne garde que les
+ * messages du client qui portent une information (« demain », « la veste noire
+ * taille M »), en jetant les simples acquiescements (« oui », « je valide »).
+ * Si le champ n'est pas une transcription, il est déjà court : on le rend tel quel.
+ */
+export function buildDealRecap(summary: unknown): string {
+  const text = String(summary || '').trim();
+  if (!text) return '';
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const hasTranscript = lines.some((l) => CLIENT_LINE.test(l) || ASSISTANT_LINE.test(l));
+  const source = hasTranscript
+    ? lines.filter((l) => CLIENT_LINE.test(l)).map((l) => l.replace(CLIENT_LINE, '$1'))
+    : [text];
+  const cleaned = source
+    .map((l) => l.replace(LEADING_YES, '').trim())
+    .filter((l) => l.length >= 3)
+    .filter((l) => !isAffirmative(l) && !isExplicitOrderConfirmation(l))
+    .map((l) => l.replace(/[.!?\s]+$/, ''))
+    .filter(Boolean);
+  const recap = cleaned.join(' · ');
+  return recap.length > 200 ? `${recap.slice(0, 200).trimEnd()}…` : recap;
+}
+
 function normalize(text: unknown): string {
   return String(text || '')
     // ⚠️ Le pliage arabe passe AVANT la décomposition : NFKD sépare « أ » en
