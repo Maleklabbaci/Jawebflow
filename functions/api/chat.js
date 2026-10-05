@@ -12,14 +12,14 @@
 import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
-import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, createPendingOrderRequest } from '../_shared/sales-intent.ts';
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from '../_shared/sales-intent.ts';
 import { processOrderChangeMessage } from '../_shared/order-changes.ts';
 import { getGeminiContextCache } from '../_shared/gemini-cache.ts';
 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
 const geminiVisionUrl = (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/${'gemini-3.1-flash-lite'}:generateContent?key=${apiKey}`;
 import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached, monthlyCostBlock } from '../_shared/limits.ts';
-import { buildSalesSystemPrompt, buildBusinessContextText, isSmallTalk, localGreeting, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from '../_shared/prompt.ts';
+import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite } from '../_shared/site-search.ts';
 import { notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from '../_shared/merchant-notify.ts';
@@ -309,22 +309,75 @@ export async function onRequestPost(context) {
       if (relevantPricing) businessContext.pricingAndServices = relevantPricing;
     }
 
-    // 🧮 ÉCONOMIE : une pure politesse (salam/merci/ok...) ne déclenche NI la
+    // Historique serveur prioritaire : le widget ne peut ni perdre le fil ni
+    // forger un faux message précédent pour confirmer une commande.
+    let conversationHistory = Array.isArray(history) ? history : [];
+    if (supabaseConfigured(env)) {
+      try {
+        const sessionKey = String(sessionId || 'web');
+        const historyRes = await supabaseRequest(env, `conversation_contexts?assistant_id=eq.${encodeURIComponent(assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}&channel=eq.web_widget&select=user_message,assistant_response,created_at&order=created_at.desc&limit=4`);
+        if (historyRes.ok) {
+          const rows = await historyRes.json().catch(() => []);
+          if (Array.isArray(rows) && rows.length) {
+            conversationHistory = rows.reverse().flatMap((row) => [
+              ...(row.user_message ? [{ sender: 'user', text: String(row.user_message).slice(0, 2_000) }] : []),
+              ...(row.assistant_response ? [{ sender: 'bot', text: String(row.assistant_response).slice(0, 2_000) }] : []),
+            ]).slice(-6);
+          }
+        }
+      } catch { /* l'historique n'interrompt jamais le chat */ }
+    }
+
+    // 🧮 ÉCONOMIE : une pure politesse (salam/merci/au revoir) ne déclenche NI la
     // recherche produits NI l'appel IA — réponse locale gratuite.
-    if (isSmallTalk(message) && !simulatorRequest) {
+    // ⛔ Le message de bienvenue n'est envoyé QU'au premier contact : en pleine
+    // conversation, un « merci » ou un « ok » ne relance plus jamais « Bienvenue
+    // chez… » (cela coupait net la discussion et faisait perdre la vente en cours).
+    const smallTalkKind = !simulatorRequest && !isExplicitOrderConfirmation(message)
+      ? classifySmallTalk(message)
+      : null;
+    if (smallTalkKind) {
+      const sessionKey = String(sessionId || 'web');
+      const pid = webProspectId(assistantId, sessionKey);
       let awaitingOrderConfirmation = false;
-      if (isAffirmative(message) && supabaseConfigured(env)) {
+      let alreadyTalked = false;
+      if (supabaseConfigured(env)) {
         try {
-          const sessionKey = String(sessionId || 'web');
-          const leadRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(webProspectId(assistantId, sessionKey))}&select=data`);
+          const leadRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(pid)}&select=id,data`);
           const rows = leadRes.ok ? await leadRes.json().catch(() => []) : [];
-          awaitingOrderConfirmation = rows?.[0]?.data?.orderDraft?.status === 'awaiting_confirmation';
-        } catch { /* une réponse « oui » reste une simple politesse si aucun brouillon n'est accessible */ }
+          const lead = Array.isArray(rows) ? rows[0] : null;
+          awaitingOrderConfirmation = lead?.data?.orderDraft?.status === 'awaiting_confirmation';
+          alreadyTalked = Array.isArray(lead?.data?.messages) && lead.data.messages.length > 0;
+        } catch { /* une politesse reste une politesse si la fiche est inaccessible */ }
       }
-      if (!awaitingOrderConfirmation) {
-        diagnostics.push('politesse -> réponse locale sans IA');
-        return reply(localGreeting(message, config), diagnostics, { skipped: 'smalltalk', weight: 0 });
+      // « Déjà commencé » = historique serveur OU fiche client déjà bavarde : le
+      // widget n'envoie pas toujours l'historique, la fiche sert de mémoire.
+      const conversationStarted = conversationHistory.length > 0 || alreadyTalked;
+      const politeReply = localPoliteReply(smallTalkKind, config, { conversationStarted, awaitingConfirmation: awaitingOrderConfirmation });
+      if (politeReply) {
+        diagnostics.push(`politesse (${smallTalkKind}) -> réponse locale sans IA`);
+        // Journaliser l'échange : sans trace, le « merci » suivant serait encore
+        // pris pour un premier contact et renverrait le message de bienvenue.
+        if (supabaseConfigured(env)) {
+          const nowIso = new Date().toISOString();
+          const write = supabaseUpsertProspect(env, pid, assistantId, {
+            channel: 'site web',
+            sessionId: sessionKey,
+            lastInteractionAt: nowIso,
+            messages: [
+              { sender: 'user', text: String(message).slice(0, 500), timestamp: nowIso },
+              { sender: 'bot', text: politeReply.slice(0, 500), timestamp: nowIso },
+            ],
+          });
+          const onError = (error) => console.warn('[chat][lead] politesse non journalisée:', error?.message || error);
+          if (typeof context.waitUntil === 'function') context.waitUntil(write.catch(onError));
+          else await write.catch(onError);
+        }
+        return reply(politeReply, diagnostics, { skipped: 'smalltalk', weight: 0 });
       }
+      // « oui » / « ok » en pleine conversation : la réponse dépend de la question
+      // précédente du bot, donc seule l'IA (avec l'historique) peut répondre.
+      diagnostics.push('politesse en pleine conversation -> l’IA répond avec l’historique');
     }
 
     // 🧮 POIDS DE QUOTA : message simple = 1 · photo = 4 · recherche produits = +2.
@@ -410,24 +463,6 @@ export async function onRequestPost(context) {
       }
     }
 
-    // Historique serveur prioritaire : le widget ne peut ni perdre le fil ni
-    // forger un faux message précédent pour confirmer une commande.
-    let conversationHistory = Array.isArray(history) ? history : [];
-    if (supabaseConfigured(env)) {
-      try {
-        const sessionKey = String(sessionId || 'web');
-        const historyRes = await supabaseRequest(env, `conversation_contexts?assistant_id=eq.${encodeURIComponent(assistantId)}&session_id=eq.${encodeURIComponent(sessionKey)}&channel=eq.web_widget&select=user_message,assistant_response,created_at&order=created_at.desc&limit=4`);
-        if (historyRes.ok) {
-          const rows = await historyRes.json().catch(() => []);
-          if (Array.isArray(rows) && rows.length) {
-            conversationHistory = rows.reverse().flatMap((row) => [
-              ...(row.user_message ? [{ sender: 'user', text: String(row.user_message).slice(0, 2_000) }] : []),
-              ...(row.assistant_response ? [{ sender: 'bot', text: String(row.assistant_response).slice(0, 2_000) }] : []),
-            ]).slice(-6);
-          }
-        }
-      } catch { /* l'historique n'interrompt jamais le chat */ }
-    }
 
     // 3. Historique de conversation (image jointe => partie inline_data native)
     const userParts = [];
@@ -449,6 +484,7 @@ export async function onRequestPost(context) {
 
     // 📇 Capture des coordonnées, signaux d'achat et commandes confirmées.
     let createdOrder = null;
+    let nameCapturedThisTurn = '';
     if (!simulatorRequest && supabaseConfigured(env)) {
       try {
         const wf = extractLeadFacts(message);
@@ -456,15 +492,36 @@ export async function onRequestPost(context) {
         const possibleConfirmation = isExplicitOrderConfirmation(message) || isAffirmative(message);
         const sessionKey = String(sessionId || 'web');
         const pid = linkedProspectId || webProspectId(assistantId, sessionKey);
-        if (hasFacts || salesIntent || possibleConfirmation) {
-          const exRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(pid)}&select=id,data`);
-          const exists = exRes.ok ? ((await exRes.json().catch(() => [])) || [])[0] : null;
-          const draft = exists?.data?.orderDraft;
+        const exRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(pid)}&select=id,data`);
+        const exists = exRes.ok ? ((await exRes.json().catch(() => [])) || [])[0] : null;
+        const draft = exists?.data?.orderDraft;
+        if (hasFacts || salesIntent || possibleConfirmation || draft?.status === 'awaiting_name') {
+          // Réponse à « c'est à quel nom ? » : on complète la demande déjà créée.
+          if (draft?.status === 'awaiting_name' && draft.orderId) {
+            const clientName = extractClientName(message);
+            if (clientName) {
+              const nowName = new Date().toISOString();
+              const renamedOrders = (Array.isArray(exists?.data?.orders) ? exists.data.orders : [])
+                .map((o) => (o && o.id === draft.orderId ? { ...o, customerName: clientName } : o));
+              try {
+                await supabaseUpsertProspect(env, pid, assistantId, {
+                  name: clientName, orders: renamedOrders, orderDraft: null,
+                });
+                nameCapturedThisTurn = clientName;
+              } catch (error) { console.warn('[chat][nom] non enregistré:', error?.message || error); }
+            }
+          }
           const orderConfirmed = exists?.data?.handoffStatus !== 'human' && (
             isExplicitOrderConfirmation(message)
             || (draft?.status === 'awaiting_confirmation' && isAffirmative(message))
           );
-          if (hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation') {
+          // Ce que le client valide n'est pas forcément une « commande » : une
+          // visite, un rendez-vous, une réservation ou un devis sont enregistrés
+          // avec leur nature exacte (visible telle quelle chez le marchand).
+          const confirmedDealKind = detectConfirmedDealKind(message)
+            || (draft?.status === 'awaiting_confirmation' && isAffirmative(message) ? draft?.kind : null)
+            || null;
+          if (hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation' || draft?.status === 'awaiting_name') {
             const now = new Date();
             const nowIso = now.toISOString();
             const contactAvailable = Boolean(wf.phone || wf.email || exists?.data?.phone || exists?.data?.email || linkedProspectId);
@@ -488,6 +545,7 @@ export async function onRequestPost(context) {
                 customerName: wf.name || exists?.data?.name,
                 phone: wf.phone || exists?.data?.phone,
                 city: wf.city || exists?.data?.city,
+                kind: confirmedDealKind,
                 now,
               });
             }
@@ -507,7 +565,7 @@ export async function onRequestPost(context) {
               ...((isNew || (salesIntent && !orderConfirmed)) ? { need: String(message).slice(0, 2_000) } : {}),
               ...(salesIntent ? { salesIntentType: salesIntent.type } : {}),
               ...(Object.keys(followUpPatch).length ? { ...followUpPatch } : {}),
-              ...(createdOrder ? { orders: [createdOrder], orderDraft: null } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
+              ...(createdOrder ? { orders: [createdOrder], orderDraft: createdOrder.customerName ? null : { status: 'awaiting_name', orderId: createdOrder.id, updatedAt: nowIso } } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
               lastInteractionAt: nowIso,
               messages: [{ sender: 'user', text: String(message).slice(0, 500), timestamp: nowIso }],
             });
@@ -519,15 +577,12 @@ export async function onRequestPost(context) {
               note: 'Le suivi est enregistré pour le commerçant dans son espace prospects. Ne prétends pas qu’un rappel client est déjà effectué ou planifié.',
             };
             if (createdOrder) {
-              businessContext.orderCreated = {
-                reference: createdOrder.reference,
-                status: createdOrder.status,
-                note: 'Demande de commande enregistrée, en attente de validation humaine par la boutique. Aucune confirmation de stock, prix ou paiement.',
-              };
-              diagnostics.push(`demande de commande ${createdOrder.reference} enregistrée pour validation`);
+              businessContext.orderCreated = buildDealCreatedContext(createdOrder, { askName: !createdOrder.customerName });
+              diagnostics.push(`${createdOrder.kindLabel.toLowerCase()} ${createdOrder.reference} enregistrée pour validation`);
             } else {
               diagnostics.push(salesIntent ? `prospect enregistré (${salesIntent.type})` : 'fiche prospect enrichie');
             }
+            if (nameCapturedThisTurn) businessContext.nameCaptured = { name: nameCapturedThisTurn, instruction: "Le client vient de donner son nom pour compléter sa demande. Remercie-le et confirme que son dossier est complet, sans répéter tout l'historique." };
 
             // Une notification externe seulement pour un nouveau contact ou un
             // signal commercial fort ; les questions de prix isolées restent
@@ -538,7 +593,7 @@ export async function onRequestPost(context) {
                 need: String(message).slice(0, 200),
                 source: 'site web',
                 ...(salesIntent ? { salesIntentType: salesIntent.type, nextAction: salesIntent.nextAction } : {}),
-                ...(createdOrder ? { orderReference: createdOrder.reference } : {}),
+                ...(createdOrder ? { orderReference: createdOrder.reference, dealKind: createdOrder.kind, dealKindLabel: createdOrder.kindLabel } : {}),
               };
               try { await notifyLead(env, assistantId, leadPayload); } catch { /* notification best-effort */ }
               try {
@@ -647,7 +702,8 @@ export async function onRequestPost(context) {
       throw new Error("Réponse Gemini vide");
     }
 
-    if (supabaseConfigured(env) && trackedProspectId && !createdOrder && isOrderConfirmationQuestion(aiText)) {
+    const askedDealKind = detectConfirmationQuestionKind(aiText);
+    if (supabaseConfigured(env) && trackedProspectId && !createdOrder && askedDealKind) {
       const draftMessages = [
         ...conversationHistory.filter((entry) => entry?.sender === 'user').slice(-4).map((entry) => `Client : ${String(entry.text || '').slice(0, 350)}`),
         `Client : ${String(message).slice(0, 350)}`,
@@ -657,6 +713,9 @@ export async function onRequestPost(context) {
           orderDraft: {
             status: 'awaiting_confirmation',
             channel: 'Site web',
+            // Nature de la demande : le « oui » qui suit valide CETTE demande
+            // (visite, rendez-vous, réservation, devis ou commande).
+            kind: askedDealKind,
             summary: draftMessages.join('\\n').slice(-2_000),
             updatedAt: new Date().toISOString(),
           },

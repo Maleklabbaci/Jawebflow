@@ -96,14 +96,25 @@ export async function onRequestPost(context) {
       const orders = Array.isArray(data.orders) ? data.orders : [];
       const order = orders.find((candidate) => candidate?.id === orderId);
       if (!order) return new Response(JSON.stringify({ error: 'Commande introuvable' }), { status: 404, headers: cors });
-      const transitions = {
-        pending_merchant_confirmation: ['confirmed', 'cancelled'],
-        confirmed: ['preparing', 'cancelled'],
-        preparing: ['shipped', 'cancelled'],
-        shipped: ['delivered'],
-        delivered: [],
-        cancelled: [],
-      };
+      // Une COMMANDE suit préparation → expédition → livraison. Une VISITE, un
+      // RENDEZ-VOUS, une RÉSERVATION ou un DEVIS n'ont pas de colis à expédier :
+      // ils passent directement de « confirmé » à « réalisé » (delivered).
+      const isOrder = String(order.kind || 'order') === 'order';
+      const transitions = isOrder
+        ? {
+          pending_merchant_confirmation: ['confirmed', 'cancelled'],
+          confirmed: ['preparing', 'cancelled'],
+          preparing: ['shipped', 'cancelled'],
+          shipped: ['delivered'],
+          delivered: [],
+          cancelled: [],
+        }
+        : {
+          pending_merchant_confirmation: ['confirmed', 'cancelled'],
+          confirmed: ['delivered', 'cancelled'],
+          delivered: [],
+          cancelled: [],
+        };
       if (!transitions[order.status]?.includes(orderStatus)) {
         return new Response(JSON.stringify({ error: `Transition impossible : ${order.status} → ${orderStatus}` }), { status: 409, headers: cors });
       }
