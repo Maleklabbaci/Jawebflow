@@ -56,7 +56,8 @@ import {
   Activity,
   ChevronDown,
   Share2,
-  ShoppingCart
+  ShoppingCart,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
@@ -989,6 +990,53 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setOrderActionError(error?.message || 'Erreur réseau. Réessaie.');
     } finally {
       setOrderActionBusy(null);
+    }
+  };
+
+  const deleteOrder = async (prospectId: string, orderId: string) => {
+    if (!assistantId || orderActionBusy) return;
+    if (!window.confirm('Supprimer définitivement cette demande ? Le client ne sera pas prévenu.')) return;
+    setOrderActionBusy(`${prospectId}:${orderId}`);
+    setOrderActionError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId, action: 'delete_order', orderId }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) throw new Error(result?.error || 'Impossible de supprimer la demande.');
+      setLeadsList((current) => current.map((lead) => lead.id === prospectId
+        ? { ...lead, orders: (lead.orders || []).filter((order) => order.id !== orderId) }
+        : lead));
+    } catch (error: any) {
+      setOrderActionError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setOrderActionBusy(null);
+    }
+  };
+
+  const deleteClient = async (leadId: string) => {
+    if (!assistantId || handoffBusy) return;
+    if (!window.confirm('Supprimer définitivement ce client et tout son historique ? Cette action est irréversible.')) return;
+    setHandoffBusy(leadId);
+    setHandoffError('');
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ assistantId, prospectId: leadId, action: 'delete_prospect' }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) throw new Error(result?.error || 'Impossible de supprimer le client.');
+      setLeadsList((current) => current.filter((lead) => lead.id !== leadId));
+      setSelectedLeadId((cur) => (cur === leadId ? null : cur));
+    } catch (error: any) {
+      setHandoffError(error?.message || 'Erreur réseau. Réessaie.');
+    } finally {
+      setHandoffBusy(null);
     }
   };
 
@@ -2956,6 +3004,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             <th className="p-3.5">Statut</th>
                             <th className="p-3.5">Suivi</th>
                             <th className="p-3.5">Dernière Activité</th>
+                            <th className="p-3.5">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -3030,12 +3079,17 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                     ) : <span className="text-[10px] text-slate-300">—</span>}
                                   </td>
                                   <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">{lead.date}</td>
+                                  <td className="p-3.5">
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); void deleteClient(lead.id); }} title="Supprimer ce client" aria-label={`Supprimer ${lead.name}`} className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-700">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </td>
                                 </tr>
                               );
                             })
                           ) : (
                             <tr>
-                              <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                              <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">
                                 Aucun client ne correspond à votre recherche.
                               </td>
                             </tr>
@@ -3600,6 +3654,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                   {orderActionBusy === busyKey ? <Loader2 className="mr-1 inline h-3 w-3 animate-spin" /> : null}{action.label}
                                 </button>
                               ))}
+                              <button type="button" onClick={() => void deleteOrder(lead.id, order.id)} disabled={orderActionBusy !== null} title="Supprimer cette demande" aria-label="Supprimer cette demande" className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-wait disabled:opacity-60">
+                                <Trash2 className="h-3 w-3" />
+                              </button>
                             </div>
                           </div>
                           <p className="mt-2 truncate text-sm font-semibold text-slate-900" title={order.summary}>{recap}</p>

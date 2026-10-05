@@ -69,12 +69,14 @@ export async function onRequestPost(context) {
     }
     if (orderId.length > 200) return new Response(JSON.stringify({ error: 'Identifiant de commande invalide' }), { status: 400, headers: cors });
     if (followUpStatus && followUpStatus !== 'done') return new Response(JSON.stringify({ error: 'Statut de suivi invalide' }), { status: 400, headers: cors });
-    if (Boolean(orderId) !== Boolean(orderStatus)) return new Response(JSON.stringify({ error: 'orderId et orderStatus doivent être fournis ensemble' }), { status: 400, headers: cors });
     if (orderStatus && !new Set(['confirmed', 'preparing', 'shipped', 'delivered', 'cancelled']).has(orderStatus)) {
       return new Response(JSON.stringify({ error: 'Statut de commande invalide' }), { status: 400, headers: cors });
     }
-    if (action && !['takeover', 'resume'].includes(action)) return new Response(JSON.stringify({ error: 'Action de suivi invalide' }), { status: 400, headers: cors });
-    if (Number(Boolean(followUpStatus)) + Number(Boolean(orderId)) + Number(Boolean(action)) !== 1) {
+    if (action && !['takeover', 'resume', 'delete_order', 'delete_prospect'].includes(action)) return new Response(JSON.stringify({ error: 'Action de suivi invalide' }), { status: 400, headers: cors });
+    if (action === 'delete_order' && !orderId) return new Response(JSON.stringify({ error: 'delete_order exige un orderId' }), { status: 400, headers: cors });
+    if (action === 'delete_order' && orderStatus) return new Response(JSON.stringify({ error: 'delete_order ne prend pas de orderStatus' }), { status: 400, headers: cors });
+    if (action !== 'delete_order' && Boolean(orderId) !== Boolean(orderStatus)) return new Response(JSON.stringify({ error: 'orderId et orderStatus doivent être fournis ensemble' }), { status: 400, headers: cors });
+    if (Number(Boolean(followUpStatus)) + Number(Boolean(orderStatus)) + Number(Boolean(action)) !== 1) {
       return new Response(JSON.stringify({ error: 'Une seule action de suivi est acceptée à la fois' }), { status: 400, headers: cors });
     }
 
@@ -98,6 +100,31 @@ export async function onRequestPost(context) {
         nextAction: 'Suivi terminé',
       });
       return new Response(JSON.stringify({ ok: true, prospectId, followUpStatus: 'done', completedAt }), { status: 200, headers: cors });
+    }
+
+    if (action === 'delete_prospect') {
+      const del = await supabaseRequest(
+        context.env,
+        `prospects?id=eq.${encodeURIComponent(prospectId)}&assistant_id=eq.${encodeURIComponent(assistantId)}`,
+        { method: 'DELETE' },
+      );
+      if (!del.ok) return new Response(JSON.stringify({ error: 'Suppression impossible (la base ne répond pas).' }), { status: 500, headers: cors });
+      return new Response(JSON.stringify({ ok: true, prospectId, deleted: 'prospect' }), { status: 200, headers: cors });
+    }
+
+    if (action === 'delete_order') {
+      const orders = Array.isArray(data.orders) ? data.orders : [];
+      if (!orders.some((candidate) => candidate?.id === orderId)) return new Response(JSON.stringify({ error: 'Commande introuvable' }), { status: 404, headers: cors });
+      // supabaseUpsertProspect FUSIONNE les commandes (union par id) : il ne peut
+      // pas en retirer une. On réécrit donc la fiche complète avec la liste filtrée.
+      const newData = { ...data, orders: orders.filter((candidate) => candidate?.id !== orderId) };
+      const write = await supabaseRequest(context.env, 'prospects?on_conflict=id', {
+        method: 'POST',
+        body: JSON.stringify({ id: prospectId, assistant_id: assistantId, data: newData, updated_at: new Date().toISOString() }),
+        headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      });
+      if (!write.ok) return new Response(JSON.stringify({ error: 'Suppression impossible (la base ne répond pas).' }), { status: 500, headers: cors });
+      return new Response(JSON.stringify({ ok: true, prospectId, orderId, deleted: 'order' }), { status: 200, headers: cors });
     }
 
     if (orderId && orderStatus) {

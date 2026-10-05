@@ -167,3 +167,36 @@ describe('/api/leads — confirmation côté client', () => {
     expect(await post.json()).toMatchObject({ ok: true, clientNotified: false });
   });
 });
+
+describe('/api/leads — suppression avec confirmation', () => {
+  it('supprime définitivement un client et son historique', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'p1', assistant_id: 'asst1', updated_at: '2026-10-03T10:00:00.000Z',
+      data: { name: 'X', orders: [{ id: 'o1', status: 'confirmed' }] },
+    }]);
+    const del = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p1', action: 'delete_prospect' }));
+    expect(del.status).toBe(200);
+    expect(await del.json()).toMatchObject({ ok: true, deleted: 'prospect' });
+    expect(fx.supabase.rows('prospects').find((r) => r.id === 'p1')).toBeUndefined();
+  });
+
+  it('supprime une seule demande sans toucher au client ni aux autres demandes', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'p2', assistant_id: 'asst1', updated_at: '2026-10-03T10:00:00.000Z',
+      data: { name: 'Y', orders: [{ id: 'o1', status: 'confirmed' }, { id: 'o2', status: 'pending_merchant_confirmation' }] },
+    }]);
+    const del = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p2', action: 'delete_order', orderId: 'o1' }));
+    expect(del.status).toBe(200);
+    expect(await del.json()).toMatchObject({ ok: true, deleted: 'order' });
+    const lead = fx.supabase.rows('prospects').find((r) => r.id === 'p2');
+    expect(lead).toBeTruthy();
+    expect(lead!.data.orders.map((o: any) => o.id)).toEqual(['o2']);
+  });
+
+  it('valide les paramètres de suppression', async () => {
+    const noOrderId = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p1', action: 'delete_order' }));
+    expect(noOrderId.status).toBe(400);
+    const badAction = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p1', action: 'hack' }));
+    expect(badAction.status).toBe(400);
+  });
+});

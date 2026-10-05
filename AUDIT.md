@@ -300,3 +300,19 @@ agence de marketing) :
 
 Tests : `sales-intent` (+ garde-fou signal/date/nature) et `chat-orders-api`
 (+ « un oui dans des salutations ne crée aucune commande »). 586 tests / 37 fichiers.
+
+## 13. Suppression avec confirmation (client, commande / visite / RDV) — 5 octobre 2026
+
+Le marchand peut nettoyer son suivi :
+- **`POST /api/leads`** accepte `action: 'delete_prospect'` (supprime la fiche et
+  tout l'historique) et `action: 'delete_order'` + `orderId` (supprime UNE demande
+  sans toucher au client ni aux autres). Autorisation propriétaire vérifiée comme
+  pour le reste ; validations strictes (400 si paramètres incohérents).
+- `delete_order` réécrit la fiche complète : `supabaseUpsertProspect` FUSIONNE les
+  commandes (union par id) et ne pourrait donc pas en retirer une.
+- **Tableau de bord** : icône corbeille sur chaque carte de demande (« Commandes &
+  RDV ») et colonne « Actions » sur la liste des clients, chacune derrière une
+  `window.confirm` (« Le client ne sera pas prévenu », « action irréversible »).
+
+Tests : `tests/leads-api.test.ts` (+3 : suppression client, suppression d'une seule
+demande, validation des paramètres). 589 tests / 37 fichiers, tsc 0.
