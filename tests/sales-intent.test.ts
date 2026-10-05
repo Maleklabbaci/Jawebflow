@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion } from '../functions/_shared/sales-intent';
+import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, extractClientName, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion } from '../functions/_shared/sales-intent';
 
 describe('détection et suivi commercial', () => {
   it('repère une volonté d’achat en français, darija translittérée et arabe', () => {
@@ -168,5 +168,18 @@ describe('résumé court d’une demande pour la liste', () => {
   it('un résumé déjà court est rendu tel quel', () => {
     expect(buildDealRecap('Veste noire, taille M')).toBe('Veste noire, taille M');
     expect(buildDealRecap('')).toBe('');
+  });
+});
+
+describe('confirmation du nom du client', () => {
+  it('reconnaît un nom, détecté ou donné tel quel', () => {
+    expect(extractClientName('Je m’appelle Karim Haddad')).toBe('Karim Haddad');
+    expect(extractClientName('Karim Benali')).toBe('Karim Benali');
+    expect(extractClientName('Sara')).toBe('Sara');
+  });
+  it('ne prend pas un acquiescement ou un chiffre pour un nom', () => {
+    expect(extractClientName('oui')).toBe('');
+    expect(extractClientName('0550123456')).toBe('');
+    expect(extractClientName('')).toBe('');
   });
 });

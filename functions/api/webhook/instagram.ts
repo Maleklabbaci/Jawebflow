@@ -38,7 +38,7 @@ import {
 } from "../../_shared/supabase.ts";
 import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localGreeting, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
-import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext } from "../../_shared/sales-intent.ts";
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from "../../_shared/sales-intent.ts";
 import { detectOrderManagementIntent, processOrderChangeMessage } from "../../_shared/order-changes.ts";
 import { getGeminiContextCache } from "../../_shared/gemini-cache.ts";
 import { summarizeInstagramMessageShape } from "../../_shared/instagram-message-shape.ts";
@@ -832,6 +832,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
   let trackedProspectId: string | null = null;
   let followUpRecorded = false;
   let createdOrder: ReturnType<typeof createPendingOrderRequest> | null = null;
+  let nameCapturedThisTurn = '';
   let orderChangeHandled = false;
   const latestUserText = String(pendingMessages[pendingMessages.length - 1]?.text || groupedText);
   if (integration.assistantId && supabaseConfigured(env)) {
@@ -951,6 +952,22 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
       };
       const hasFacts = Boolean(facts.phone || facts.name || facts.city || facts.email);
       const draft = known?.data?.orderDraft;
+      // Le client répond à « c'est à quel nom ? » : on complète la demande créée.
+      if (draft?.status === 'awaiting_name' && draft.orderId) {
+        const clientName = extractClientName(latestUserText);
+        if (clientName) {
+          const nowName = new Date().toISOString();
+          const renamedOrders = (Array.isArray(known?.data?.orders) ? known.data.orders : [])
+            .map((o: any) => (o && o.id === draft.orderId ? { ...o, customerName: clientName } : o));
+          const namePid = known?.id || `${integration.assistantId}_ig_${customerId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+          try {
+            await supabaseUpsertProspect(env, namePid, integration.assistantId, {
+              name: clientName, orders: renamedOrders, orderDraft: null,
+            });
+            nameCapturedThisTurn = clientName;
+          } catch (error: any) { console.warn('[instagram][nom] non enregistré:', error?.message || error); }
+        }
+      }
       const orderConfirmed = known?.data?.handoffStatus !== 'human' && (
         isExplicitOrderConfirmation(latestUserText)
         || (draft?.status === 'awaiting_confirmation' && isAffirmative(latestUserText))
@@ -1001,7 +1018,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
           ...(isNew || (salesIntent && !orderConfirmed) ? { need: groupedText.slice(0, 2_000) } : {}),
           ...(salesIntent ? { salesIntentType: salesIntent.type } : {}),
           ...(Object.keys(followUpPatch).length ? followUpPatch : {}),
-          ...(createdOrder ? { orders: [createdOrder], orderDraft: null } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
+          ...(createdOrder ? { orders: [createdOrder], orderDraft: createdOrder.customerName ? null : { status: 'awaiting_name', orderId: createdOrder.id, updatedAt: nowIso } } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
           lastInteractionAt: nowIso,
           ...(groupedText ? { messages: [{ sender: 'user', text: groupedText.slice(0, 500), timestamp: nowIso }] } : {}),
         });
@@ -1013,9 +1030,10 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
           note: 'Le suivi est enregistré pour le commerçant dans son espace prospects. Ne prétends pas qu’un rappel client est déjà effectué ou planifié.',
         };
         if (createdOrder) {
-          businessContext.orderCreated = buildDealCreatedContext(createdOrder);
+          businessContext.orderCreated = buildDealCreatedContext(createdOrder, { askName: !createdOrder.customerName });
           console.log(`[instagram][order] ${createdOrder.kindLabel} ${createdOrder.reference} enregistrée pour validation par la boutique`);
         }
+        if (nameCapturedThisTurn) businessContext.nameCaptured = { name: nameCapturedThisTurn, instruction: "Le client vient de donner son nom pour compléter sa demande. Remercie-le et confirme que son dossier est complet, sans répéter tout l'historique." };
         if (Object.keys(factsPatch).length) console.log('[instagram] fiche client enrichie/corrigée, champs :', Object.keys(factsPatch).join(', '));
 
         const newlyCapturedContact = Boolean((facts.phone && !known?.data?.phone) || (facts.email && !known?.data?.email));

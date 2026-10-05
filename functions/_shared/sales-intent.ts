@@ -149,6 +149,8 @@ export function buildDealRecap(summary: unknown): string {
   return recap.length > 200 ? `${recap.slice(0, 200).trimEnd()}…` : recap;
 }
 
+import { extractLeadFacts } from './lead-facts.ts';
+
 function normalize(text: unknown): string {
   return String(text || '')
     // ⚠️ Le pliage arabe passe AVANT la décomposition : NFKD sépare « أ » en
@@ -376,8 +378,25 @@ export function createPendingOrderRequest(input: {
   };
 }
 
+/**
+ * Le client répond à « c'est à quel nom ? ». On préfère un nom détecté
+ * (« je m'appelle Karim »), sinon on accepte une réponse courte sans chiffre
+ * ni mot de confirmation (« Karim Benali »).
+ */
+export function extractClientName(text: unknown): string {
+  // Les apostrophes typographiques (« m’appelle ») ne cassent pas la détection.
+  const raw = String(text || '').replace(/[’‘`]/g, "'").trim();
+  if (!raw) return '';
+  const facts = extractLeadFacts(raw);
+  if (facts.name) return facts.name;
+  if (raw.length <= 60 && !/\d/.test(raw) && raw.split(/\s+/).length <= 5 && !isAffirmative(raw)) {
+    return raw.replace(/[.!?,;:]+$/, '').trim();
+  }
+  return '';
+}
+
 /** Contexte transmis à l'IA pour qu'elle annonce la BONNE nature de la demande. */
-export function buildDealCreatedContext(order: PendingOrderRequest): Record<string, string> {
+export function buildDealCreatedContext(order: PendingOrderRequest, opts: { askName?: boolean } = {}): Record<string, string> {
   const label = dealKindLabel(order.kind).toLowerCase();
   const noteByKind: Record<DealKind, string> = {
     order: 'Demande de commande enregistrée, en attente de validation humaine par la boutique. Aucune confirmation de stock, prix ou paiement.',
@@ -391,7 +410,8 @@ export function buildDealCreatedContext(order: PendingOrderRequest): Record<stri
     status: order.status,
     type: dealKindLabel(order.kind),
     note: noteByKind[order.kind] || noteByKind.order,
-    instruction: `Annonce au client que sa demande de ${label} est bien enregistrée et que l'équipe va la confirmer. Ne parle pas d'une « commande » si ce n'en est pas une.`,
+    instruction: `Annonce au client que sa demande de ${label} est bien enregistrée et que l'équipe va la confirmer. Ne parle pas d'une « commande » si ce n'en est pas une.${opts.askName ? " Le dossier n'a pas encore de nom : termine en demandant poliment le nom complet du client pour le compléter." : ''}`,
+    ...(opts.askName ? { askClientName: 'true' } : {}),
   };
 }
 

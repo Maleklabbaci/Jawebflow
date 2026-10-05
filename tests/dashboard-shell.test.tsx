@@ -225,6 +225,21 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
   });
 
+  it('un client sans nom n’est plus étiqueté « Visiteur Anonyme »', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
+      id: 'p5', phone: '0550000000', email: 'Non fourni', need: 'Question',
+      status: 'qualifie', channel: 'instagram', updatedAt: '2026-10-05T10:00:00.000Z',
+      messages: [{ sender: 'user', text: 'Question', timestamp: '2026-10-05T10:00:00.000Z' }],
+    }] }), { status: 200 }));
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+    const main = document.querySelector('main')?.textContent || '';
+    expect(main).toContain('Nom à confirmer');
+    expect(main).not.toContain('Visiteur Anonyme');
+  });
+
   it('la liste résume la discussion au lieu de l’afficher en entier', async () => {
     const transcript = [
       'Client : Salam', 'Assistant : Marhba bik !', 'Client : Oui demain',

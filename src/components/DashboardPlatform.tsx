@@ -815,7 +815,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         const { prospects: rows } = await res.json();
         const prospects = (rows || []).map((data: any) => ({
           id: data.id,
-          name: data.name || 'Visiteur Anonyme',
+          name: data.name || 'Nom à confirmer',
           city: data.city || '',
           phone: data.phone || 'Non fourni',
           email: data.email || 'Non fourni',
@@ -2956,7 +2956,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                 {lead.city && (
                                   <span className="px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-semibold">📍 {lead.city}</span>
                                 )}
-                                {lead.name !== 'Visiteur Anonyme' && (
+                                {lead.name !== 'Nom à confirmer' && (
                                   <button
                                     type="button"
                                     onClick={() => handleCopyField(lead.name, 'name')}
@@ -3413,7 +3413,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       const created = order.createdAt && Number.isFinite(Date.parse(order.createdAt))
                         ? new Date(order.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
                         : '';
-                      const facts = [order.customerName, order.phone, order.city].filter(Boolean).join(' · ');
+                      const facts = [order.customerName || 'Nom à confirmer', order.phone, order.city].filter(Boolean).join(' · ');
                       return (
                         <li key={`${lead.id}:${order.id}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                           <div className="flex flex-wrap items-center justify-between gap-3">

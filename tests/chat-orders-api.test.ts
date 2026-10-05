@@ -47,9 +47,21 @@ describe('/api/chat — création et suivi des commandes', () => {
       id: 'web_message-confirmation-2', channel: 'Site web',
       status: 'pending_merchant_confirmation', totalAmount: null,
     });
-    expect(prospect?.data.orderDraft).toBeNull();
+    // Pas de nom dans la conversation : la demande est créée, mais le bot garde
+    // un brouillon « awaiting_name » et demande le nom au client.
+    expect(prospect?.data.orderDraft).toMatchObject({ status: 'awaiting_name', orderId: prospect.data.orders[0].id });
     expect(gemini.calls[1].body.generationConfig.maxOutputTokens).toBe(180);
     expect(JSON.stringify(gemini.calls[1].body.contents)).toContain(prospect.data.orders[0].reference);
+
+    const third = await send('Karim Haddad', 'message-nom-3', [
+      { sender: 'user', text: 'Je veux acheter cette veste' },
+      { sender: 'bot', text: 'Confirmez-vous cette commande ? C’est à quel nom ?' },
+    ]);
+    expect(third.status).toBe(200);
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
+    expect(prospect?.data.orders[0].customerName).toBe('Karim Haddad');
+    expect(prospect?.data.orderDraft).toBeNull();
+    expect(prospect?.data.name).toBe('Karim Haddad');
   });
 
   it('demande le motif, propose une alternative et annule seulement après la confirmation du même client', async () => {
@@ -185,6 +197,13 @@ describe('/api/chat — politesse et nature de la validation', () => {
     await send('oui', 'rdv-2', [{ sender: 'bot', text: 'Jeudi 15 h, ça vous va ? Confirmez-vous ce rendez-vous ?' }]);
     prospect = fx.supabase.rows('prospects').find((row) => row.id === 'asst1_web_session-order-test');
     expect(prospect?.data.orders[0]).toMatchObject({ kind: 'appointment', kindLabel: 'Rendez-vous' });
+    // Sans nom, le brouillon passe en « awaiting_name » au lieu de disparaître.
+    expect(prospect?.data.orderDraft).toMatchObject({ status: 'awaiting_name', orderId: prospect.data.orders[0].id });
+
+    gemini.next(modelReply(textPart('Merci Karim, c’est noté !')));
+    await send('Karim Benali', 'rdv-nom-3', [{ sender: 'bot', text: 'C’est à quel nom ?' }]);
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === 'asst1_web_session-order-test');
+    expect(prospect?.data.orders[0].customerName).toBe('Karim Benali');
     expect(prospect?.data.orderDraft).toBeNull();
   });
 });

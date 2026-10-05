@@ -12,7 +12,7 @@
 import { adminGetDocument } from '../_shared/google.ts';
 import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries, supabaseGetAssistant, supabaseAssistantRowToConfig, supabaseRequest, supabaseUpsertProspect } from '../_shared/supabase.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
-import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext } from '../_shared/sales-intent.ts';
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from '../_shared/sales-intent.ts';
 import { processOrderChangeMessage } from '../_shared/order-changes.ts';
 import { getGeminiContextCache } from '../_shared/gemini-cache.ts';
 
@@ -484,6 +484,7 @@ export async function onRequestPost(context) {
 
     // 📇 Capture des coordonnées, signaux d'achat et commandes confirmées.
     let createdOrder = null;
+    let nameCapturedThisTurn = '';
     if (!simulatorRequest && supabaseConfigured(env)) {
       try {
         const wf = extractLeadFacts(message);
@@ -491,10 +492,25 @@ export async function onRequestPost(context) {
         const possibleConfirmation = isExplicitOrderConfirmation(message) || isAffirmative(message);
         const sessionKey = String(sessionId || 'web');
         const pid = linkedProspectId || webProspectId(assistantId, sessionKey);
-        if (hasFacts || salesIntent || possibleConfirmation) {
-          const exRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(pid)}&select=id,data`);
-          const exists = exRes.ok ? ((await exRes.json().catch(() => [])) || [])[0] : null;
-          const draft = exists?.data?.orderDraft;
+        const exRes = await supabaseRequest(env, `prospects?id=eq.${encodeURIComponent(pid)}&select=id,data`);
+        const exists = exRes.ok ? ((await exRes.json().catch(() => [])) || [])[0] : null;
+        const draft = exists?.data?.orderDraft;
+        if (hasFacts || salesIntent || possibleConfirmation || draft?.status === 'awaiting_name') {
+          // Réponse à « c'est à quel nom ? » : on complète la demande déjà créée.
+          if (draft?.status === 'awaiting_name' && draft.orderId) {
+            const clientName = extractClientName(message);
+            if (clientName) {
+              const nowName = new Date().toISOString();
+              const renamedOrders = (Array.isArray(exists?.data?.orders) ? exists.data.orders : [])
+                .map((o) => (o && o.id === draft.orderId ? { ...o, customerName: clientName } : o));
+              try {
+                await supabaseUpsertProspect(env, pid, assistantId, {
+                  name: clientName, orders: renamedOrders, orderDraft: null,
+                });
+                nameCapturedThisTurn = clientName;
+              } catch (error) { console.warn('[chat][nom] non enregistré:', error?.message || error); }
+            }
+          }
           const orderConfirmed = exists?.data?.handoffStatus !== 'human' && (
             isExplicitOrderConfirmation(message)
             || (draft?.status === 'awaiting_confirmation' && isAffirmative(message))
@@ -505,7 +521,7 @@ export async function onRequestPost(context) {
           const confirmedDealKind = detectConfirmedDealKind(message)
             || (draft?.status === 'awaiting_confirmation' && isAffirmative(message) ? draft?.kind : null)
             || null;
-          if (hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation') {
+          if (hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation' || draft?.status === 'awaiting_name') {
             const now = new Date();
             const nowIso = now.toISOString();
             const contactAvailable = Boolean(wf.phone || wf.email || exists?.data?.phone || exists?.data?.email || linkedProspectId);
@@ -549,7 +565,7 @@ export async function onRequestPost(context) {
               ...((isNew || (salesIntent && !orderConfirmed)) ? { need: String(message).slice(0, 2_000) } : {}),
               ...(salesIntent ? { salesIntentType: salesIntent.type } : {}),
               ...(Object.keys(followUpPatch).length ? { ...followUpPatch } : {}),
-              ...(createdOrder ? { orders: [createdOrder], orderDraft: null } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
+              ...(createdOrder ? { orders: [createdOrder], orderDraft: createdOrder.customerName ? null : { status: 'awaiting_name', orderId: createdOrder.id, updatedAt: nowIso } } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
               lastInteractionAt: nowIso,
               messages: [{ sender: 'user', text: String(message).slice(0, 500), timestamp: nowIso }],
             });
@@ -561,11 +577,12 @@ export async function onRequestPost(context) {
               note: 'Le suivi est enregistré pour le commerçant dans son espace prospects. Ne prétends pas qu’un rappel client est déjà effectué ou planifié.',
             };
             if (createdOrder) {
-              businessContext.orderCreated = buildDealCreatedContext(createdOrder);
+              businessContext.orderCreated = buildDealCreatedContext(createdOrder, { askName: !createdOrder.customerName });
               diagnostics.push(`${createdOrder.kindLabel.toLowerCase()} ${createdOrder.reference} enregistrée pour validation`);
             } else {
               diagnostics.push(salesIntent ? `prospect enregistré (${salesIntent.type})` : 'fiche prospect enrichie');
             }
+            if (nameCapturedThisTurn) businessContext.nameCaptured = { name: nameCapturedThisTurn, instruction: "Le client vient de donner son nom pour compléter sa demande. Remercie-le et confirme que son dossier est complet, sans répéter tout l'historique." };
 
             // Une notification externe seulement pour un nouveau contact ou un
             // signal commercial fort ; les questions de prix isolées restent

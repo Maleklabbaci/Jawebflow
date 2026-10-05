@@ -156,8 +156,15 @@ describe('webhook : messages privés et stories', () => {
     expect(prospect?.data?.orders[0]).toMatchObject({
       status: 'pending_merchant_confirmation', channel: 'Instagram', totalAmount: null,
     });
-    expect(prospect?.data?.orderDraft).toBeNull();
+    // Sans nom, la demande est créée mais le bot demande le nom (brouillon awaiting_name).
+    expect(prospect?.data?.orderDraft).toMatchObject({ status: 'awaiting_name', orderId: prospect.data.orders[0].id });
     expect(gemini.calls[1].body.generationConfig.maxOutputTokens).toBe(180);
+
+    gemini.next(modelReply(textPart('Merci Sara, votre dossier est complet !')));
+    await deliver(messagingPayload(dmEvent({ text: 'Sara Meziane', mid: 'order-name-3' })), env);
+    prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orders[0].customerName).toBe('Sara Meziane');
+    expect(prospect?.data?.orderDraft).toBeNull();
   });
 
   it('permet au client Instagram d’expliquer puis de confirmer l’annulation de sa commande', async () => {
@@ -327,6 +334,12 @@ describe('validation typée : visite, rendez-vous ou commande', () => {
     prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
     expect(prospect?.data?.orders).toHaveLength(1);
     expect(prospect?.data?.orders[0]).toMatchObject({ kind: 'appointment', kindLabel: 'Rendez-vous' });
+    expect(prospect?.data?.orderDraft).toMatchObject({ status: 'awaiting_name', orderId: prospect.data.orders[0].id });
+
+    gemini.next(modelReply(textPart('Merci, c’est noté !')));
+    await deliver(messagingPayload(dmEvent({ text: 'Karim Benali', mid: 'rdv-name-3' })), env);
+    prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orders[0].customerName).toBe('Karim Benali');
     expect(prospect?.data?.orderDraft).toBeNull();
   });
 });
