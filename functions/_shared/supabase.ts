@@ -250,14 +250,47 @@ export async function supabaseUpsertProspect(
   if (!res.ok) throw new Error(`Supabase prospect write ${res.status}: ${(await res.text()).slice(0, 300)}`);
 }
 
-export async function supabaseListProspects(env: SupabaseEnv, assistantId: string) {
+export async function supabaseListProspects(
+  env: SupabaseEnv,
+  assistantId: string,
+  opts: { limit?: number; offset?: number } = {},
+) {
+  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+  const offset = Math.max(opts.offset ?? 0, 0);
   const res = await request(
     env,
-    `prospects?assistant_id=eq.${encodeURIComponent(assistantId)}&select=id,data,updated_at&order=updated_at.desc&limit=200`
+    `prospects?assistant_id=eq.${encodeURIComponent(assistantId)}&select=id,data,updated_at&order=updated_at.desc&limit=${limit}&offset=${offset}`
   );
   if (!res.ok) return [];
   const rows = (await res.json()) as Array<{ id: string; data: Record<string, any>; updated_at: string }>;
   return rows.map((r) => ({ id: r.id, updatedAt: r.updated_at, ...r.data }));
+}
+
+/** Nombre total de prospects d'un assistant (pour paginer sans plafond dur). */
+export async function supabaseCountProspects(env: SupabaseEnv, assistantId: string): Promise<number> {
+  const res = await request(env, `prospects?assistant_id=eq.${encodeURIComponent(assistantId)}&select=id`, {
+    headers: { Prefer: 'count=exact' },
+    method: 'HEAD',
+  });
+  const range = res.headers?.get?.('content-range') || '';
+  const total = parseInt(range.split('/').pop() || '', 10);
+  return Number.isFinite(total) ? total : 0;
+}
+
+/**
+ * Parcourt TOUS les prospects d'un assistant, page par page. Indispensable pour
+ * les tâches de fond (relances, résumés) : avec un simple « limit 200 », une
+ * grosse société verrait ses relances sauter dès 200 clients. Garde-fou à 5000.
+ */
+export async function listAllProspects(env: SupabaseEnv, assistantId: string): Promise<Array<Record<string, any>>> {
+  const PAGE = 500;
+  const out: Array<Record<string, any>> = [];
+  for (let offset = 0; offset < 5000; offset += PAGE) {
+    const page = await supabaseListProspects(env, assistantId, { limit: PAGE, offset });
+    out.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return out;
 }
 
 // --- Instagram integration (table public.instagram_integrations, colonnes dédiées

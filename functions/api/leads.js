@@ -7,6 +7,7 @@ import {
   verifySupabaseIdToken,
   supabaseGetAssistant,
   supabaseListProspects,
+  supabaseCountProspects,
   supabaseUpsertProspect,
   supabaseRequest,
 } from '../_shared/supabase.ts';
@@ -37,8 +38,15 @@ export async function onRequestGet(context) {
     const auth = await authorize(context, assistantId);
     if ('error' in auth) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status, headers: cors });
 
-    const prospects = await supabaseListProspects(context.env, assistantId);
-    return new Response(JSON.stringify({ prospects }), { status: 200, headers: cors });
+    // Pagination : une grande société a des milliers de clients — on ne les
+    // tronque plus à 200. Le tableau de bord charge page par page.
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1), 500);
+    const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0);
+    const [prospects, total] = await Promise.all([
+      supabaseListProspects(context.env, assistantId, { limit, offset }),
+      supabaseCountProspects(context.env, assistantId),
+    ]);
+    return new Response(JSON.stringify({ prospects, total, offset, limit, hasMore: offset + prospects.length < total }), { status: 200, headers: cors });
   } catch (err) {
     console.error('[leads] erreur', err);
     return new Response(JSON.stringify({ error: err?.message || 'Erreur serveur' }), { status: 500, headers: cors });

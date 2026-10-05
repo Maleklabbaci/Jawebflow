@@ -39,6 +39,7 @@ import {
 import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localGreeting, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
 import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from "../../_shared/sales-intent.ts";
+import { buildRelances } from "../../_shared/relances.ts";
 import { detectOrderManagementIntent, processOrderChangeMessage } from "../../_shared/order-changes.ts";
 import { getGeminiContextCache } from "../../_shared/gemini-cache.ts";
 import { summarizeInstagramMessageShape } from "../../_shared/instagram-message-shape.ts";
@@ -1018,7 +1019,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
           ...(isNew || (salesIntent && !orderConfirmed) ? { need: groupedText.slice(0, 2_000) } : {}),
           ...(salesIntent ? { salesIntentType: salesIntent.type } : {}),
           ...(Object.keys(followUpPatch).length ? followUpPatch : {}),
-          ...(createdOrder ? { orders: [createdOrder], orderDraft: createdOrder.customerName ? null : { status: 'awaiting_name', orderId: createdOrder.id, updatedAt: nowIso } } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
+          ...(createdOrder ? { orders: [createdOrder], relances: buildRelances(now, createdOrder.kind), orderDraft: createdOrder.customerName ? null : { status: 'awaiting_name', orderId: createdOrder.id, updatedAt: nowIso } } : invalidateOldDraft ? { orderDraft: nextDraft } : {}),
           lastInteractionAt: nowIso,
           ...(groupedText ? { messages: [{ sender: 'user', text: groupedText.slice(0, 500), timestamp: nowIso }] } : {}),
         });
