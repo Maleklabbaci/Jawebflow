@@ -118,3 +118,62 @@ Le widget n'envoyait jamais `history`, pourtant géré par l'API → le bot repa
 7. **Clé widget + restriction de domaine** : `assistantId` seul ne protège rien ; l'ajout d'une clé publique et d'un contrôle d'origine empêcherait l'usage détourné de vos assistants et le vol de contenu des bases de connaissances.
 8. **Fusionner les deux webhooks Instagram** et renseigner `INSTAGRAM_APP_SECRET` + `INSTAGRAM_VERIFY_TOKEN`/`META_VERIFY_TOKEN`.
 9. Vérifier `GET /api/health` après déploiement : il indique en une requête quelles intégrations sont réellement configurées.
+
+---
+
+## 7. Correctifs du 5 octobre 2026 — la conversation et la nature des validations
+
+Deux défauts signalés par le propriétaire, corrigés dans **`functions/`** (le backend
+réellement déployé sur Cloudflare Pages). Le serveur Express `server.ts` ne contient
+**aucune** logique de commande/brouillon : il n'était donc pas concerné par le second
+correctif (seul son message de secours Gemini a été aligné, cf. 7.1).
+
+### 7.1 Le bot re-saluait en pleine conversation
+
+La salutation partait dès qu'un message ressemblait à une politesse, sans vérifier si la
+conversation avait déjà commencé. Un « ok » ou « salam » en cours d'échange relançait
+« Bienvenue chez … » et tuait la discussion.
+
+- `classifySmallTalk()` distingue bonjour / merci / au revoir / accord ; `localPoliteReply()`
+  ne renvoie le message de bienvenue **qu'au premier contact** (`conversationStarted === false`).
+- Instagram : la branche de politesse **archive l'échange** (`saveThread`) et vide
+  `pending_messages`, sinon le message suivant repartait mélangé au précédent.
+- Widget web : `/api/chat` charge l'historique serveur **avant** la réponse de politesse,
+  journalise l'échange dans la fiche client, et `JawebChatWidget` envoie désormais les
+  6 derniers messages — deux « salam » de suite ne renvoient plus qu'une seule bienvenue.
+- `server.ts` : une panne de l'IA ne renvoie plus la salutation mais demande de répéter.
+
+### 7.2 « La case commande » : la nature réelle de ce que le client valide
+
+Tout était enregistré sous le mot « commande », y compris une visite immobilière ou un
+rendez-vous. La nature est maintenant déduite de ce qui a réellement été convenu.
+
+- `DealKind = order | visit | appointment | booking | quote` (`functions/_shared/sales-intent.ts`).
+  « oui je valide la visite » → **Visite** ; « oui j'achète celle-là » → **Commande** ;
+  « oui je valide le rendez-vous » → **Rendez-vous** ; réservation et devis idem.
+- Le brouillon hérite de la nature posée par le bot (« Confirmez-vous cette visite ? »),
+  donc un simple « oui » valide bien une visite.
+- **Normalisation arabe réparée** : le pliage de « أ » se faisait après la décomposition
+  NFKD, qui séparait la lettre — « أوافق » était lu « ا وافق » et **aucune** confirmation
+  écrite en arabe n'était reconnue. Verbes darija ajoutés (« nvalidi la visite »,
+  « waf9t 3la rdv », « nconfirmi »…).
+- Annulations/modifications (`order-changes.ts`) : `dealWords()` emploie le mot juste en
+  français/darija/arabe — on n'annonce plus « la commande est annulée » à un client qui
+  avait validé une visite — et propose « date, heure ou coordonnées » au lieu de
+  « taille/couleur » hors commande.
+- `/api/leads` : `confirmed → delivered` autorisé hors commande (une visite se « réalise »,
+  elle ne s'« expédie » pas) ; interdit pour une commande.
+- Tableau de bord : onglet **« Commandes & RDV »**, badge de nature, libellés d'état partagés
+  (`DEAL_STATUS_LABELS`) et bloc « Ce que ce client a validé » dans la fiche client.
+- Notification marchand et contexte transmis à l'IA portent la bonne nature
+  (« 🔥 VISITE À CONFIRMER », « Ne relancez pas la même question sur cette commande »).
+
+### 7.3 Vérifications de cette passe
+
+- `npx vitest run` → **33 fichiers / 543 tests** ✅ (511 avant ces correctifs)
+- `npx tsc --noEmit` ✅ · `npm run build` (vite + esbuild) ✅
+- Tests dédiés : politesse et absence de re-salutation (Instagram **et** widget web),
+  nature de la validation (visite / rendez-vous / réservation / devis / commande),
+  darija et arabe, transitions d'état par nature, affichage du tableau de bord.
+- Non vérifié ici : aucun test contre un vrai compte Instagram/Gemini ni un projet
+  Supabase réel — la validation repose sur la suite du dépôt.
