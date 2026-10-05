@@ -3,6 +3,7 @@
  * Toute écriture attend une confirmation envoyée en réponse à un récapitulatif.
  */
 import { extractLeadFacts } from './lead-facts.ts';
+import { dealKindLabel, dealKindOf } from './sales-intent.ts';
 import { isAffirmative } from './sales-intent.ts';
 
 export type OrderChangeType = 'modify' | 'cancel';
@@ -125,6 +126,7 @@ function isVagueChangeRequest(input: unknown): boolean {
     'modifier', 'modifie', 'changer', 'change', 'corriger', 'corrige', 'remplacer', 'remplace', 'ajouter', 'retirer',
     'ma', 'mon', 'mes', 'la', 'le', 'les', 'un', 'une', 'de', 'du', 'des', 'a', 'pour', 'commande', 'detail', 'details',
     'svp', 'stp', 'please', 'my', 'the', 'order', 'to', 'l', 'd', 'en', 'vers', 'au', 'aux', 'avec', 'est', 'livraison', 'delivery', 'autre', 'another', 'نبدل', 'نغير', 'نعدل', 'الطلبية', 'الطلب',
+    'commande', 'commandes', 'visite', 'visites', 'rdv', 'rendez', 'vous', 'reservation', 'reservations', 'devis', 'demande', 'الزيارة', 'الموعد', 'المواعيد', 'الحجز', 'عرض', 'السعر',
   ]).has(word));
   return tail.length < 2;
 }
@@ -134,7 +136,39 @@ function cleanChangeText(input: unknown): string {
 }
 
 function orderLabel(order: Record<string, any>): string {
-  return String(order.reference || order.id || 'commande').slice(0, 80);
+  return String(order.reference || order.id || dealKindLabel(order)).slice(0, 80);
+}
+
+type DealWords = { fr: string; dz: string; ar: string };
+
+/**
+ * Le MOT JUSTE pour parler de la demande : on n'annonce pas « la commande est
+ * annulée » à un client qui avait validé une VISITE ou un RENDEZ-VOUS.
+ */
+function dealWords(order: Record<string, any>): DealWords {
+  switch (dealKindOf(order)) {
+    case 'visit': return { fr: 'la visite', dz: 'la visite', ar: 'الزيارة' };
+    case 'appointment': return { fr: 'le rendez-vous', dz: 'rdv', ar: 'الموعد' };
+    case 'booking': return { fr: 'la réservation', dz: 'la réservation', ar: 'الحجز' };
+    case 'quote': return { fr: 'le devis', dz: 'devis', ar: 'عرض السعر' };
+    default: return { fr: 'la commande', dz: 'la commande', ar: 'الطلبية' };
+  }
+}
+
+/** Ce qui est réellement modifiable selon la nature de la demande. */
+function editableDetails(order: Record<string, any>): DealWords {
+  if (dealKindOf(order) === 'order') {
+    return {
+      fr: 'article, taille/couleur, quantité ou adresse',
+      dz: 'article, taille/couleur, quantité wela l\'adresse',
+      ar: 'المنتج، المقاس/اللون، الكمية أو العنوان',
+    };
+  }
+  return {
+    fr: 'date, heure ou coordonnées',
+    dz: 'date, sa3a wela coordonnées',
+    ar: 'التاريخ، الساعة أو معلومات التواصل',
+  };
 }
 
 function editableOrders(orders: Array<Record<string, any>>): Array<Record<string, any>> {
@@ -146,43 +180,53 @@ function editableOrders(orders: Array<Record<string, any>>): Array<Record<string
 function orderStatusMessage(order: Record<string, any>, input: unknown): string {
   const status = String(order.status || '');
   const ref = orderLabel(order);
+  const w = dealWords(order);
   if (status === 'cancelled') return localized(input,
-    `La commande ${ref} est déjà annulée. Si vous souhaitez en passer une nouvelle, dites-moi ce qu’il vous faut.`,
-    `La commande ${ref} rah t'annulat déjà. Ida hab tpassi wa7da jdida, goli chno t7eb.`,
-    `الطلبية ${ref} ملغاة من قبل. إذا حبيت تدير طلبية جديدة، قولّي واش تحتاج.`);
+    `${cap(w.fr)} ${ref} est déjà annulée. Si vous souhaitez en fixer une nouvelle, dites-moi ce qu’il vous faut.`,
+    `${cap(w.dz)} ${ref} rah t'annulat déjà. Ida hab tdir wa7da jdida, goli chno t7eb.`,
+    `${w.ar} ${ref} ملغاة من قبل. إذا حبيت تدير واحدة جديدة، قولّي واش تحتاج.`);
   if (status === 'shipped' || status === 'delivered') return localized(input,
-    `La commande ${ref} est déjà ${status === 'shipped' ? 'expédiée' : 'livrée'} : je ne peux plus la modifier ou l’annuler ici. Je peux transmettre votre demande à la boutique pour qu’elle vous aide.`,
-    `La commande ${ref} rah ${status === 'shipped' ? 'tsefat' : 'wselat'} déjà; ma n9derch nbdelha hna. N9der nwessel talabek l'équipe ta3 lma7al.`,
-    `الطلبية ${ref} راهي ${status === 'shipped' ? 'تبعثت' : 'وصلت'}، ما نقدرش نبدلها من هنا. نقدر نوصل طلبك للمحل باش يعاونك.`);
+    `Je ne peux plus modifier ni annuler ${w.fr} ${ref} : cette demande est déjà ${status === 'shipped' ? 'expédiée' : 'clôturée'}. Je peux transmettre votre demande à la boutique pour qu’elle vous aide.`,
+    `Ma n9derch nbdel wela nlghi ${w.dz} ${ref}: had talab ${status === 'shipped' ? 'tsefat' : 'tseddat'} déjà. N9der nwessel talabek l'équipe ta3 lma7al.`,
+    `ما نقدرش نبدل أو نلغي ${w.ar} ${ref}: الطلبية ${status === 'shipped' ? 'تبعثت' : 'تسكرت'} من قبل. نقدر نوصل طلبك للمحل باش يعاونك.`);
   return localized(input,
-    `Je ne trouve pas de commande modifiable dans cette conversation. Donnez-moi la référence de votre commande ou contactez la boutique.`,
-    `Ma l9itch commande n9der nbdelha f had la conversation. Goli référence ta3 commande wela 3ayet lma7al.`,
-    `ما لقيتش طلبية نقدر نبدلها في هاذ المحادثة. ابعثلي رقم الطلبية أو تواصل مع المحل.`);
+    `Je ne trouve pas de demande modifiable dans cette conversation. Donnez-moi sa référence ou contactez la boutique.`,
+    `Ma l9itch 7aja n9der nbdelha f had la conversation. Goli référence wela 3ayet lma7al.`,
+    `ما لقيتش طلب نقدر نبدلو في هاذ المحادثة. ابعثلي الرقم أو تواصل مع المحل.`);
+}
+
+/** Majuscule en début de phrase, sans casser la suite. */
+function cap(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function askWhyToCancel(order: Record<string, any>, input: unknown): string {
   const ref = orderLabel(order);
+  const w = dealWords(order);
   return localized(input,
-    `Je comprends. Qu’est-ce qui vous pousse à annuler la commande ${ref} ? Si c’est un souci de taille, couleur, quantité ou adresse, je peux d’abord vous aider à le corriger. Rien ne sera changé sans votre confirmation.`,
-    `Fhemtk. 3lach hab t'annuli la commande ${ref} ? Ida lmochkil f taille, couleur, quantité wela l'adresse, n9der n3awnek nbdlouha. Ma nbedel walo 7ta tconfirmi.`,
-    `نتفهمك. علاش حاب تلغي الطلبية ${ref}؟ إذا المشكل في المقاس أو اللون أو الكمية أو العنوان، نقدر نعاونك نبدلوها. ما يتبدل والو حتى تأكدلي.`);
+    `Je comprends. Qu’est-ce qui vous pousse à annuler ${w.fr} ${ref} ? Si c’est un détail à corriger (${editableDetails(order).fr}), je peux d’abord vous aider à le changer. Rien ne sera changé sans votre confirmation.`,
+    `Fhemtk. 3lach hab t'annuli ${w.dz} ${ref} ? Ida lmochkil f détail (${editableDetails(order).dz}), n9der n3awnek nbdlouh. Ma nbedel walo 7ta tconfirmi.`,
+    `نتفهمك. علاش حاب تلغي ${w.ar} ${ref}؟ إذا المشكل في تفصيل (${editableDetails(order).ar})، نقدر نعاونك نبدلو. ما يتبدل والو حتى تأكدلي.`);
 }
 
 function askForChangeDetails(order: Record<string, any>, input: unknown): string {
   const ref = orderLabel(order);
+  const w = dealWords(order);
+  const details = editableDetails(order);
   return localized(input,
-    `Bien sûr. Que souhaitez-vous modifier sur la commande ${ref} exactement (article, taille/couleur, quantité ou adresse) ? Rien ne sera modifié avant votre accord final.`,
-    `Machi mochkil. Wach hab tbedel f la commande ${ref} exactement (article, taille/couleur, quantité wela l'adresse) ? Ma nbedel walo 7ta tconfirmi.`,
-    `أكيد. واش حاب تبدل بالضبط في الطلبية ${ref} (المنتج، المقاس/اللون، الكمية أو العنوان)؟ ما نبدل والو حتى تأكدلي في الأخير.`);
+    `Bien sûr. Que souhaitez-vous modifier sur ${w.fr} ${ref} exactement (${details.fr}) ? Rien ne sera modifié avant votre accord final.`,
+    `Machi mochkil. Wach hab tbedel f ${w.dz} ${ref} exactement (${details.dz}) ? Ma nbedel walo 7ta tconfirmi.`,
+    `أكيد. واش حاب تبدل بالضبط في ${w.ar} ${ref} (${details.ar})؟ ما نبدل والو حتى تأكدلي في الأخير.`);
 }
 
 function askToConfirmChange(order: Record<string, any>, changes: string, input: unknown): string {
   const ref = orderLabel(order);
   const detail = changes.slice(0, 280);
+  const w = dealWords(order);
   return localized(input,
-    `Pour la commande ${ref}, je récapitule la modification demandée : « ${detail} ». Confirmez-vous ? Répondez « Oui, confirme la modification » ou « Non ». La commande ne sera changée qu’après votre accord.`,
-    `F la commande ${ref}, rah nbedel hakda : « ${detail} ». Tconfirmi ? Goli « oui, confirme » wela « non ». Ma nbedel walo 7ta tconfirmi.`,
-    `بالنسبة للطلبية ${ref}، التغيير المطلوب هو: « ${detail} ». تأكدلي؟ جاوب « نعم، أكد التغيير » أو « لا ». ما يتبدل والو حتى توافق.`);
+    `Pour ${w.fr} ${ref}, je récapitule la modification demandée : « ${detail} ». Confirmez-vous ? Répondez « Oui, confirme la modification » ou « Non ». Rien ne sera changé avant votre accord.`,
+    `F ${w.dz} ${ref}, rah nbedel hakda : « ${detail} ». Tconfirmi ? Goli « oui, confirme » wela « non ». Ma nbedel walo 7ta tconfirmi.`,
+    `بالنسبة لـ${w.ar} ${ref}، التغيير المطلوب هو: « ${detail} ». تأكدلي؟ جاوب « نعم، أكد التغيير » أو « لا ». ما يتبدل والو حتى توافق.`);
 }
 
 function cancelAlternative(reason: string, input: unknown): string {
@@ -214,43 +258,47 @@ function cancelAlternative(reason: string, input: unknown): string {
 function askToConfirmCancellation(order: Record<string, any>, reason: string, input: unknown): string {
   const ref = orderLabel(order);
   const alternative = cancelAlternative(reason, input);
+  const w = dealWords(order);
   return localized(input,
-    `${alternative} Souhaitez-vous toujours annuler la commande ${ref} ? Répondez « Oui, annuler » pour confirmer ou « Non, garder la commande ». Rien ne change avant votre confirmation.`,
-    `${alternative} Hab mazal t'annuli la commande ${ref} ? Goli « oui, annule » pour confirmer wela « non, nkhaliha ». Ma yetbedel walo 7ta tconfirmi.`,
-    `${alternative} ما زلت حاب تلغي الطلبية ${ref}؟ جاوب « نعم، ألغي » للتأكيد أو « لا، خلي الطلبية ». ما يتبدل والو حتى تأكد.`);
+    `${alternative} Souhaitez-vous toujours annuler ${w.fr} ${ref} ? Répondez « Oui, annuler » pour confirmer ou « Non, garder ». Rien ne change avant votre confirmation.`,
+    `${alternative} Hab mazal t'annuli ${w.dz} ${ref} ? Goli « oui, annule » pour confirmer wela « non, nkhaliha ». Ma yetbedel walo 7ta tconfirmi.`,
+    `${alternative} ما زلت حاب تلغي ${w.ar} ${ref}؟ جاوب « نعم، ألغي » للتأكيد أو « لا، خليها ». ما يتبدل والو حتى تأكد.`);
 }
 
 function keepOrderReply(order: Record<string, any>, input: unknown): string {
+  const w = dealWords(order);
   return localized(input,
-    `D’accord, je ne change rien : la commande ${orderLabel(order)} reste comme elle est. Si vous souhaitez une modification plus tard, dites-moi laquelle.`,
-    `D'accord, ma nbedel walo: la commande ${orderLabel(order)} teb9a kif ma hiya. Ida hab tbedel haja men ba3d, goli.`,
-    `حسناً، ما نبدل والو: الطلبية ${orderLabel(order)} تبقى كيما هي. إذا حبيت تبدل حاجة من بعد، قولّي.`);
+    `D’accord, je ne change rien : ${w.fr} ${orderLabel(order)} reste comme elle est. Si vous souhaitez une modification plus tard, dites-moi laquelle.`,
+    `D'accord, ma nbedel walo: ${w.dz} ${orderLabel(order)} yeb9a kif ma howa. Ida hab tbedel haja men ba3d, goli.`,
+    `حسناً، ما نبدل والو: ${w.ar} ${orderLabel(order)} يبقى كيما هو. إذا حبيت تبدل حاجة من بعد، قولّي.`);
 }
 
 function updatedOrderReply(order: Record<string, any>, input: unknown): string {
+  const w = dealWords(order);
   return localized(input,
-    `C’est fait : la modification de la commande ${orderLabel(order)} est enregistrée. La boutique la verra dans son suivi.`,
-    `Srat: modification ta3 la commande ${orderLabel(order)} tsajlat. L'équipe ta3 lma7al tchoufha f suivi.`,
-    `تم تسجيل التغيير على الطلبية ${orderLabel(order)}. المحل يشوفه في المتابعة.`);
+    `C’est fait : la modification sur ${w.fr} ${orderLabel(order)} est enregistrée. La boutique la verra dans son suivi.`,
+    `Srat: modification ta3 ${w.dz} ${orderLabel(order)} tsajlat. L'équipe ta3 lma7al tchoufha f suivi.`,
+    `تم تسجيل التغيير على ${w.ar} ${orderLabel(order)}. المحل يشوفه في المتابعة.`);
 }
 
 function cancelledOrderReply(order: Record<string, any>, input: unknown): string {
+  const w = dealWords(order);
   return localized(input,
-    `La commande ${orderLabel(order)} est annulée ; l’annulation apparaîtra dans le suivi de la boutique.`,
-    `La commande ${orderLabel(order)} t'annulat; l'annulation taban f suivi ta3 lma7al.`,
-    `تم إلغاء الطلبية ${orderLabel(order)}، وسيظهر الإلغاء في متابعة المحل.`);
+    `${cap(w.fr)} ${orderLabel(order)} est annulée ; l’annulation apparaîtra dans le suivi de la boutique.`,
+    `${cap(w.dz)} ${orderLabel(order)} t'annulat; l'annulation taban f suivi ta3 lma7al.`,
+    `تم إلغاء ${w.ar} ${orderLabel(order)}، وسيظهر الإلغاء في متابعة المحل.`);
 }
 
 function selectOrderPrompt(type: OrderChangeType, orders: Array<Record<string, any>>, input: unknown): string {
   const refs = orders.slice(0, 5).map((order, index) => `${index + 1}. ${orderLabel(order)}`).join(' · ');
   if (type === 'cancel') return localized(input,
-    `Vous avez plusieurs commandes en cours (${refs}). Laquelle souhaitez-vous annuler ? Indiquez sa référence.`,
-    `3andek plusieurs commandes en cours (${refs}). Anahi wa7da hab t'annuli? Goli référence ta3ha.`,
-    `عندك عدة طلبيات قيد المتابعة (${refs}). أي طلبية حاب تلغي؟ ابعثلي رقمها.`);
+    `Vous avez plusieurs demandes en cours (${refs}). Laquelle souhaitez-vous annuler ? Indiquez sa référence.`,
+    `3andek plusieurs demandes en cours (${refs}). Anahi wa7da hab t'annuli? Goli référence ta3ha.`,
+    `عندك عدة طلبات قيد المتابعة (${refs}). أي واحد حاب تلغي؟ ابعثلي رقمه.`);
   return localized(input,
-    `Vous avez plusieurs commandes en cours (${refs}). Laquelle souhaitez-vous modifier ? Indiquez sa référence.`,
-    `3andek plusieurs commandes en cours (${refs}). Anahi wa7da hab tbedel? Goli référence ta3ha.`,
-    `عندك عدة طلبيات قيد المتابعة (${refs}). أي طلبية حاب تبدل؟ ابعثلي رقمها.`);
+    `Vous avez plusieurs demandes en cours (${refs}). Laquelle souhaitez-vous modifier ? Indiquez sa référence.`,
+    `3andek plusieurs demandes en cours (${refs}). Anahi wa7da hab tbedel? Goli référence ta3ha.`,
+    `عندك عدة طلبات قيد المتابعة (${refs}). أي واحد حاب تبدل؟ ابعثلي رقمه.`);
 }
 
 function findSelectedOrder(input: unknown, orders: Array<Record<string, any>>): Record<string, any> | null {
@@ -339,7 +387,7 @@ function applyModification(
     const update: Record<string, any> = {
       ...candidate,
       updatedAt: nowIso,
-      summary: `${String(candidate.summary || 'Commande').trim()}\n\nModification confirmée par le client : ${changes}`.slice(-2_000),
+      summary: `${String(candidate.summary || dealKindLabel(candidate)).trim()}\n\nModification confirmée par le client : ${changes}`.slice(-2_000),
       changeHistory: [...(Array.isArray(candidate.changeHistory) ? candidate.changeHistory : []), event].slice(-20),
     };
     if (facts.phone && has(normalized, ['telephone', 'numero', 'phone', 'mobile'])) update.phone = facts.phone;

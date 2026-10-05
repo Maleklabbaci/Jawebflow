@@ -115,3 +115,58 @@ describe('gestion des changements de commande par le client', () => {
     expect(result.orders).toBeUndefined();
   });
 });
+
+describe('le mot juste selon la nature de la demande', () => {
+  it('annuler une VISITE ne dit jamais « commande »', () => {
+    const visit = order({ id: 'visit-1', reference: 'JF-VISIT1', kind: 'visit', kindLabel: 'Visite', summary: 'F3 Hydra — visite' });
+    const request = processOrderChangeMessage({ message: 'Je veux annuler ma visite', orders: [visit], now });
+    expect(request.reply).toContain('annuler la visite JF-VISIT1');
+    expect(request.reply).not.toContain('commande');
+    // Le détail proposé est celui d'une visite, pas une taille/couleur.
+    expect(request.reply).toContain('date, heure ou coordonnées');
+
+    const reason = processOrderChangeMessage({
+      message: 'Je ne serai pas en ville ce jour-là', orders: [visit], draft: request.orderChangeDraft, now,
+    });
+    expect(reason.reply).toContain('annuler la visite JF-VISIT1');
+
+    const confirmed = processOrderChangeMessage({
+      message: 'Oui, annuler', orders: [visit], draft: reason.orderChangeDraft, now,
+    });
+    expect(confirmed.reply).toContain('La visite JF-VISIT1 est annulée');
+    expect(confirmed.orders?.[0]).toMatchObject({ status: 'cancelled', cancelledBy: 'customer' });
+  });
+
+  it('modifier un RENDEZ-VOUS parle de rendez-vous et propose date/heure', () => {
+    const rdv = order({ id: 'rdv-1', reference: 'JF-RDV001', kind: 'appointment', kindLabel: 'Rendez-vous' });
+    const request = processOrderChangeMessage({ message: 'Je veux modifier mon rendez-vous', orders: [rdv], now });
+    expect(request.reply).toContain('sur le rendez-vous JF-RDV001');
+    expect(request.reply).toContain('date, heure ou coordonnées');
+    expect(request.reply).not.toContain('taille/couleur');
+
+    const details = processOrderChangeMessage({
+      message: 'Demain à 15h au lieu de 10h', orders: [rdv], draft: request.orderChangeDraft, now,
+    });
+    expect(details.reply).toContain('Pour le rendez-vous JF-RDV001');
+    const applied = processOrderChangeMessage({
+      message: 'Oui, confirme la modification', orders: [rdv], draft: details.orderChangeDraft, now,
+    });
+    expect(applied.reply).toContain('la modification sur le rendez-vous JF-RDV001 est enregistrée');
+  });
+
+  it('une commande garde son vocabulaire de commande', () => {
+    const cmd = order();
+    const request = processOrderChangeMessage({ message: 'Je veux modifier ma commande', orders: [cmd], now });
+    expect(request.reply).toContain('sur la commande JF-ORDER1');
+    expect(request.reply).toContain('article, taille/couleur, quantité ou adresse');
+  });
+
+  it('un devis et une réservation ont aussi leur mot', () => {
+    const devis = order({ id: 'q1', reference: 'JF-DEV001', kind: 'quote', kindLabel: 'Devis' });
+    expect(processOrderChangeMessage({ message: 'Je veux annuler le devis', orders: [devis], now }).reply)
+      .toContain('annuler le devis JF-DEV001');
+    const resa = order({ id: 'b1', reference: 'JF-RES001', kind: 'booking', kindLabel: 'Réservation' });
+    expect(processOrderChangeMessage({ message: 'Je veux annuler la réservation', orders: [resa], now }).reply)
+      .toContain('annuler la réservation JF-RES001');
+  });
+});

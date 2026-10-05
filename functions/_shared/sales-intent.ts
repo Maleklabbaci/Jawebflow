@@ -242,6 +242,9 @@ export function isAffirmative(input: unknown): boolean {
   if (text.split(' ').length > 5) return false;
   return new Set([
     'oui', 'oui je confirme', 'oui confirme', 'oui bien sur', 'je confirme', 'ok je confirme', 'c est bon', 'd accord', 'ca me va', 'vas y', 'allons y', 'ok', 'okay',
+    // Le bot propose « Oui, confirme la modification » : cette réponse doit être lue comme un oui.
+    'oui confirme la modification', 'confirme la modification', 'oui confirmer la modification',
+    'je confirme la modification', 'oui je confirme la modification',
     'yes', 'yes i confirm', 'i confirm', 'confirm', 'sure', 'go ahead', 'let s do it', 'نعم', 'نعم اؤكد', 'ايه', 'اي', 'اكيد', 'موافق', 'تمام',
   ]).has(text);
 }

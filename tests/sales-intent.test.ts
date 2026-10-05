@@ -141,3 +141,12 @@ describe('validations en darija et en arabe', () => {
     expect(detectConfirmedDealKind('اؤكد الطلبية')).toBe('order');
   });
 });
+
+describe('la réponse proposée par le bot est bien comprise comme un oui', () => {
+  it('« Oui, confirme la modification » valide la modification demandée', () => {
+    expect(isAffirmative('Oui, confirme la modification')).toBe(true);
+    expect(isAffirmative('confirme la modification')).toBe(true);
+    expect(isAffirmative('Oui, annuler')).toBe(false); // l'annulation a sa propre confirmation explicite
+    expect(isAffirmative('non')).toBe(false);
+  });
+});

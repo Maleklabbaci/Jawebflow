@@ -100,7 +100,9 @@ describe('/api/chat — création et suivi des commandes', () => {
     expect(prospect?.data.orderChangeDraft.status).toBe('awaiting_confirmation');
 
     const confirmation = await send('oui', 'edit-2');
-    expect((await confirmation.json() as any).text).toContain('modification de la commande');
+    // « sur » et non « de » : la même phrase doit rester correcte pour
+    // « la modification sur le rendez-vous JF-… » ou « sur la visite JF-… ».
+    expect((await confirmation.json() as any).text).toContain('modification sur la commande');
     prospect = fx.supabase.rows('prospects').find((row) => row.id === prospectId);
     expect(prospect?.data.orders[0]).toMatchObject({
       status: 'confirmed', city: 'Oran', updatedAt: expect.any(String),
