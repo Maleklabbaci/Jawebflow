@@ -122,10 +122,15 @@ export function dealKindLabel(kind: unknown): string {
 
 function normalize(text: unknown): string {
   return String(text || '')
+    // ⚠️ Le pliage arabe passe AVANT la décomposition : NFKD sépare « أ » en
+    // « ا » + signe diacritique, et ce signe devenait une espace — « أوافق »
+    // était donc lu « ا وافق » et aucune confirmation arabe n'était reconnue.
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[أإآ]/g, 'ا')
     .replace(/ى/g, 'ي')
     .replace(/ة/g, 'ه')
     .replace(/[^\p{L}\p{N}+]+/gu, ' ')
@@ -158,9 +163,14 @@ const CONFIRM_QUESTION_PHRASES = [
 
 /** Verbes de validation : « je valide », « je confirme », « j'accepte »… */
 const CONFIRM_VERBS = [
-  'je confirme', 'je valide', 'on confirme', 'confirme', 'confirmez', 'valide', 'validez',
-  'j accepte', 'je accepte', 'accepte', 'je reserve', 'je la reserve', 'je prends rendez vous',
-  'nconfirou', 'nvalidi', 'nvalidiw', 'نؤكد', 'اؤكد', 'نقبل', 'اقبل', 'اوافق', 'موافق',
+  'je confirme', 'je valide', 'on confirme', 'confirme', 'confirmez', 'confirmer', 'valide',
+  'validez', 'j accepte', 'je accepte', 'accepte', 'je reserve', 'je la reserve',
+  'je prends rendez vous',
+  // Darija (alphabet latin) : « nvalidi la visite », « waf9t 3la rdv », « nconfirmi »…
+  'nconfirou', 'nvalidi', 'nvalidiw', 'nconfirmi', 'nconfirmer', 'waf9t', 'wafeqt', 'waf9na',
+  'mwafe9', 'mowafe9',
+  // Arabe : « أوافق », « نؤكد », « أقبل »…
+  'نؤكد', 'اؤكد', 'اكد', 'نقبل', 'اقبل', 'اوافق', 'موافق', 'نوافق', 'موافقة',
 ];
 
 /** « j'achète celle-là », « je l'achète »… : le client acte son achat. */
@@ -172,7 +182,10 @@ const BUY_VERBS = [
 const CONFIRM_QUESTION_TERMS = [
   'confirmez vous', 'confirmez', 'souhaitez vous confirmer', 'voulez vous confirmer',
   'tu confirmes', 'tu veux confirmer', 'vous confirmez', 'on confirme', 'nconfirou',
-  'nvalidiw', 'هل تؤكد', 'هل تريد تأكيد', 'هل اؤكد',
+  'nvalidiw',
+  // Darija : « wach tconfirmi la visite ? », « nconfirou la commande ? »…
+  'tconfirmi', 'tconfirmer', 'wach tconfirmi', 'wach nconfirou',
+  'هل تؤكد', 'هل تريد تأكيد', 'هل اؤكد', 'واش نأكدو',
 ];
 
 /**
@@ -182,11 +195,13 @@ const CONFIRM_QUESTION_TERMS = [
 export function detectDealKind(input: unknown): DealKind | null {
   const text = normalize(input);
   if (!text) return null;
-  if (has(text, ['visite', 'visiter', 'visites', 'nzour', 'nzourou', 'زيارة', 'معاينة'])) return 'visit';
-  if (has(text, ['rendez vous', 'rdv', 'موعد', 'مواعيد', 'لقاء'])) return 'appointment';
-  if (has(text, ['reservation', 'reserver', 'reserve', 'حجز', 'حجوزات'])) return 'booking';
-  if (has(text, ['devis', 'عرض سعر', 'تسعيرة'])) return 'quote';
-  if (has(text, ['commande', 'commander', 'commandes', 'طلبية', 'الطلبية', 'طلب', 'الطلب', 'شراء', 'achat'])) return 'order';
+  // Les formes avec l'article arabe (« الزيارة », « الموعد »…) sont listées : la
+  // détection se fait mot à mot.
+  if (has(text, ['visite', 'visiter', 'visites', 'nzour', 'nzourou', 'زيارة', 'الزيارة', 'معاينة', 'المعاينة'])) return 'visit';
+  if (has(text, ['rendez vous', 'rdv', 'موعد', 'الموعد', 'مواعيد', 'المواعيد', 'لقاء'])) return 'appointment';
+  if (has(text, ['reservation', 'reserver', 'reserve', 'حجز', 'الحجز', 'حجوزات'])) return 'booking';
+  if (has(text, ['devis', 'عرض سعر', 'عرض السعر', 'تسعيرة'])) return 'quote';
+  if (has(text, ['commande', 'commander', 'commandes', 'طلبية', 'الطلبية', 'طلبيتي', 'طلب', 'الطلب', 'شراء', 'الشراء', 'achat'])) return 'order';
   return null;
 }
 

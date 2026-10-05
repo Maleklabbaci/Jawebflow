@@ -121,3 +121,23 @@ describe('suivi affiché chez le marchand, selon la nature de la demande', () =>
     expect(dealStatusLabel(undefined, 'pending_merchant_confirmation')).toBe('À confirmer par la boutique');
   });
 });
+
+describe('validations en darija et en arabe', () => {
+  it('« nvalidi la visite » / « waf9t 3la rdv » sont reconnus comme le français', () => {
+    expect(detectConfirmedDealKind('safi nvalidi la visite')).toBe('visit');
+    expect(detectConfirmedDealKind('waf9t 3la rdv')).toBe('appointment');
+    expect(detectConfirmedDealKind('nconfirmi la commande')).toBe('order');
+    expect(isExplicitOrderConfirmation('nvalidi la visite')).toBe(true);
+  });
+
+  it('la question du bot en darija prépare le bon brouillon', () => {
+    expect(detectConfirmationQuestionKind('Wach tconfirmi la visite ?')).toBe('visit');
+    expect(detectConfirmationQuestionKind('Nconfirou la commande ?')).toBe('order');
+    expect(isOrderConfirmationQuestion('Wach tconfirmi la visite ?')).toBe(true);
+  });
+
+  it('l’arabe confirme aussi la bonne nature', () => {
+    expect(detectConfirmedDealKind('نعم أوافق على الموعد')).toBe('appointment');
+    expect(detectConfirmedDealKind('اؤكد الطلبية')).toBe('order');
+  });
+});
