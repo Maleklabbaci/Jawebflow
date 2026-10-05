@@ -227,3 +227,10 @@ discussions Instagram sont relancées.
 
 **Reste à faire (non traité ici) :** rôles d'équipe (admin/agent/lecture seule) et,
 explicitement reporté à votre demande, la sécurisation des paiements (§4.7).
+
+### Rôles d'équipe + écran « Sécurité & équipe » (même passe)
+- `src/lib/roles.ts` : `resolveTeamRole` (propriétaire = admin ; sinon `teamRoles`
+  email→rôle ; à défaut lecture seule) et `roleCan` (permissions par rôle).
+- Tableau de bord : carte **« Sécurité & équipe »** (admin) dans « Mon profil » pour
+  régler `widgetKey` + `allowedDomains` (bouton Générer) et assigner des rôles
+  (`teamRoles`). L'abonnement/facturation est masqué aux non-admins.

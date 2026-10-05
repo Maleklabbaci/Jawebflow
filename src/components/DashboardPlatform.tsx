@@ -60,6 +60,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
+import { resolveTeamRole, roleCan, type TeamRole } from '../lib/roles';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
@@ -252,6 +253,19 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Assistant Configuration State
   const [assistantId, setAssistantId] = useState<string>('');
+  const [loadedAssistant, setLoadedAssistant] = useState<any>(null);
+  const [widgetKey, setWidgetKey] = useState('');
+  const [allowedDomains, setAllowedDomains] = useState('');
+  const [teamRoles, setTeamRoles] = useState<Record<string, TeamRole>>({});
+  const [newRoleEmail, setNewRoleEmail] = useState('');
+  const [newRoleValue, setNewRoleValue] = useState<TeamRole>('agent');
+  const [secBusy, setSecBusy] = useState(false);
+  const [secMsg, setSecMsg] = useState('');
+  const currentRole: TeamRole = !loadedAssistant
+    ? 'admin' // pendant le chargement : ne rien masquer
+    : resolveTeamRole({
+        ownerUid: loadedAssistant?.userId, currentUid: user?.uid, email: user?.email, teamRoles,
+      });
   const [assistantLoaded, setAssistantLoaded] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // « Parler à mon IA »
@@ -684,6 +698,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             const activeId = localStorage.getItem(`jawebflow_active_assistant_${user.uid}`);
             const current = assistants.find(item => item.id === activeId) || assistants[0];
             setAssistantId(current.id || '');
+            // setState idempotents : sinon un nouvel objet à chaque passe relance
+            // le rendu en boucle (l'effet de chargement tourne sur [user, profile]).
+            setLoadedAssistant((prev: any) => (prev && prev.id === current.id ? prev : current));
+            setWidgetKey(String((current as any).widgetKey || ''));
+            setAllowedDomains(Array.isArray((current as any).allowedDomains) ? ((current as any).allowedDomains as string[]).join(', ') : String((current as any).allowedDomains || ''));
+            setTeamRoles((prev) => {
+              const next = ((current as any).teamRoles || {}) as Record<string, TeamRole>;
+              return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+            });
             if (current.id) localStorage.setItem(`jawebflow_active_assistant_${user.uid}`, current.id);
             setWidgetId(current.widgetId || `asst_${Math.random().toString(36).substring(2, 10)}`);
             const asstPlan = String(current.plan || '').toLowerCase();
@@ -861,6 +884,35 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     const interval = setInterval(fetchLeads, 8000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [assistantId, leadsLimit]);
+
+  /** Fusionne des champs dans la config jsonb de l'assistant (isolation, rôles). */
+  const saveAssistantConfigPatch = async (patch: Record<string, unknown>) => {
+    if (!assistantId) throw new Error('Assistant non chargé.');
+    const { data } = await supabase.from('assistants').select('config').eq('id', assistantId).maybeSingle();
+    const merged = { ...((data?.config as Record<string, unknown>) || {}), ...patch };
+    const { error } = await supabase.from('assistants').update({ config: merged }).eq('id', assistantId);
+    if (error) throw new Error(error.message);
+    setLoadedAssistant((prev: any) => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const handleSaveWidgetSecurity = async () => {
+    setSecBusy(true); setSecMsg('');
+    try {
+      const domains = allowedDomains.split(/[\n,]+/).map((d) => d.trim()).filter(Boolean);
+      await saveAssistantConfigPatch({ widgetKey, allowedDomains: domains });
+      setSecMsg('Sécurité du widget enregistrée ✅');
+    } catch (e: any) { setSecMsg(`⚠️ ${e?.message || 'Erreur d’enregistrement.'}`); }
+    finally { setSecBusy(false); }
+  };
+
+  const handleSaveTeamRoles = async () => {
+    setSecBusy(true); setSecMsg('');
+    try {
+      await saveAssistantConfigPatch({ teamRoles });
+      setSecMsg('Rôles de l’équipe enregistrés ✅');
+    } catch (e: any) { setSecMsg(`⚠️ ${e?.message || 'Erreur d’enregistrement.'}`); }
+    finally { setSecBusy(false); }
+  };
 
   const handleCompleteLeadFollowUp = async (leadId: string) => {
     if (!assistantId || leadFollowUpBusy) return;
@@ -1643,7 +1695,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             ) : null}
 
             {/* Abonnement & factures */}
-            <button
+            {currentRole === 'admin' && (<button
               type="button"
               id="nav-billing"
               title="Abonnement & factures"
@@ -1658,7 +1710,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             >
               <CreditCard className="h-4 w-4" />
               <span className="hidden xl:inline">Abonnement & factures</span>
-            </button>
+            </button>)}
 
             {/* Mon profil */}
             <div className="relative" ref={accountMenuRef}>
@@ -3505,7 +3557,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: BILLING & PLAN (Professional SaaS Billing Dashboard)
               ================================================================= */}
-          {currentSection === 'billing' && (
+          {currentSection === 'billing' && currentRole === 'admin' && (
             <div className="space-y-8 animate-in fade-in duration-200">
               
               {/* Notification Banner */}
@@ -4139,6 +4191,54 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               ================================================================= */}
           {currentSection === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-200">
+              {currentRole === 'admin' && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Sécurité & équipe</h3>
+                    <p className="text-xs text-slate-500">Isolez votre assistant (clé widget + domaines autorisés) et donnez des rôles à votre équipe.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600">Clé widget</label>
+                      <div className="mt-1 flex gap-2">
+                        <input value={widgetKey} onChange={(e) => setWidgetKey(e.target.value)} placeholder="Laisser vide pour désactiver" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs" />
+                        <button type="button" onClick={() => setWidgetKey(`wk_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`)} className="shrink-0 rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200">Générer</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600">Domaines autorisés (virgules ou retours à la ligne)</label>
+                      <textarea value={allowedDomains} onChange={(e) => setAllowedDomains(e.target.value)} rows={2} placeholder="https://votre-site.dz" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs" />
+                    </div>
+                  </div>
+                  <button type="button" disabled={secBusy} onClick={() => void handleSaveWidgetSecurity()} className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-60">{secBusy ? '…' : 'Enregistrer la sécurité'}</button>
+
+                  <div className="border-t border-slate-100 pt-4">
+                    <p className="text-[11px] font-bold text-slate-600">Rôles de l'équipe</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <input value={newRoleEmail} onChange={(e) => setNewRoleEmail(e.target.value)} placeholder="email@societe.dz" className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs" />
+                      <select value={newRoleValue} onChange={(e) => setNewRoleValue(e.target.value as TeamRole)} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs">
+                        <option value="agent">Agent</option>
+                        <option value="viewer">Lecture seule</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <button type="button" onClick={() => { const em = newRoleEmail.trim().toLowerCase(); if (!em) return; setTeamRoles((r) => ({ ...r, [em]: newRoleValue })); setNewRoleEmail(''); }} className="rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200">Ajouter</button>
+                    </div>
+                    <ul className="mt-2 space-y-1">
+                      {Object.entries(teamRoles).map(([email, role]) => (
+                        <li key={email} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1 text-xs">
+                          <span className="font-medium text-slate-700">{email}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-slate-500">{role}</span>
+                            <button type="button" aria-label={`Retirer ${email}`} onClick={() => setTeamRoles((r) => { const n = { ...r }; delete n[email]; return n; })} className="font-bold text-rose-600">✕</button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button type="button" disabled={secBusy} onClick={() => void handleSaveTeamRoles()} className="mt-2 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-60">{secBusy ? '…' : 'Enregistrer les rôles'}</button>
+                  </div>
+                  {secMsg && <p className="text-xs font-semibold text-slate-700">{secMsg}</p>}
+                </div>
+              )}
               <AccountProfileView
                 onAssistantProfileUpdate={async ({ companyName: nextCompanyName, phoneNumber }) => {
                   if (!assistantLoaded) throw new Error('Votre assistant se charge encore. Réessayez dans quelques instants.');
