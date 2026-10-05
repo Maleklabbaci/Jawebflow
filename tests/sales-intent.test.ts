@@ -186,6 +186,13 @@ describe('confirmation du nom du client', () => {
 
 
 describe('récap et nature réelle de la demande', () => {
+  it('le récap lit aussi les anciennes fiches enregistrées avec « \\n » littéral', () => {
+    const recap = buildDealRecap('Abdelmalek \\nClient : Eh je veux parler au telephone \\nClient : On vas dire le 10 octobre');
+    expect(recap).not.toContain('Client :');
+    expect(recap).not.toContain('\\n');
+    expect(recap).toContain('Eh je veux parler au telephone');
+  });
+
   it('le récap lit les retours à la ligne réels (plus de « \\nClient : »)', () => {
     const recap = buildDealRecap('Client : Eh je veux parler au telephone\nClient : On vas dire le 10 octobre');
     expect(recap).not.toContain('Client :');

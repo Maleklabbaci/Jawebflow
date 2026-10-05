@@ -174,7 +174,9 @@ const LEADING_YES = /^(?:oui+|ok+|okay|d accord|dacc|safi|waf9t|bien sur|d'accor
 export function buildDealRecap(summary: unknown): string {
   const text = String(summary || '').trim();
   if (!text) return '';
-  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  // Coupe sur les vrais retours ligne ET sur la séquence littérale « \n »
+  // (d'anciens brouillons ont été enregistrés avec ce séparateur échappé).
+  const lines = text.split(/\\n|\r?\n/).map((l) => l.trim()).filter(Boolean);
   const hasTranscript = lines.some((l) => CLIENT_LINE.test(l) || ASSISTANT_LINE.test(l));
   const source = hasTranscript
     ? lines.filter((l) => CLIENT_LINE.test(l)).map((l) => l.replace(CLIENT_LINE, '$1'))
