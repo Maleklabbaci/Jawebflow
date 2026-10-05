@@ -14,7 +14,7 @@ import { supabaseConfigured, supabaseListKnowledge, supabaseListKnowledgeEntries
 import { evaluateWidgetAccess } from '../_shared/widget-access.ts';
 import { rateLimited } from '../_shared/rate-limit.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
-import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from '../_shared/sales-intent.ts';
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName, refineDealKind, hasDealSignal } from '../_shared/sales-intent.ts';
 import { processOrderChangeMessage } from '../_shared/order-changes.ts';
 import { getGeminiContextCache } from '../_shared/gemini-cache.ts';
 
@@ -541,9 +541,12 @@ export async function onRequestPost(context) {
           // Ce que le client valide n'est pas forcément une « commande » : une
           // visite, un rendez-vous, une réservation ou un devis sont enregistrés
           // avec leur nature exacte (visible telle quelle chez le marchand).
-          const confirmedDealKind = detectConfirmedDealKind(message)
-            || (draft?.status === 'awaiting_confirmation' && isAffirmative(message) ? draft?.kind : null)
-            || null;
+          const confirmedDealKind = refineDealKind(
+            detectConfirmedDealKind(message)
+              || (draft?.status === 'awaiting_confirmation' && isAffirmative(message) ? draft?.kind : null)
+              || null,
+            message,
+          );
           if (hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation' || draft?.status === 'awaiting_name') {
             const now = new Date();
             const nowIso = now.toISOString();
@@ -559,7 +562,14 @@ export async function onRequestPost(context) {
               ...savedMessages.map((entry) => `${entry.sender === 'bot' ? 'Assistant' : 'Client'} : ${String(entry.text || '').slice(0, 350)}`),
               `Client : ${String(message).slice(0, 350)}`,
             ].join('\n').slice(-2_000);
-            if (orderConfirmed) {
+            // GARDE-FOU : une conversation de salutations (« salam », « tu me
+            // connais ? ») ne doit JAMAIS créer de « commande ». On ne finalise
+            // une demande que si le fil porte une vraie intention commerciale.
+            const clientGateText = [
+              ...savedMessages.filter((e) => e.sender !== 'bot').map((e) => String(e.text || '')),
+              String(message),
+            ].join(' ');
+            if (orderConfirmed && hasDealSignal(clientGateText)) {
               const requestId = messageId || `session_${sessionKey}_${now.getTime()}`;
               createdOrder = createPendingOrderRequest({
                 id: `web_${requestId}`,
@@ -725,7 +735,11 @@ export async function onRequestPost(context) {
       throw new Error("Réponse Gemini vide");
     }
 
-    const askedDealKind = detectConfirmationQuestionKind(aiText);
+    const recentClientText = [
+      ...conversationHistory.filter((e) => e?.sender === 'user').slice(-4).map((e) => String(e.text || '')),
+      String(message),
+    ].join(' ');
+    const askedDealKind = refineDealKind(detectConfirmationQuestionKind(aiText), recentClientText);
     if (supabaseConfigured(env) && trackedProspectId && !createdOrder && askedDealKind) {
       const draftMessages = [
         ...conversationHistory.filter((entry) => entry?.sender === 'user').slice(-4).map((entry) => `Client : ${String(entry.text || '').slice(0, 350)}`),
@@ -739,7 +753,7 @@ export async function onRequestPost(context) {
             // Nature de la demande : le « oui » qui suit valide CETTE demande
             // (visite, rendez-vous, réservation, devis ou commande).
             kind: askedDealKind,
-            summary: draftMessages.join('\\n').slice(-2_000),
+            summary: draftMessages.join('\n').slice(-2_000),
             updatedAt: new Date().toISOString(),
           },
         });

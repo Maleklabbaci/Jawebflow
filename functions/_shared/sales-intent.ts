@@ -120,6 +120,78 @@ export function dealKindLabel(kind: unknown): string {
   return isDealKind(kind) ? DEAL_KIND_LABELS[kind] : DEAL_KIND_LABELS.order;
 }
 
+/** Mots qui prouvent un achat / une commande (pour ne pas déclasser à tort). */
+const ORDER_TERMS = [
+  'commande', 'commander', 'commandes', 'acheter', 'achete', 'achat', 'livrer', 'livraison',
+  'طلبية', 'الطلبية', 'طلبيتي', 'شراء', 'الشراء',
+];
+
+/** Signaux « je veux vous parler / qu'on s'appelle » : ce n'est pas un achat. */
+const PHONE_TALK = [
+  'telephone', 'au tel', 'appeler', 'appelle', 'rappeler', 'parler', 'تلفون', 'هاتف',
+];
+
+/**
+ * Affine la nature détectée à partir de ce que dit VRAIMENT le client.
+ * Un bot qui demande « Confirmez-vous votre commande ? » à quelqu'un qui veut
+ * seulement « parler au téléphone » ne doit pas créer une « Commande » : on la
+ * reclasse en rendez-vous tant qu'aucun mot d'achat n'est présent.
+ */
+export function refineDealKind(kind: DealKind | null | undefined, clientText: unknown): DealKind | null {
+  if (!kind) return null;
+  const t = normalize(clientText);
+  if (!t) return kind;
+  if (kind === 'order' && !has(t, ORDER_TERMS) && !has(t, BUY_VERBS) && (has(t, PHONE_TALK) || hasDateSignal(t))) {
+    return 'appointment';
+  }
+  return kind;
+}
+
+const DATE_MONTHS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
+const DATE_WORDS = ['demain', 'aujourd', 'apres-demain', 'matin', 'midi', 'apres-midi', 'soir', 'heure', 'heures', 'semaine', 'week-end', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
+/** Le client évoque une date / un créneau (« le 07 octobre », « demain », « 14h »). */
+export function hasDateSignal(input: unknown): boolean {
+  const t = normalize(input);
+  if (!t) return false;
+  if (has(t, [...DATE_MONTHS, ...DATE_WORDS])) return true;
+  return /\b(?:le|a|a partir du|vers)\s+\d{1,2}\b/.test(t) || /\b\d{1,2}\s?(?:h|heure)\b/.test(t);
+}
+
+/**
+ * Le fil de discussion porte-t-il une VRAIE demande commerciale (achat, visite,
+ * rendez-vous, réservation, devis, appel, date…) ? Sert de garde-fou : une
+ * conversation de salutations (« salam », « tu me connais ? ») ne doit JAMAIS
+ * créer de « commande » dans le suivi du marchand.
+ */
+export function hasDealSignal(input: unknown): boolean {
+  const t = normalize(input);
+  if (!t) return false;
+  const intent = detectSalesIntent(t);
+  const strongIntent = Boolean(intent && ['purchase', 'visit', 'booking', 'appointment'].includes(intent.type));
+  return (
+    detectDealKind(t) !== null
+    || strongIntent
+    || has(t, ORDER_TERMS)
+    || has(t, BUY_VERBS)
+    || has(t, PHONE_TALK)
+    || hasDateSignal(t)
+  );
+}
+
+/** Message envoyé au client quand le marchand confirme la demande. */
+export function dealConfirmationMessage(kind: unknown, name?: unknown): string {
+  const who = String(name || '').trim();
+  const hello = who ? `${who}, ` : '';
+  switch (isDealKind(kind) ? kind : 'order') {
+    case 'visit': return `✅ ${hello}votre visite est confirmée ! Nous vous attendons avec plaisir.`;
+    case 'appointment': return `✅ ${hello}votre rendez-vous est confirmé ! À très bientôt.`;
+    case 'booking': return `✅ ${hello}votre réservation est confirmée ! À très bientôt.`;
+    case 'quote': return `✅ ${hello}votre devis est accepté, nous nous occupons de tout !`;
+    default: return `✅ ${hello}bonne nouvelle : votre commande est confirmée ! Nous vous tenons au courant pour la suite.`;
+  }
+}
+
 const CLIENT_LINE = /^(?:client|visiteur|moi|me)\s*[:\-–]\s*(.+)$/i;
 const ASSISTANT_LINE = /^(?:assistant|bot|ia)\s*[:\-–]/i;
 const LEADING_YES = /^(?:oui+|ok+|okay|d accord|dacc|safi|waf9t|bien sur|d'accord)\b[, ]*/i;
@@ -134,7 +206,9 @@ const LEADING_YES = /^(?:oui+|ok+|okay|d accord|dacc|safi|waf9t|bien sur|d'accor
 export function buildDealRecap(summary: unknown): string {
   const text = String(summary || '').trim();
   if (!text) return '';
-  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  // Coupe sur les vrais retours ligne ET sur la séquence littérale « \n »
+  // (d'anciens brouillons ont été enregistrés avec ce séparateur échappé).
+  const lines = text.split(/\\n|\r?\n/).map((l) => l.trim()).filter(Boolean);
   const hasTranscript = lines.some((l) => CLIENT_LINE.test(l) || ASSISTANT_LINE.test(l));
   const source = hasTranscript
     ? lines.filter((l) => CLIENT_LINE.test(l)).map((l) => l.replace(CLIENT_LINE, '$1'))
