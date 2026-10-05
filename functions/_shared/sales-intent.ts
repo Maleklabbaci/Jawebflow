@@ -120,6 +120,46 @@ export function dealKindLabel(kind: unknown): string {
   return isDealKind(kind) ? DEAL_KIND_LABELS[kind] : DEAL_KIND_LABELS.order;
 }
 
+/** Mots qui prouvent un achat / une commande (pour ne pas déclasser à tort). */
+const ORDER_TERMS = [
+  'commande', 'commander', 'commandes', 'acheter', 'achete', 'achat', 'livrer', 'livraison',
+  'طلبية', 'الطلبية', 'طلبيتي', 'شراء', 'الشراء',
+];
+
+/** Signaux « je veux vous parler / qu'on s'appelle » : ce n'est pas un achat. */
+const PHONE_TALK = [
+  'telephone', 'au tel', 'appeler', 'appelle', 'rappeler', 'parler', 'تلفون', 'هاتف',
+];
+
+/**
+ * Affine la nature détectée à partir de ce que dit VRAIMENT le client.
+ * Un bot qui demande « Confirmez-vous votre commande ? » à quelqu'un qui veut
+ * seulement « parler au téléphone » ne doit pas créer une « Commande » : on la
+ * reclasse en rendez-vous tant qu'aucun mot d'achat n'est présent.
+ */
+export function refineDealKind(kind: DealKind | null | undefined, clientText: unknown): DealKind | null {
+  if (!kind) return null;
+  const t = normalize(clientText);
+  if (!t) return kind;
+  if (kind === 'order' && !has(t, ORDER_TERMS) && !has(t, BUY_VERBS) && has(t, PHONE_TALK)) {
+    return 'appointment';
+  }
+  return kind;
+}
+
+/** Message envoyé au client quand le marchand confirme la demande. */
+export function dealConfirmationMessage(kind: unknown, name?: unknown): string {
+  const who = String(name || '').trim();
+  const hello = who ? `${who}, ` : '';
+  switch (isDealKind(kind) ? kind : 'order') {
+    case 'visit': return `✅ ${hello}votre visite est confirmée ! Nous vous attendons avec plaisir.`;
+    case 'appointment': return `✅ ${hello}votre rendez-vous est confirmé ! À très bientôt.`;
+    case 'booking': return `✅ ${hello}votre réservation est confirmée ! À très bientôt.`;
+    case 'quote': return `✅ ${hello}votre devis est accepté, nous nous occupons de tout !`;
+    default: return `✅ ${hello}bonne nouvelle : votre commande est confirmée ! Nous vous tenons au courant pour la suite.`;
+  }
+}
+
 const CLIENT_LINE = /^(?:client|visiteur|moi|me)\s*[:\-–]\s*(.+)$/i;
 const ASSISTANT_LINE = /^(?:assistant|bot|ia)\s*[:\-–]/i;
 const LEADING_YES = /^(?:oui+|ok+|okay|d accord|dacc|safi|waf9t|bien sur|d'accord)\b[, ]*/i;

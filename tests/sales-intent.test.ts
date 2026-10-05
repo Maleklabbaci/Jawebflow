@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, extractClientName, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion } from '../functions/_shared/sales-intent';
+import { DEAL_NEXT_ACTIONS, DEAL_STEPS, buildDealRecap, buildLeadFollowUp, extractClientName, createPendingOrderRequest, dealKindLabel, dealKindOf, dealStatusLabel, detectConfirmationQuestionKind, detectConfirmedDealKind, detectDealKind, detectSalesIntent, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, refineDealKind, dealConfirmationMessage } from '../functions/_shared/sales-intent';
 
 describe('détection et suivi commercial', () => {
   it('repère une volonté d’achat en français, darija translittérée et arabe', () => {
@@ -181,5 +181,29 @@ describe('confirmation du nom du client', () => {
     expect(extractClientName('oui')).toBe('');
     expect(extractClientName('0550123456')).toBe('');
     expect(extractClientName('')).toBe('');
+  });
+});
+
+
+describe('récap et nature réelle de la demande', () => {
+  it('le récap lit les retours à la ligne réels (plus de « \\nClient : »)', () => {
+    const recap = buildDealRecap('Client : Eh je veux parler au telephone\nClient : On vas dire le 10 octobre');
+    expect(recap).not.toContain('Client :');
+    expect(recap).not.toContain('\\n');
+    expect(recap).toContain('Eh je veux parler au telephone');
+    expect(recap).toContain('On vas dire le 10 octobre');
+  });
+
+  it("« parler au téléphone » sans mot d'achat n'est pas une commande", () => {
+    expect(refineDealKind('order', 'Eh je veux parler au telephone')).toBe('appointment');
+    expect(refineDealKind('order', 'je veux commander, je vous appelle')).toBe('order');
+    expect(refineDealKind('visit', 'je veux parler au telephone')).toBe('visit');
+    expect(refineDealKind(null, 'je veux parler au telephone')).toBeNull();
+  });
+
+  it('le message de confirmation dépend de la nature', () => {
+    expect(dealConfirmationMessage('order', 'Yacine')).toContain('commande est confirmée');
+    expect(dealConfirmationMessage('appointment')).toContain('rendez-vous est confirmé');
+    expect(dealConfirmationMessage('visit')).toContain('visite est confirmée');
   });
 });

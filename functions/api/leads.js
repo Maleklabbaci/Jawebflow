@@ -11,6 +11,8 @@ import {
   supabaseUpsertProspect,
   supabaseRequest,
 } from '../_shared/supabase.ts';
+import { sendMessage } from '../_shared/ig-api.ts';
+import { dealConfirmationMessage } from '../_shared/sales-intent.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -129,7 +131,30 @@ export async function onRequestPost(context) {
       const updatedAt = new Date().toISOString();
       const updatedOrders = orders.map((candidate) => candidate?.id === orderId ? { ...candidate, status: orderStatus, updatedAt } : candidate);
       await supabaseUpsertProspect(context.env, prospectId, assistantId, { orders: updatedOrders });
-      return new Response(JSON.stringify({ ok: true, prospectId, orderId, orderStatus, updatedAt }), { status: 200, headers: cors });
+
+      // Le marchand confirme → on prévient le client. Instagram uniquement :
+      // la bulle du site n'a pas de canal sortant.
+      let clientNotified = false;
+      if (orderStatus === 'confirmed') {
+        const igUserId = String(data.igUserId || '');
+        if (igUserId) {
+          const integRes = await supabaseRequest(context.env, `instagram_integrations?assistant_id=eq.${encodeURIComponent(assistantId)}&select=access_token&limit=1`);
+          const integ = integRes.ok ? ((await integRes.json().catch(() => [])) || [])[0] : null;
+          if (integ?.access_token) {
+            try {
+              const text = dealConfirmationMessage(order.kind, data.name);
+              const send = await sendMessage(integ.access_token, 'me', { recipientId: igUserId }, { text });
+              clientNotified = Boolean(send?.ok);
+              if (clientNotified) {
+                await supabaseUpsertProspect(context.env, prospectId, assistantId, {
+                  messages: [{ sender: 'bot', text, timestamp: new Date().toISOString() }],
+                }).catch(() => undefined);
+              }
+            } catch (e) { console.warn('[leads] client non prévenu:', e?.message || e); }
+          }
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, prospectId, orderId, orderStatus, updatedAt, clientNotified }), { status: 200, headers: cors });
     }
 
     if (action === 'takeover' || action === 'resume') {

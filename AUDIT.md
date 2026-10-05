@@ -258,3 +258,26 @@ plateforme le lui dit, et « Mon IA » peut le faire à sa place.
   (`/api/learning`), donc le score est juste sans ouvrir l'onglet « Apprentissage ».
 
 Tests : `tests/bot-coach.test.ts` (7) + carte du coach dans `dashboard-smoke`.
+
+## 11. Récap lisible, nature réelle de la demande, et message envoyé au client à la confirmation (5 octobre 2026)
+
+Trois correctifs suite à un cas réel (carte « Commande » avec « Abdelmalek \nClient :
+Eh je veux parler au telephone … ») :
+
+1. **Récap illisible (`\nClient :`)** : le brouillon de demande était construit avec
+   `draftMessages.join('\\n')` (séparateur *littéral* `\n`), que `buildDealRecap`
+   (qui coupe sur de vrais retours ligne) ne savait pas relire. → `join('\n')` dans
+   `functions/api/chat.js` et `functions/api/webhook/instagram.ts`.
+2. **« Commande » alors que le client veut juste parler** : la nature venait du
+   libellé de confirmation du bot, qui disait « commande » par défaut. Nouveau
+   `refineDealKind(kind, texteClient)` : si la nature est « order » mais que le
+   client parle de téléphone/appel **sans aucun mot d'achat**, elle est reclasse
+   en « rendez-vous ». Branché sur le brouillon ET la confirmation, côté web et
+   Instagram.
+3. **Confirmer prévient le client** : `POST /api/leads` (orderId+orderStatus)
+   envoie désormais un DM Instagram `dealConfirmationMessage(kind, nom)` quand le
+   statut passe à `confirmed` (et journalise le message). La bulle du site n'a pas
+   de canal sortant → `clientNotified: false` dans ce cas.
+
+Tests : `tests/sales-intent.test.ts` (+3) et `tests/leads-api.test.ts` (+2 : envoi
+Instagram + cas site sans envoi). 581 tests / 37 fichiers, tsc 0.

@@ -140,3 +140,30 @@ describe('/api/leads — pagination (échelle grande société)', () => {
     expect(b2.hasMore).toBe(false);
   });
 });
+
+describe('/api/leads — confirmation côté client', () => {
+  it('confirmer une demande Instagram envoie le message au client', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'p1', assistant_id: 'asst1', updated_at: '2026-10-03T10:00:00.000Z',
+      data: { name: 'Yacine', channel: 'instagram', igUserId: 'ig_123',
+        orders: [{ id: 'o1', kind: 'order', status: 'pending_merchant_confirmation', summary: 'un article' }] },
+    }]);
+    const post = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p1', orderId: 'o1', orderStatus: 'confirmed' }));
+    expect(post.status).toBe(200);
+    expect(await post.json()).toMatchObject({ ok: true, clientNotified: true });
+    const sent = fx.meta.sent('messages');
+    expect(sent.length).toBeGreaterThan(0);
+    expect(JSON.stringify(sent)).toContain('commande est confirmée');
+  });
+
+  it('un client du site (sans Instagram) est confirmé sans envoi', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'p2', assistant_id: 'asst1', updated_at: '2026-10-03T10:00:00.000Z',
+      data: { name: 'Web', channel: 'site web',
+        orders: [{ id: 'o2', kind: 'visit', status: 'pending_merchant_confirmation', summary: 'visite' }] },
+    }]);
+    const post = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p2', orderId: 'o2', orderStatus: 'confirmed' }));
+    expect(post.status).toBe(200);
+    expect(await post.json()).toMatchObject({ ok: true, clientNotified: false });
+  });
+});
