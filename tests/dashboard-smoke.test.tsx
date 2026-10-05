@@ -127,3 +127,20 @@ describe('tableau de bord — navigation', () => {
     expect(await screen.findByRole('button', { name: 'Autoriser les commentaires' })).toBeTruthy();
   });
 });
+
+describe('le coach du bot', () => {
+  it('la carte « Développez votre robot » liste ce qui manque et ouvre le bon écran', async () => {
+    render(<DashboardPlatform initialSection="summary" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
+    const card = document.querySelector('[data-testid="bot-coach-card"]');
+    expect(card, 'carte du coach absente').toBeTruthy();
+    expect(card!.textContent || '').toContain('% prêt');
+    const openBtn = Array.from(card!.querySelectorAll('button')).find((b) => b.textContent === 'Ouvrir');
+    expect(openBtn, 'aucune étape actionnable').toBeTruthy();
+    await act(async () => { fireEvent.click(openBtn!); await new Promise((r) => setTimeout(r, 80)); });
+    // On a quitté « Résumé » : la carte n'est plus là, l'écran cible est affiché.
+    expect(document.querySelector('[data-testid="bot-coach-card"]'), 'la carte est restée affichée').toBeFalsy();
+    expect(document.querySelector('main')!.innerHTML.length).toBeGreaterThan(200);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+});

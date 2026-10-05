@@ -20,6 +20,7 @@ import {
   normalizeText,
 } from './ig-automation-core.ts';
 import type { Automation, AutomationConfig, AutomationInput, TriggerType } from './ig-automation-core.ts';
+import { buildCoachPlan, coachPlanText } from './bot-coach.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Limites
@@ -967,6 +968,15 @@ export interface CopilotSnapshot {
   /** null = la base des automatisations n'est pas encore prête. */
   automations: Automation[] | null;
   instagram: { connected: boolean; username?: string; greeting?: string };
+  /** Ce qui alimente le « coach » (plan d'amélioration montré à l'IA). */
+  coach?: {
+    /** Questions que le robot n'a pas su traiter (onglet « Apprentissage »). */
+    openQuestions?: { question: string; occurrences: number }[];
+    assistantTone?: string;
+    whatsappEscalation?: string;
+    widgetKey?: string;
+    allowedDomains?: string[] | string;
+  };
 }
 
 /** Texte « donnée » : une seule ligne, sans balises (pour qu'un texte de fiche ne puisse pas se faire passer pour une consigne). */
@@ -1030,6 +1040,28 @@ export function buildContextBlock(s: CopilotSnapshot): string {
     const textMax = s.automations.length <= 12 ? 160 : 70;
     for (const a of s.automations.slice(0, 50)) L.push(describeAutomationBrief(a, textMax));
   }
+
+  // ── LE COACH ──────────────────────────────────────────────────────────────
+  // Plan d'amélioration calculé sur l'état réel : l'IA s'en sert pour ORIENTER
+  // le marchand (« qu'est-ce que je dois faire ? ») et lui proposer d'agir.
+  const coach = s.coach || {};
+  const plan = buildCoachPlan({
+    businessName: s.businessName,
+    businessCategory: s.businessCategory,
+    businessDescription: s.businessDescription,
+    websiteUrl: s.websiteUrl,
+    businessInfo: s.businessInfo,
+    knowledgeCount: notes.filter((n) => n.enabled !== false).length,
+    openQuestions: coach.openQuestions || [],
+    rulesText: typeof s.behavior?.customRules === 'string' ? s.behavior.customRules : '',
+    assistantTone: coach.assistantTone,
+    whatsappEscalation: coach.whatsappEscalation,
+    widgetKey: coach.widgetKey,
+    allowedDomains: coach.allowedDomains,
+    instagramConnected: s.instagram?.connected,
+  });
+  L.push(`Robot prêt à ${plan.score} % (${plan.done}/${plan.total} points réglés).`);
+  L.push(`CE QU’IL RESTE À AMÉLIORER (dans l’ordre) :\n${coachPlanText(plan, 6)}`);
   return L.join('\n');
 }
 
@@ -1062,6 +1094,7 @@ COMMENT TU TRAVAILLES
 7. QUESTIONS (« qu'est-ce que tu sais sur… », « quelles automatisations j'ai ? ») : réponds à partir de l'état ci-dessous, sans appeler d'outil d'écriture.
 8. Après tes outils, dis UNIQUEMENT ce que les résultats confirment. Si un outil a échoué, dis-le simplement et explique quoi faire. Ne prétends jamais avoir fait quelque chose que tu n'as pas fait.
 9. CHIFFRES (« combien de messages / de conversations / de leads / de visiteurs ? », « comment ça se passe cette semaine ? ») : appelle TOUJOURS get_stats — jamais de chiffre de tête, jamais d'estimation. Sans période précisée, prends les 7 derniers jours et dis-le. Donne les chiffres EXACTEMENT comme l'outil les renvoie, avec la période. « Messages » = messages de clients auxquels le robot a répondu ; « conversations » = discussions distinctes ; « leads » = personnes qui ont laissé un téléphone ou un email (les simples visiteurs n'en sont pas). Si un chiffre vaut zéro, dis-le simplement et propose UNE piste concrète (installer la bulle sur le site, connecter Instagram, créer une réponse aux commentaires). Pour « mes derniers leads » ou « qui m'a laissé son numéro ? », utilise list_leads et recopie les coordonnées exactement. Si le champ « precision » signale une limite, dis-le en une phrase.
+10. COACH (« qu'est-ce que je dois améliorer ? », « mon robot est-il prêt ? », « aide-moi à le développer », « il ne sait pas répondre ») : sers-toi de la liste « CE QU'IL RESTE À AMÉLIORER » des données ci-dessous. Donne **deux points maximum** à la fois, les plus urgents d'abord, une phrase par point, puis propose de t'en occuper tout de suite quand tu as l'outil (fiches, informations officielles, comportement, automatisations). Pour ce que tu ne peux pas faire (clé et domaines du robot, connexion Instagram, test dans le simulateur), indique l'écran du menu. Ne récite jamais toute la liste d'un coup : on avance un pas à la fois.
 
 EXEMPLES (pour t'inspirer, pas à recopier)
 • « combien de leads aujourd'hui ? » → get_stats(period « today »), puis une phrase avec le chiffre exact (« Aujourd'hui : 3 leads et 12 messages de clients. »). « et cette semaine ? » → get_stats(period « 7d »).

@@ -61,6 +61,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
 import { resolveTeamRole, roleCan, type TeamRole } from '../lib/roles';
+import { buildCoachPlan, coachHeadline } from '../../functions/_shared/bot-coach';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
@@ -237,6 +238,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   }, [accountMenuOpen]);
 
   const handleSectionChange = (section: DashboardSectionId) => {
+    if (section === 'simulator') {
+      try { localStorage.setItem('jawebflow_coach_tested', '1'); } catch { /* stockage indisponible */ }
+      setSimulatorTested(true);
+    }
     setCurrentSection(section);
     setOpenGroup(menuGroupOf(section));
     setMobileMenuOpen(false);
@@ -266,6 +271,27 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     : resolveTeamRole({
         ownerUid: loadedAssistant?.userId, currentUid: user?.uid, email: user?.email, teamRoles,
       });
+
+  // ── LE COACH : ce qu'il reste à faire pour que le robot vende ────────────
+  const [simulatorTested, setSimulatorTested] = useState<boolean>(() => {
+    try { return localStorage.getItem('jawebflow_coach_tested') === '1'; } catch { return false; }
+  });
+  // (calculé au rendu : les états qu'il lit sont déclarés plus bas)
+  const computeCoachPlan = () => buildCoachPlan({
+    businessName,
+    businessCategory,
+    businessDescription,
+    websiteUrl,
+    businessInfo,
+    knowledgeCount: Array.isArray(knowledgeNotes) ? knowledgeNotes.length : 0,
+    openQuestions: learningQuestions,
+    rulesText: specialRulesText,
+    assistantTone,
+    whatsappEscalation,
+    widgetKey,
+    allowedDomains,
+    simulatorTested,
+  });
   const [assistantLoaded, setAssistantLoaded] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // « Parler à mon IA »
@@ -775,6 +801,11 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
       setLearningLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (assistantId) void fetchLearningQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assistantId]);
 
   const handleResolveLearning = async (q: any) => {
     const answer = (learningDrafts[q.id] || '').trim();
@@ -1793,6 +1824,45 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               ================================================================= */}
           {currentSection === 'summary' && (
             <div className="space-y-6 animate-in fade-in duration-200">
+
+              {/* LE COACH : ce qu'il reste à faire pour développer le robot */}
+              {(() => {
+                const plan = computeCoachPlan();
+                return (
+                  <div className="rounded-xl border border-purple-200 bg-white p-5" data-testid="bot-coach-card">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-base font-bold text-slate-900">🎯 Développez votre robot</h2>
+                      <span className="text-xs font-bold text-purple-700">{plan.score} % prêt</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">{coachHeadline(plan)}</p>
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-purple-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-[#a23dff] to-[#5a2cff]" style={{ width: `${plan.score}%` }} />
+                    </div>
+                    <ul className="mt-4 space-y-2">
+                      {plan.next.slice(0, 4).map((step) => (
+                        <li key={step.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">{step.title}</p>
+                            <p className="text-xs text-slate-500">{step.why}{step.detail ? ` ${step.detail}` : ''}</p>
+                          </div>
+                          {step.section && (
+                            <button type="button" onClick={() => handleSectionChange(step.section as DashboardSectionId)} className="shrink-0 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700">
+                              Ouvrir
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {plan.next.length === 0 ? (
+                      <p className="mt-3 text-xs font-semibold text-emerald-700">Tout est en place : votre robot est opérationnel. ✅</p>
+                    ) : (
+                      <button type="button" onClick={() => handleSectionChange('overview')} className="mt-3 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
+                        Demander à « Mon IA » de s’en occuper
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Message d'accueil + action principale */}
               <div className="rounded-xl border border-slate-200 bg-white p-6">

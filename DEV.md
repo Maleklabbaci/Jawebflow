@@ -33,6 +33,7 @@ commerçant**, pas de code.
 | `functions/_shared/relances.ts` | `buildRelances()` (+1 h / +24 h), `dueRelances()`, `relanceText()` | Délais et textes de relance |
 | `functions/_shared/order-changes.ts` | Annulations / modifications selon la nature | Le vocabulaire des annulations |
 | `functions/_shared/lead-facts.ts` | Infos client (nom, téléphone…) | Ce qu'on extrait d'un client |
+| `functions/_shared/bot-coach.ts` | `buildCoachPlan()` : le **coach** — plan d'amélioration de l'assistant (10 points, score « prêt à X % ») branché dans « Mon IA » et dans la carte « Développez votre robot » | Ajouter/ordonner une étape d'amélioration |
 | `functions/_shared/learning.ts` | Détecte une réponse « je ne sais pas » → journalise dans `learning_questions` (onglet **Apprentissage IA**) | Les trous de connaissance |
 | `functions/_shared/supabase.ts` | Tout l'accès aux données (prospects, assistants, connaissances) | Une requête/écriture |
 | `functions/_shared/widget-access.ts`, `rate-limit.ts` | Clé widget, domaines autorisés, débit | L'isolation |

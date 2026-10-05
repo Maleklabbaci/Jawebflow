@@ -234,3 +234,27 @@ explicitement reporté à votre demande, la sécurisation des paiements (§4.7).
 - Tableau de bord : carte **« Sécurité & équipe »** (admin) dans « Mon profil » pour
   régler `widgetKey` + `allowedDomains` (bouton Générer) et assigner des rôles
   (`teamRoles`). L'abonnement/facturation est masqué aux non-admins.
+
+## 10. Le coach du bot — la plateforme développe le robot du marchand (5 octobre 2026)
+
+**But :** le marchand ne sait pas quoi ajouter pour que son robot vende. La
+plateforme le lui dit, et « Mon IA » peut le faire à sa place.
+
+- `functions/_shared/bot-coach.ts` : `buildCoachPlan()` analyse l'état RÉEL de
+  l'assistant et renvoie un plan ordonné (10 points : fiches de connaissances,
+  informations officielles, questions restées sans réponse, règles du commerçant,
+  site, Instagram, clé/domaines du widget, relais humain, ton, test au simulateur)
+  avec pour chacun *quoi / pourquoi / comment / quel écran*, plus un score
+  « prêt à X % ». `coachPlanText()` en fait un texte lisible.
+- **« Mon IA » oriente le marchand** : `CopilotSnapshot.coach` (questions ouvertes,
+  ton, relais humain, clé/domaines) alimente `buildContextBlock()`, qui ajoute
+  « Robot prêt à X % » + « CE QU’IL RESTE À AMÉLIORER ». La consigne n°10 lui dit
+  de ne donner **que deux points à la fois** et de proposer d'agir avec ses outils.
+- **Tableau de bord** : carte « 🎯 Développez votre robot » dans « Résumé »
+  (score, barre de progression, 4 étapes avec bouton « Ouvrir » sur le bon écran,
+  et « Demander à « Mon IA » de s’en occuper »). Ouvrir le simulateur marque
+  l'étape « testé » (localStorage).
+- Les questions en attente sont chargées dès qu'un assistant est actif
+  (`/api/learning`), donc le score est juste sans ouvrir l'onglet « Apprentissage ».
+
+Tests : `tests/bot-coach.test.ts` (7) + carte du coach dans `dashboard-smoke`.

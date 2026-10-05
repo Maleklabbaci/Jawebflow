@@ -12,6 +12,7 @@ import {
   supabaseAssistantRowToConfig,
   supabaseGetInstagramIntegration,
   supabasePatchAssistant,
+  supabaseRequest,
   supabaseUpsertInstagramIntegration,
 } from './supabase.ts';
 import { listMedia } from './ig-api.ts';
@@ -83,14 +84,22 @@ export interface LoadedState {
 export async function loadState(env: any, uid: string, assistantRow: Record<string, any>): Promise<LoadedState> {
   const config = supabaseAssistantRowToConfig(assistantRow);
 
-  // Les deux lectures sont indépendantes : en parallèle (gagne un aller-retour vers la base à chaque message).
-  const [integ, listed]: [any, Awaited<ReturnType<typeof listAutomations>>] = await Promise.all([
+  // Les lectures sont indépendantes : en parallèle (gagne un aller-retour vers la base à chaque message).
+  const [integ, listed, learningRows]: [any, Awaited<ReturnType<typeof listAutomations>>, any] = await Promise.all([
     supabaseGetInstagramIntegration(env, uid).catch(() => null), // pas d'Instagram : on continue
     listAutomations(env, uid),
+    // Questions que le robot n'a pas su traiter → le coach les remonte en priorité.
+    supabaseRequest(
+      env,
+      `learning_questions?assistant_id=eq.${encodeURIComponent(String(assistantRow?.id || ''))}&status=eq.open&select=question,occurrences&order=occurrences.desc&limit=8`,
+    ).then(async (r) => (r.ok ? r.json() : [])).catch(() => []),
   ]);
   const connected = Boolean(integ && integ.connected !== false && integ.accessToken);
   const greetingRaw = String(integ?.customGreeting || '').trim();
   const automations = listed.ok === true ? listed.value : null;
+  const openQuestions = (Array.isArray(learningRows) ? learningRows : [])
+    .map((q: any) => ({ question: String(q?.question || ''), occurrences: Number(q?.occurrences || 1) }))
+    .filter((q: any) => q.question);
 
   return {
     snapshot: {
@@ -106,6 +115,13 @@ export async function loadState(env: any, uid: string, assistantRow: Record<stri
         connected,
         username: connected ? String(integ.instagramUsername || '').replace(/^@/, '') : undefined,
         greeting: greetingRaw && greetingRaw !== LEGACY_DEFAULT_GREETING ? greetingRaw : '',
+      },
+      coach: {
+        openQuestions,
+        assistantTone: config.assistantTone ? String(config.assistantTone) : '',
+        whatsappEscalation: config.whatsappEscalation ? String(config.whatsappEscalation) : '',
+        widgetKey: config.widgetKey ? String(config.widgetKey) : '',
+        allowedDomains: (config.allowedDomains as string[] | string | undefined) || [],
       },
     },
     ig: connected ? { token: String(integ.accessToken), username: String(integ.instagramUsername || '').replace(/^@/, '') } : null,
