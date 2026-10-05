@@ -116,7 +116,7 @@ const TITLES: Array<{ id: string; nav: string; title: string }> = [
   { id: 'instagram', nav: 'Canaux', title: 'Instagram' },
   { id: 'automations', nav: 'Canaux', title: 'Automatisations' },
   { id: 'leads', nav: 'Clients', title: "Vue d'ensemble" },
-  { id: 'orders', nav: 'Commandes', title: 'Commandes' },
+  { id: 'orders', nav: 'Commandes & RDV', title: 'Commandes & RDV' },
   { id: 'billing', nav: 'Abonnement & factures', title: 'Abonnement & factures' },
   { id: 'settings', nav: 'Mon profil', title: 'Mon profil' },
 ];
@@ -225,6 +225,77 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
   });
 
+  it('un client sans nom n’est plus étiqueté « Visiteur Anonyme »', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
+      id: 'p5', phone: '0550000000', email: 'Non fourni', need: 'Question',
+      status: 'qualifie', channel: 'instagram', updatedAt: '2026-10-05T10:00:00.000Z',
+      messages: [{ sender: 'user', text: 'Question', timestamp: '2026-10-05T10:00:00.000Z' }],
+    }] }), { status: 200 }));
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+    const main = document.querySelector('main')?.textContent || '';
+    expect(main).toContain('Nom à confirmer');
+    expect(main).not.toContain('Visiteur Anonyme');
+  });
+
+  it('la liste résume la discussion au lieu de l’afficher en entier', async () => {
+    const transcript = [
+      'Client : Salam', 'Assistant : Marhba bik !', 'Client : Oui demain',
+      'Client : Oui nimporte quel heure', 'Assistant : C’est noté !', 'Client : Je valide le rendez-vous',
+    ].join('\n');
+    const order = {
+      id: 'rdv-1', reference: 'JF-RDV001', status: 'pending_merchant_confirmation', channel: 'instagram',
+      kind: 'appointment', kindLabel: 'Rendez-vous',
+      summary: transcript, customerName: 'Anis', phone: '0550112233', city: 'Oran',
+      totalAmount: null, createdAt: '2026-10-05T09:00:00.000Z', updatedAt: '2026-10-05T09:00:00.000Z',
+    };
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
+      id: 'p4', name: 'Anis', phone: '0550112233', email: 'Non fourni', need: 'Appel de rappel',
+      status: 'qualifie', channel: 'instagram', city: 'Oran', orders: [order], updatedAt: order.updatedAt,
+    }] }), { status: 200 }));
+
+    render(<DashboardPlatform initialSection="orders" />);
+    await settle(300);
+    const main = document.querySelector('main')?.textContent || '';
+    // Le résumé garde l'information utile…
+    expect(main).toContain('demain');
+    expect(main).toContain('nimporte quel heure');
+    // …mais pas la discussion.
+    expect(main).not.toContain('Marhba bik');
+    expect(main).not.toContain('Assistant :');
+    expect(main).not.toContain('Je valide le rendez-vous');
+    expect(screen.getByText('RDV à confirmer')).toBeTruthy();
+  });
+
+  it('la fiche client rappelle ce que le client a validé (visite, pas commande)', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
+      id: 'p3', name: 'Karim', phone: '0550998877', email: 'Non fourni', need: 'Je veux visiter l’appartement',
+      status: 'qualifie', channel: 'instagram', salesIntentType: 'visit',
+      orders: [{
+        id: 'visit-9', reference: 'JF-VISIT09', status: 'pending_merchant_confirmation', channel: 'instagram',
+        kind: 'visit', kindLabel: 'Visite', summary: 'F3 Hydra — visite demandée', customerName: 'Karim',
+        phone: '0550998877', city: 'Alger', totalAmount: null,
+        createdAt: '2026-10-04T11:00:00.000Z', updatedAt: '2026-10-04T11:00:00.000Z',
+      }],
+      updatedAt: '2026-10-04T11:00:00.000Z',
+    }] }), { status: 200 }));
+
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(60);
+    fireEvent.click(document.querySelector('tbody tr')!);
+    await settle(40);
+    expect(screen.getByText('Ce que ce client a validé')).toBeTruthy();
+    expect(screen.getByText('JF-VISIT09 · 04/10/2026')).toBeTruthy();
+    expect(screen.getByText('Visite à confirmer')).toBeTruthy();
+    // L'intention brute (« visit ») n'est plus affichée telle quelle.
+    expect(document.querySelector('main')?.textContent).not.toContain('Intérêt : visit');
+    expect(document.querySelector('main')?.textContent).toContain('Visite demandée');
+  });
+
   it('Commandes garde les données du nouveau parcours et cohabite avec la navigation Clients corrigée', async () => {
     const order = {
       id: 'order-1', reference: 'JF-ORDER1', status: 'pending_merchant_confirmation', channel: 'instagram',
@@ -242,12 +313,11 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
 
     render(<DashboardPlatform initialSection="orders" />);
     await settle(300);
-    expect(document.querySelector('header h1')?.textContent).toBe('Commandes');
+    expect(document.querySelector('header h1')?.textContent).toBe('Commandes & RDV');
     expect(document.getElementById('nav-orders')?.textContent).toContain('1');
     expect(screen.getByText(/JF-ORDER1/)).toBeTruthy();
     expect(screen.getByText('Veste noire, taille M')).toBeTruthy();
-    expect(screen.getByText('12 rue des Fleurs')).toBeTruthy();
-    expect(screen.getByText('Adresse confirmée par la cliente')).toBeTruthy();
+    expect(screen.getByText(/12 rue des Fleurs/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer la commande' }));
     await settle(100);
@@ -259,6 +329,28 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(document.getElementById('nav-leads')?.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: "Vue d'ensemble" })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Mes clients' })).toBeTruthy();
+  });
+
+  it('une VISITE validée par le client s’affiche comme « Visite » avec son propre suivi', async () => {
+    const order = {
+      id: 'visit-1', reference: 'JF-VISIT01', status: 'pending_merchant_confirmation', channel: 'instagram',
+      kind: 'visit', kindLabel: 'Visite',
+      summary: 'Appartement F3 à Hydra — visite demandée', customerName: 'Karim', phone: '0550998877', city: 'Alger',
+      totalAmount: null, createdAt: '2026-10-04T11:00:00.000Z', updatedAt: '2026-10-04T11:00:00.000Z',
+    };
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [{
+      id: 'p2', name: 'Karim', phone: '0550998877', email: 'Non fourni', need: order.summary,
+      status: 'qualifie', channel: 'instagram', city: 'Alger', orders: [order], updatedAt: order.updatedAt,
+    }] }), { status: 200 }));
+
+    render(<DashboardPlatform initialSection="orders" />);
+    await settle(300);
+    expect(screen.getByText('Commandes, visites et rendez-vous')).toBeTruthy();
+    expect(screen.getByText('Visite')).toBeTruthy();
+    expect(screen.getAllByText('Visite à confirmer').length).toBeGreaterThan(0);
+    expect(screen.getByText('JF-VISIT01')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirmer la visite' })).toBeTruthy();
+    expect(screen.queryByText('Confirmer la commande')).toBeNull();
   });
 
   it('Résumé : trois cartes de chiffres (statut, clients, informations) avec les vrais nombres', async () => {

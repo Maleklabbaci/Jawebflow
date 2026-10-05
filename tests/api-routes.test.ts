@@ -52,3 +52,51 @@ describe('routes /api appelées par l’interface', () => {
     for (const ghost of ['/api/instagram/test-live-message', '/api/instagram/sync-token']) expect(used.has(ghost), ghost).toBe(false);
   });
 });
+
+/**
+ * /api/health : les deux runbooks (AUDIT.md §6.9, SUPABASE_MIGRATION.md §4)
+ * demandent de la vérifier après déploiement. Elle doit exister côté Pages
+ * Functions et ne dire « configuré » que pour de vraies clés.
+ */
+import { onRequestGet as healthGet } from '../functions/api/health.js';
+
+describe('GET /api/health', () => {
+  const call = async (env: Record<string, unknown>) => {
+    const response = await healthGet({ env, request: new Request('http://x/api/health') } as any);
+    return { status: response.status, body: JSON.parse(await response.text()) as any };
+  };
+
+  it('existe côté Pages Functions et répond en JSON, pas avec le SPA', async () => {
+    const { status, body } = await call({});
+    expect(status).toBe(200);
+    expect(body.status).toBe('ok');
+    expect(body.runtime).toBe('cloudflare-pages-functions');
+    expect(body.integrations.gemini).toBe(false);
+    expect(body.integrations.supabase).toBe(false);
+    expect(body.integrations.metaWebhookVerify).toBe(false);
+  });
+
+  it('traite les placeholders de .env.example comme absents', async () => {
+    const { body } = await call({
+      GEMINI_API_KEY: 'MY_GEMINI_API_KEY',
+      SUPABASE_URL: 'https://x.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'sb_publishable_xxx',
+    });
+    expect(body.integrations.gemini).toBe(false);
+    expect(body.integrations.supabase).toBe(false);
+  });
+
+  it('signale les intégrations réellement configurées, sans révéler de clé', async () => {
+    const { body } = await call({
+      GEMINI_API_KEY: 'AIza-vraie-cle',
+      SUPABASE_URL: 'https://x.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_vraie_cle',
+      INSTAGRAM_VERIFY_TOKEN: 'vraie-valeur',
+    });
+    expect(body.integrations.gemini).toBe(true);
+    expect(body.integrations.supabase).toBe(true);
+    expect(body.integrations.metaWebhookVerify).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('vraie-cle');
+    expect(JSON.stringify(body)).not.toContain('sb_secret_vraie_cle');
+  });
+});

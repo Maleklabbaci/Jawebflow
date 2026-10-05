@@ -91,4 +91,25 @@ describe('/api/leads — suivi sécurisé', () => {
     expect(fx.supabase.rows('bot_mutes')).toHaveLength(0);
     expect(fx.supabase.rows('prospects')[0].data.handoffStatus).toBe('bot');
   });
+
+  it('une VISITE confirmée passe à « réalisée » sans étape d’expédition, une commande non', async () => {
+    fx.supabase.seed('prospects', [{
+      id: 'p-visit', assistant_id: 'asst1', data: {
+        channel: 'instagram', igUserId: 'ig-karim', sessionId: 'ig_ig-karim',
+        orders: [{ id: 'visit-1', reference: 'JF-VISIT01', status: 'pending_merchant_confirmation', kind: 'visit', kindLabel: 'Visite' }],
+      },
+    }]);
+
+    const confirmed = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-visit', orderId: 'visit-1', orderStatus: 'confirmed' }));
+    expect(confirmed.status).toBe(200);
+
+    // Pas de colis à expédier pour une visite : « confirmed → delivered » est accepté.
+    const done = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-visit', orderId: 'visit-1', orderStatus: 'delivered' }));
+    expect(done.status).toBe(200);
+    expect(fx.supabase.rows('prospects')[0].data.orders[0]).toMatchObject({ status: 'delivered', kind: 'visit' });
+
+    // … alors qu'une commande doit suivre préparation → expédition → livraison.
+    const shipping = await onRequestPost(context('POST', { assistantId: 'asst1', prospectId: 'p-visit', orderId: 'visit-1', orderStatus: 'shipped' }));
+    expect(shipping.status).toBe(409);
+  });
 });
