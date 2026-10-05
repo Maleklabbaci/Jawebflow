@@ -109,3 +109,80 @@ describe('/api/chat — création et suivi des commandes', () => {
     expect(prospect?.data.orderChangeDraft).toBeNull();
   });
 });
+
+describe('/api/chat — politesse et nature de la validation', () => {
+  it('ne renvoie JAMAIS le message de bienvenue en pleine conversation', async () => {
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+
+    const first = await send('Salam', 'politesse-1');
+    const firstText = (await first.json() as any).text as string;
+    expect(firstText).toMatch(/Marhba|Bienvenue/);
+    expect(gemini.calls).toHaveLength(0); // politesse = réponse locale gratuite
+
+    const thanks = await send('merci', 'politesse-2', [
+      { sender: 'user', text: 'Salam' },
+      { sender: 'bot', text: firstText },
+    ]);
+    const thanksText = (await thanks.json() as any).text as string;
+    expect(thanksText).toMatch(/Avec plaisir/);
+    expect(thanksText).not.toContain('Marhba');
+    expect(thanksText).not.toContain('Bienvenue');
+    expect(gemini.calls).toHaveLength(0);
+
+    // Un « ok » en pleine conversation répond à la question précédente : l'IA tranche.
+    gemini.next(modelReply(textPart('Parfait, je vous envoie le lien 🙂')));
+    const ok = await send('ok', 'politesse-3', [
+      { sender: 'bot', text: 'Je vous envoie le lien du produit ?' },
+    ]);
+    expect((await ok.json() as any).text).toBe('Parfait, je vous envoie le lien 🙂');
+    expect(gemini.calls).toHaveLength(1);
+  });
+
+  it('deux salutations de suite (widget sans historique) : une seule « Bienvenue »', async () => {
+    const first = await send('Salam', 'politesse-4');
+    expect((await first.json() as any).text).toMatch(/Marhba|Bienvenue/);
+
+    // Le widget n'envoie pas toujours l'historique : la fiche client sert de
+    // mémoire, sinon le deuxième « salam » renvoyait encore la bienvenue.
+    const second = await send('salam', 'politesse-5');
+    const text = (await second.json() as any).text as string;
+    expect(text).not.toMatch(/Marhba|Bienvenue/);
+    expect(text).not.toContain('Kifach n9der n3awnek');
+  });
+
+  it('« oui je valide la visite » crée une VISITE, pas une commande', async () => {
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(modelReply(textPart('C’est noté, votre demande de visite est transmise à l’équipe 🙂')));
+
+    const res = await send('oui je valide la visite', 'visite-1', [
+      { sender: 'user', text: 'L’appartement de Hydra est disponible ?' },
+      { sender: 'bot', text: 'Oui. Souhaitez-vous planifier une visite ?' },
+    ]);
+    expect(res.status).toBe(200);
+
+    const prospect = fx.supabase.rows('prospects').find((row) => row.id === 'asst1_web_session-order-test');
+    expect(prospect?.data.orders).toHaveLength(1);
+    expect(prospect?.data.orders[0]).toMatchObject({ kind: 'visit', kindLabel: 'Visite', channel: 'Site web' });
+    const prompt = JSON.stringify(gemini.calls[0].body.contents);
+    expect(prompt).toContain('Demande de visite enregistrée');
+    expect(prompt).not.toContain('Demande de commande enregistrée');
+  });
+
+  it('le brouillon garde la nature de la demande posée par le bot', async () => {
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(modelReply(textPart('Jeudi 15 h, ça vous va ? Confirmez-vous ce rendez-vous ?')));
+
+    await send('Je voudrais un rendez-vous', 'rdv-1');
+    let prospect = fx.supabase.rows('prospects').find((row) => row.id === 'asst1_web_session-order-test');
+    expect(prospect?.data.orderDraft).toMatchObject({ status: 'awaiting_confirmation', kind: 'appointment' });
+
+    gemini.next(modelReply(textPart('C’est enregistré 🙂')));
+    await send('oui', 'rdv-2', [{ sender: 'bot', text: 'Jeudi 15 h, ça vous va ? Confirmez-vous ce rendez-vous ?' }]);
+    prospect = fx.supabase.rows('prospects').find((row) => row.id === 'asst1_web_session-order-test');
+    expect(prospect?.data.orders[0]).toMatchObject({ kind: 'appointment', kindLabel: 'Rendez-vous' });
+    expect(prospect?.data.orderDraft).toBeNull();
+  });
+});

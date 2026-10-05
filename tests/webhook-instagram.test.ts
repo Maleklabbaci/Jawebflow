@@ -229,3 +229,104 @@ describe('message de premier contact (salutation)', () => {
     expect(greetingReply('Ahlan ! Ici {entreprise}', 'merci beaucoup', config)).toMatch(/Avec plaisir/);
   });
 });
+
+describe('politesse en pleine conversation : le bot ne recommence JAMAIS par la salutation', () => {
+  /** Une conversation déjà entamée (le client a posé une question, le bot a répondu). */
+  function seedConversation() {
+    fx.supabase.seed('instagram_threads', [{
+      integration_id: USER_ID,
+      customer_id: 'IGSID_SARA',
+      messages: [
+        { role: 'user', text: 'Vous livrez à Oran ?', ts: '2026-10-04T09:00:00.000Z' },
+        { role: 'model', text: 'Oui, livraison en 48 h partout en Algérie 🙂', ts: '2026-10-04T09:00:05.000Z' },
+      ],
+      handled_mids: ['old-1', 'old-2'],
+      pending_messages: [],
+      pending_token: null,
+    }]);
+  }
+
+  it('« merci » puis « bonjour » : réponses courtes, jamais « Bienvenue chez… »', async () => {
+    seedConversation();
+    await deliver(messagingPayload(dmEvent({ text: 'merci', mid: 'polite-1' })));
+    await deliver(messagingPayload(dmEvent({ text: 'bonjour', mid: 'polite-2' })));
+    const sent = fx.meta.sent('messages').filter((call) => call.body?.message).map((call) => call.body.message.text);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatch(/Avec plaisir/);
+    // « bonjour » en pleine discussion : réponse courte, PAS le message d'accueil.
+    expect(sent[1]).toMatch(/^Salam/);
+    for (const text of sent) {
+      expect(text).not.toContain('Marhba');
+      expect(text).not.toContain('Bienvenue');
+      expect(text).not.toContain('Comment puis-je vous aider');
+      expect(text).not.toContain('Kifach n9der n3awnek');
+    }
+  });
+
+  it('un « ok » en pleine discussion va à l’IA (il répond à la question précédente)', async () => {
+    seedConversation();
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(modelReply(textPart('Parfait, je vous envoie le lien tout de suite 🙂')));
+    await deliver(messagingPayload(dmEvent({ text: 'ok', mid: 'polite-3' })), { ...ENV, GEMINI_API_KEY: 'gemini-test-key', GEMINI_CONTEXT_CACHE_ENABLED: 'false' });
+    expect(gemini.calls).toHaveLength(1);
+    expect(fx.meta.sent('messages').filter((call) => call.body?.message).at(-1)?.body.message.text).toBe('Parfait, je vous envoie le lien tout de suite 🙂');
+  });
+
+  it('au premier contact, la salutation du marchand est bien envoyée', async () => {
+    await deliver(messagingPayload(dmEvent({ text: 'salam', mid: 'polite-4' })));
+    const firstContact = fx.meta.sent('messages').filter((call) => call.body?.message).map((call) => call.body.message.text);
+    expect(firstContact).toHaveLength(1);
+    expect(firstContact[0]).toContain('Marhba');
+  });
+});
+
+describe('validation typée : visite, rendez-vous ou commande', () => {
+  it('« oui je valide la visite » enregistre une VISITE et l’annonce comme telle à l’IA', async () => {
+    fx.supabase.seed('instagram_threads', [{
+      integration_id: USER_ID,
+      customer_id: 'IGSID_SARA',
+      messages: [
+        { role: 'user', text: 'L’appartement de Hydra est toujours disponible ?', ts: '2026-10-04T09:00:00.000Z' },
+        { role: 'model', text: 'Oui. Souhaitez-vous planifier une visite ?', ts: '2026-10-04T09:00:05.000Z' },
+      ],
+      handled_mids: ['old-1'],
+      pending_messages: [],
+      pending_token: null,
+    }]);
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(modelReply(textPart('C’est noté, votre demande de visite est transmise à l’équipe 🙂')));
+    await deliver(messagingPayload(dmEvent({ text: 'oui je valide la visite', mid: 'visit-1' })), { ...ENV, GEMINI_API_KEY: 'gemini-test-key', GEMINI_CONTEXT_CACHE_ENABLED: 'false' });
+
+    const prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orders).toHaveLength(1);
+    expect(prospect?.data?.orders[0]).toMatchObject({ kind: 'visit', kindLabel: 'Visite', status: 'pending_merchant_confirmation', channel: 'Instagram' });
+    expect(prospect?.data?.salesIntentType).toBe('visit');
+    const prompt = JSON.stringify(gemini.calls[0].body.contents);
+    expect(prompt).toContain('Visite');
+    expect(prompt).toContain('Demande de visite enregistrée');
+    expect(prompt).not.toContain('Demande de commande enregistrée');
+  });
+
+  it('le bot qui fait confirmer un rendez-vous prépare un brouillon « rendez-vous », validé par un simple oui', async () => {
+    const gemini = new FakeGemini();
+    fx.external.handler = gemini.handler;
+    gemini.next(
+      modelReply(textPart('Je vous propose jeudi à 15 h. Confirmez-vous ce rendez-vous ?')),
+      modelReply(textPart('C’est enregistré, à jeudi 🙂')),
+    );
+    const env = { ...ENV, GEMINI_API_KEY: 'gemini-test-key', GEMINI_CONTEXT_CACHE_ENABLED: 'false' };
+
+    await deliver(messagingPayload(dmEvent({ text: 'Je veux un rendez-vous pour un devis', mid: 'rdv-1' })), env);
+    let prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orderDraft).toMatchObject({ status: 'awaiting_confirmation', kind: 'appointment' });
+    expect(prospect?.data?.orders || []).toHaveLength(0);
+
+    await deliver(messagingPayload(dmEvent({ text: 'oui', mid: 'rdv-2' })), env);
+    prospect = fx.supabase.rows('prospects').find((row) => row.data?.igUserId === 'IGSID_SARA');
+    expect(prospect?.data?.orders).toHaveLength(1);
+    expect(prospect?.data?.orders[0]).toMatchObject({ kind: 'appointment', kindLabel: 'Rendez-vous' });
+    expect(prospect?.data?.orderDraft).toBeNull();
+  });
+});

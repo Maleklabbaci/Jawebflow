@@ -74,6 +74,7 @@ import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
+import { DEAL_KIND_LABELS, DEAL_NEXT_ACTIONS, DEAL_STATUS_LABELS, DEAL_STEPS, SALES_INTENT_LABELS, dealKindOf, dealStatusLabel, type DealKind } from '../../functions/_shared/sales-intent';
 
 export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
 
@@ -81,6 +82,9 @@ type LeadOrder = {
   id: string;
   reference: string;
   status: string;
+  /** Ce que le client a validé : commande, visite, rendez-vous, réservation, devis. */
+  kind?: string;
+  kindLabel?: string;
   channel: string;
   summary: string;
   customerName: string;
@@ -140,7 +144,7 @@ const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
   { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
   { id: 'leads', label: 'Clients', icon: BarChart3, pro: true, group: 'clients' },
-  { id: 'orders', label: 'Commandes', icon: ShoppingCart, pro: true },
+  { id: 'orders', label: 'Commandes & RDV', icon: ShoppingCart, pro: true },
 ];
 
 interface DashboardPlatformProps {
@@ -1604,7 +1608,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 {currentSection === 'simulator' && 'Tester mon assistant'}
                 {currentSection === 'billing' && 'Abonnement & factures'}
                 {currentSection === 'settings' && 'Mon profil'}
-                {currentSection === 'orders' && 'Commandes'}
+                {currentSection === 'orders' && 'Commandes & RDV'}
                 {currentSection === 'leads' && (insightsTab === 'prospects' ? 'Mes clients' : "Vue d'ensemble")}
                 {groupOf(currentSection) && SECTION_GROUPS[groupOf(currentSection) as string].tabs.find((t) => t.id === currentSection)?.label}
               </h1>
@@ -2861,7 +2865,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                     ) : lead.followUpStatus === 'done' ? (
                                       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-emerald-700">Traité</span>
                                     ) : lead.salesIntentType ? (
-                                      <span className="text-[10px] font-semibold text-purple-600">Intérêt : {lead.salesIntentType}</span>
+                                      <span className="text-[10px] font-semibold text-purple-600">Intérêt : {SALES_INTENT_LABELS[lead.salesIntentType] || lead.salesIntentType}</span>
                                     ) : <span className="text-[10px] text-slate-300">—</span>}
                                   </td>
                                   <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">{lead.date}</td>
@@ -3040,6 +3044,23 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             {lead.followUpStatus === 'done' && <p className="text-[10px] font-semibold text-emerald-700">Suivi terminé{lead.followUpCompletedAt ? ` le ${new Date(lead.followUpCompletedAt).toLocaleDateString('fr-FR')}` : ''}.</p>}
                             {leadFollowUpError && <p role="alert" className="text-[10px] font-medium text-rose-600">{leadFollowUpError}</p>}
                           </div>
+                        )}
+
+                        {Array.isArray(lead.orders) && lead.orders.length > 0 && (
+                          <section className="space-y-2 rounded-xl border border-purple-200 bg-purple-50/60 p-4">
+                            <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-900">
+                              <ShoppingCart className="h-3.5 w-3.5 text-purple-600" /> Ce que ce client a validé
+                            </h4>
+                            {lead.orders.map((order: LeadOrder) => (
+                              <div key={order.id} className="flex items-start justify-between gap-2 rounded-lg bg-white/80 px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-bold text-slate-800">{order.kindLabel || DEAL_KIND_LABELS[dealKindOf(order)]}</p>
+                                  <p className="truncate text-[10px] text-slate-500">{order.reference || order.id}{order.createdAt && Number.isFinite(Date.parse(order.createdAt)) ? ` · ${new Date(order.createdAt).toLocaleDateString('fr-FR')}` : ''}</p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[9px] font-bold text-purple-800">{dealStatusLabel(order.kind, order.status)}</span>
+                              </div>
+                            ))}
+                          </section>
                         )}
 
                         {lead.channel === 'instagram' && lead.igUserId && (
@@ -3356,31 +3377,39 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {currentSection === 'orders' && (() => {
             const orders = leadsList.flatMap((lead) => (lead.orders || []).map((order) => ({ lead, order })))
               .sort((a, b) => Date.parse(b.order.createdAt || '') - Date.parse(a.order.createdAt || ''));
-            const labels: Record<string, string> = {
-              pending_merchant_confirmation: 'À confirmer par la boutique',
-              confirmed: 'Confirmée', preparing: 'En préparation', shipped: 'Expédiée', delivered: 'Livrée', cancelled: 'Annulée',
-            };
-            const steps = ['pending_merchant_confirmation', 'confirmed', 'preparing', 'shipped', 'delivered'];
-            const nextStatuses: Record<string, Array<{ status: string; label: string; destructive?: boolean }>> = {
-              pending_merchant_confirmation: [{ status: 'confirmed', label: 'Confirmer la commande' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
-              confirmed: [{ status: 'preparing', label: 'Démarrer la préparation' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
-              preparing: [{ status: 'shipped', label: 'Marquer comme expédiée' }, { status: 'cancelled', label: 'Annuler', destructive: true }],
-              shipped: [{ status: 'delivered', label: 'Marquer comme livrée' }],
-              delivered: [], cancelled: [],
-            };
+            // Ce que le client a validé n'est pas toujours une « commande » :
+            // visite (immobilier), rendez-vous (agence, cabinet), réservation
+            // (restaurant, salle) ou devis. Chaque nature a son suivi et ses mots.
+            const kindOf = (order: LeadOrder): DealKind => dealKindOf(order);
+            const labelOf = (order: LeadOrder) => order.kindLabel || DEAL_KIND_LABELS[kindOf(order)];
+            const kindsPresent: DealKind[] = Array.from(new Set<DealKind>(orders.map(({ order }: { order: LeadOrder }) => kindOf(order))));
+            const STEP_GRID: Record<number, string> = { 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5' };
             return (
               <div className="mx-auto max-w-6xl space-y-6 animate-in fade-in duration-200">
                 <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-purple-600" /><h2 className="text-lg font-bold text-slate-900">Commandes via l’assistant</h2></div>
-                    <p className="mt-1 text-sm text-slate-500">Seules les demandes confirmées explicitement par le client apparaissent ici. Vérifie prix et disponibilité avant de confirmer.</p>
+                    <div className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-purple-600" /><h2 className="text-lg font-bold text-slate-900">Commandes, visites et rendez-vous</h2></div>
+                    <p className="mt-1 text-sm text-slate-500">Chaque demande confirmée explicitement par le client arrive ici avec sa nature exacte : commande, visite, rendez-vous, réservation ou devis. Vérifie les détails avant de confirmer.</p>
                   </div>
-                  <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">{orders.length} commande{orders.length === 1 ? '' : 's'}</span>
+                  <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">{orders.length} demande{orders.length === 1 ? '' : 's'}</span>
                 </div>
+                {kindsPresent.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {kindsPresent.map((kind) => (
+                      <span key={kind} className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-600">
+                        {DEAL_KIND_LABELS[kind]} · {orders.filter(({ order }) => kindOf(order) === kind).length}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {orderActionError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{orderActionError}</p>}
                 {orders.length ? (
                   <div className="grid gap-4 xl:grid-cols-2">
                     {orders.map(({ lead, order }) => {
+                      const kind = kindOf(order);
+                      const labels = DEAL_STATUS_LABELS[kind];
+                      const steps = DEAL_STEPS[kind];
+                      const nextStatuses = DEAL_NEXT_ACTIONS[kind][order.status] || [];
                       const currentStep = steps.indexOf(order.status);
                       const busyKey = `${lead.id}:${order.id}`;
                       const created = order.createdAt && Number.isFinite(Date.parse(order.createdAt))
@@ -3391,7 +3420,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{order.reference || order.id} · {order.channel || lead.channel || 'Assistant'}</p>
-                              <h3 className="mt-1 text-base font-bold text-slate-900">{order.customerName || lead.name}</h3>
+                              <h3 className="mt-1 flex flex-wrap items-center gap-2 text-base font-bold text-slate-900">
+                                {order.customerName || lead.name}
+                                <span className="rounded-md bg-purple-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-purple-800">{labelOf(order)}</span>
+                              </h3>
                               <p className="text-xs text-slate-500">{created}</p>
                             </div>
                             <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${order.status === 'pending_merchant_confirmation' ? 'border-amber-200 bg-amber-50 text-amber-800' : order.status === 'cancelled' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
@@ -3402,12 +3434,12 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Téléphone</span><span className="font-semibold text-slate-800">{order.phone || lead.phone || 'Non fourni'}</span></div>
                             <div><span className="block text-[10px] font-semibold uppercase text-slate-400">Ville</span><span className="font-semibold text-slate-800">{order.city || lead.city || 'Non précisée'}</span></div>
                             {order.deliveryAddress && <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Adresse de livraison</span><span className="font-semibold text-slate-800">{order.deliveryAddress}</span></div>}
-                            <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Montant</span><span className="font-semibold text-slate-800">{typeof order.totalAmount === 'number' ? `${new Intl.NumberFormat('fr-DZ').format(order.totalAmount)} DA` : 'À vérifier avec le client — montant non confirmé'}</span></div>
+                            <div className="col-span-2"><span className="block text-[10px] font-semibold uppercase text-slate-400">Montant</span><span className="font-semibold text-slate-800">{typeof order.totalAmount === 'number' ? `${new Intl.NumberFormat('fr-DZ').format(order.totalAmount)} DA` : 'Non confirmé — à vérifier avec le client'}</span></div>
                           </div>
                           <div>
-                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suivi de commande</p>
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suivi — {labelOf(order).toLowerCase()}</p>
                             {order.status === 'cancelled' ? <p className="text-xs font-semibold text-rose-700">Cette demande a été annulée.</p> : (
-                              <div className="grid grid-cols-5 gap-1">
+                              <div className={`grid gap-1 ${STEP_GRID[steps.length] || 'grid-cols-5'}`}>
                                 {steps.map((step, index) => {
                                   const complete = currentStep >= 0 && index <= currentStep;
                                   return <div key={step} className="min-w-0"><div className={`h-1.5 rounded-full ${complete ? 'bg-purple-600' : 'bg-slate-200'}`} /><p className={`mt-1 truncate text-[8px] ${complete ? 'font-bold text-purple-700' : 'text-slate-400'}`}>{labels[step]}</p></div>;
@@ -3416,8 +3448,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             )}
                           </div>
                           <div className="rounded-xl border border-slate-100 p-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Résumé transmis par le client</p>
-                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{order.summary || lead.need || 'Aucun détail produit enregistré.'}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ce que le client a validé</p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{order.summary || lead.need || 'Aucun détail enregistré.'}</p>
                           </div>
                           {Array.isArray(order.changeHistory) && order.changeHistory.length > 0 && (
                             <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
@@ -3439,7 +3471,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
                             <button type="button" onClick={() => { setSelectedLeadId(lead.id); setInsightsTab('prospects'); handleSectionChange('leads'); }} className="text-xs font-semibold text-purple-700 hover:text-purple-900">Voir la conversation</button>
                             <div className="flex flex-wrap gap-2">
-                              {(nextStatuses[order.status] || []).map((action) => (
+                              {nextStatuses.map((action) => (
                                 <button key={action.status} type="button" onClick={() => void updateOrderStatus(lead.id, order.id, action.status)} disabled={orderActionBusy !== null} className={`rounded-lg px-3 py-2 text-[10px] font-bold transition disabled:cursor-wait disabled:opacity-60 ${action.destructive ? 'border border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
                                   {orderActionBusy === busyKey ? <Loader2 className="mr-1 inline h-3 w-3 animate-spin" /> : null}{action.label}
                                 </button>
@@ -3453,8 +3485,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
                     <ShoppingCart className="mx-auto h-9 w-9 text-slate-300" />
-                    <h3 className="mt-3 font-bold text-slate-800">Aucune commande pour le moment</h3>
-                    <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">Une commande apparaîtra ici uniquement après une confirmation claire du client dans une conversation avec l’assistant.</p>
+                    <h3 className="mt-3 font-bold text-slate-800">Aucune demande pour le moment</h3>
+                    <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">Une commande, une visite, un rendez-vous ou une réservation apparaîtra ici dès qu’un client l’aura confirmée clairement dans une conversation avec l’assistant.</p>
                   </div>
                 )}
               </div>

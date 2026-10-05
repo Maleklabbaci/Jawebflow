@@ -160,21 +160,27 @@ function recentlySent(key: string): boolean {
 }
 
 /** 🔥 Nouveau lead : le marchand reçoit les détails directement sur Instagram. */
-export async function notifyLead(env: any, assistantId: string, details: { name?: string; phone?: string; city?: string; email?: string; need?: string; source: string }): Promise<void> {
+export async function notifyLead(env: any, assistantId: string, details: { name?: string; phone?: string; city?: string; email?: string; need?: string; source: string; dealKindLabel?: string; orderReference?: string }): Promise<void> {
   try {
     const cfg = await getNotifyConfig(env);
     const link = Object.entries(cfg.links || {}).find(([, l]) => l.aid === assistantId);
     if (!link || !cfg.token) return;
     if (recentlySent(`lead:${assistantId}:${details.phone || link[0]}`)) return;
     const who = details.name || "Un visiteur";
+    // La nature exacte de la demande (commande, visite, rendez-vous…) passe en
+    // premier : le marchand sait tout de suite ce qu'il doit confirmer.
+    const what = String(details.dealKindLabel || '').trim();
     const parts = [
-      `🔥 Nouveau client intéressé (${details.source}) !`,
+      what
+        ? `🔥 ${what.toUpperCase()} à confirmer (${details.source}) !`
+        : `🔥 Nouveau client intéressé (${details.source}) !`,
       `👤 ${who}${details.city ? ` — ${details.city}` : ""}`,
       details.phone ? `📞 ${details.phone}` : "",
       details.email ? `✉️ ${details.email}` : "",
       details.need ? `💬 « ${details.need.slice(0, 160)} »` : "",
+      details.orderReference ? `🧾 Référence : ${details.orderReference}` : "",
       "",
-      "Rappelle-le vite, c'est maintenant que ça se joue 💪",
+      what ? `Confirme-la vite depuis ton tableau de bord 💪` : "Rappelle-le vite, c'est maintenant que ça se joue 💪",
     ].filter(Boolean);
     await sendDm(cfg.token, link[0], parts.join("\n"));
   } catch { /* jamais bloquer le flux pour une notif */ }

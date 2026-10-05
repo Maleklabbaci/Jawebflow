@@ -41,7 +41,7 @@ const SECTIONS: Array<{ id: string; nav: string }> = [
   { id: 'simulator', nav: 'Tester l\'assistant' },
   { id: 'learning', nav: 'Apprentissage IA' },
   { id: 'leads', nav: 'Clients & statistiques' },
-  { id: 'orders', nav: 'Commandes' },
+  { id: 'orders', nav: 'Commandes & RDV' },
   { id: 'integration', nav: 'Mon site' },
   { id: 'instagram', nav: 'Instagram' },
   { id: 'automations', nav: 'Automatisations' },

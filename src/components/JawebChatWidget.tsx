@@ -124,6 +124,9 @@ export const JawebChatWidget: React.FC<JawebChatWidgetProps> = ({
           message: text,
           sessionId: sessionKey,
           messageId,
+          // Historique court : le serveur s'en sert pour savoir que la
+          // conversation est déjà lancée (et ne jamais renvoyer la salutation).
+          history: messages.slice(-6).map((entry) => ({ sender: entry.sender === 'user' ? 'user' : 'bot', text: entry.text })),
           ...(imgToSend ? { image: imgToSend } : {})
         })
       });

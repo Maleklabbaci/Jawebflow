@@ -36,9 +36,9 @@ import {
   supabaseUpsertProspect,
   supabaseRequest,
 } from "../../_shared/supabase.ts";
-import { buildSalesSystemPrompt, buildBusinessContextText, isSmallTalk, localGreeting, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
+import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localGreeting, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
-import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, isOrderConfirmationQuestion, createPendingOrderRequest } from "../../_shared/sales-intent.ts";
+import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext } from "../../_shared/sales-intent.ts";
 import { detectOrderManagementIntent, processOrderChangeMessage } from "../../_shared/order-changes.ts";
 import { getGeminiContextCache } from "../../_shared/gemini-cache.ts";
 import { summarizeInstagramMessageShape } from "../../_shared/instagram-message-shape.ts";
@@ -626,15 +626,28 @@ async function pushPendingMessage(
 
 /** Traitement d'un message privé : infos de l'entreprise ➜ IA ➜ réponse. */
 /**
- * « Message de premier contact » du marchand : utilisé quand la personne dit
- * simplement bonjour. Vide (ou texte pré-rempli d'origine) → salutation
- * automatique dans la langue choisie. Un « merci » reste un « avec plaisir ».
+ * Réponse à une petite politesse (bonjour / merci / au revoir).
+ *
+ * Le « message de premier contact » du marchand n'est utilisé QU'au premier
+ * échange (`conversationStarted = false`). En pleine conversation, un « merci »
+ * ou un nouveau « salam » reçoit une réponse courte adaptée : renvoyer
+ * « Bienvenue chez… » au milieu d'une discussion coupait net la conversation
+ * (le client perdait le fil, et la commande/le rendez-vous en cours avec).
+ * Renvoie `null` quand seul l'IA peut répondre (ex : un « oui » qui répond à la
+ * question précédente du bot).
  */
-export function greetingReply(customGreeting: string | undefined, groupedText: string, config: any): string {
+export function greetingReply(
+  customGreeting: string | undefined,
+  groupedText: string,
+  config: any,
+  conversationStarted = false,
+): string | null {
+  const kind = classifySmallTalk(groupedText);
+  if (!kind) return null;
   const custom = String(customGreeting || "").trim();
-  const isThanks = /merci|shukran|choukran|thanks|tslama|saha\b/i.test(groupedText);
-  if (!custom || custom === LEGACY_DEFAULT_GREETING || isThanks) return localGreeting(groupedText, config);
-  return renderTemplate(custom, { businessName: String(config?.businessName || "") }) || localGreeting(groupedText, config);
+  const useCustom = !conversationStarted && kind === 'greeting' && custom && custom !== LEGACY_DEFAULT_GREETING;
+  if (useCustom) return renderTemplate(custom, { businessName: String(config?.businessName || "") }) || localGreeting(groupedText, config);
+  return localPoliteReply(kind, config, { conversationStarted });
 }
 
 async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: Promise<any>) => void) {
@@ -942,6 +955,11 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
         isExplicitOrderConfirmation(latestUserText)
         || (draft?.status === 'awaiting_confirmation' && isAffirmative(latestUserText))
       );
+      // Ce que le client valide n'est pas forcément une « commande » : visite,
+      // rendez-vous, réservation ou devis sont enregistrés tels quels.
+      const confirmedDealKind = detectConfirmedDealKind(latestUserText)
+        || (draft?.status === 'awaiting_confirmation' && isAffirmative(latestUserText) ? draft?.kind : null)
+        || null;
       if (known?.id || hasFacts || salesIntent || orderConfirmed || draft?.status === 'awaiting_confirmation') {
         const now = new Date();
         const nowIso = now.toISOString();
@@ -966,6 +984,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
             customerName: facts.name || known?.data?.name,
             phone: facts.phone || known?.data?.phone,
             city: facts.city || known?.data?.city,
+            kind: confirmedDealKind,
             now,
           });
         }
@@ -994,12 +1013,8 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
           note: 'Le suivi est enregistré pour le commerçant dans son espace prospects. Ne prétends pas qu’un rappel client est déjà effectué ou planifié.',
         };
         if (createdOrder) {
-          businessContext.orderCreated = {
-            reference: createdOrder.reference,
-            status: createdOrder.status,
-            note: 'Demande de commande enregistrée, en attente de validation humaine par la boutique. Aucune confirmation de stock, prix ou paiement.',
-          };
-          console.log(`[instagram][order] demande ${createdOrder.reference} enregistrée pour validation par la boutique`);
+          businessContext.orderCreated = buildDealCreatedContext(createdOrder);
+          console.log(`[instagram][order] ${createdOrder.kindLabel} ${createdOrder.reference} enregistrée pour validation par la boutique`);
         }
         if (Object.keys(factsPatch).length) console.log('[instagram] fiche client enrichie/corrigée, champs :', Object.keys(factsPatch).join(', '));
 
@@ -1010,7 +1025,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
             ...(phoneInMsg && !facts.phone ? { phone: phoneInMsg[0].replace(/[\s.-]/g, '') } : {}),
             need: groupedText.slice(0, 200), source: 'Instagram',
             ...(salesIntent ? { salesIntentType: salesIntent.type, nextAction: salesIntent.nextAction } : {}),
-            ...(createdOrder ? { orderReference: createdOrder.reference } : {}),
+            ...(createdOrder ? { orderReference: createdOrder.reference, dealKind: createdOrder.kind, dealKindLabel: createdOrder.kindLabel } : {}),
           };
           try { await notifyLead(env, integration.assistantId, leadPayload); } catch { /* best-effort */ }
           try {
@@ -1174,7 +1189,8 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
 
   // 🆓 politesse pure -> réponse locale gratuite (pas d'IA, pas de quota).
   // Le bot muet (le client a dit stop) reste muet.
-  if (!createdOrder && isSmallTalk(incoming || groupedText)) {
+  const smallTalkKind = !createdOrder ? classifySmallTalk(incoming || groupedText) : null;
+  if (smallTalkKind) {
     if (integration.assistantId && config?.behavior?.stopCommand !== false) {
       try {
         const mRes = await supabaseRequest(env, `bot_mutes?assistant_id=eq.${encodeURIComponent(integration.assistantId)}&session_id=eq.ig_${encodeURIComponent(customerId)}&select=assistant_id`);
@@ -1182,18 +1198,43 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
         if (Array.isArray(mRows) && mRows.length > 0) return;
       } catch { /* ignore */ }
     }
-    console.log("[instagram] politesse -> réponse locale sans IA");
-    const greeting = greetingReply(integration.customGreeting, groupedText, config);
-    await sendInstagramMessage(integration.igToken, customerId, greeting);
-    if (trackedProspectId && integration.assistantId && supabaseConfigured(env)) {
-      const write = supabaseUpsertProspect(env, trackedProspectId, integration.assistantId, {
-        lastInteractionAt: new Date().toISOString(),
-        messages: [{ sender: 'bot', text: greeting.slice(0, 500), timestamp: new Date().toISOString() }],
-      });
-      if (waitUntil) waitUntil(write.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error)));
-      else await write.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error));
+    // ⛔ Le message de bienvenue n'est envoyé QU'au premier contact : dès qu'un
+    // échange a déjà eu lieu, on ne recommence JAMAIS par « Bienvenue chez… ».
+    const conversationStarted = history.length > 0;
+    const politeReply = greetingReply(integration.customGreeting, groupedText, config, conversationStarted);
+    if (politeReply) {
+      console.log(`[instagram] politesse (${smallTalkKind}) -> réponse locale sans IA`);
+      const sentPolite = await sendInstagramMessage(integration.igToken, customerId, politeReply);
+      const nowIso = new Date().toISOString();
+      if (sentPolite && trackedProspectId && integration.assistantId && supabaseConfigured(env)) {
+        const write = supabaseUpsertProspect(env, trackedProspectId, integration.assistantId, {
+          lastInteractionAt: nowIso,
+          messages: [{ sender: 'bot', text: politeReply.slice(0, 500), timestamp: nowIso }],
+        });
+        if (waitUntil) waitUntil(write.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error)));
+        else await write.catch((error) => console.warn('[instagram][lead] réponse non journalisée:', error?.message || error));
+      }
+      // Le buffer DOIT être vidé et l'échange archivé : sans ça, le message de
+      // politesse restait en attente et se retrouvait mélangé au message suivant
+      // (le bot répondait deux fois à côté de la plaque).
+      try {
+        await saveThread(env, integration.integrationId, customerId, {
+          messages: [
+            ...freshStored.filter((entry: any) => entry?.role === 'user' || entry?.role === 'model'),
+            { role: 'user', text: groupedText.slice(0, 500), ts: nowIso },
+            ...(sentPolite ? [{ role: 'model', text: politeReply, ts: nowIso }] : []),
+          ].slice(-THREAD_KEEP),
+          pendingMessages: [],
+          handledMids: [...handledMids, ...newMids].slice(-30),
+        });
+      } catch (error: any) {
+        console.warn('[instagram] conversation non archivée après politesse:', error?.message || error);
+      }
+      return;
     }
-    return;
+    // Un « oui » / « ok » en pleine conversation répond à la question précédente
+    // du bot : seule l'IA (qui lit l'historique) sait quoi en faire.
+    console.log(`[instagram] politesse (${smallTalkKind}) en pleine conversation -> l'IA répond avec l'historique`);
   }
 
   if (!incoming) {
@@ -1244,7 +1285,8 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
   const sent = await sendInstagramMessage(integration.igToken, customerId, replyText);
   console.log(`[instagram] message envoyé=${sent} (${Date.now() - startedAt}ms écoulées)`);
 
-  if (sent && trackedProspectId && !createdOrder && isOrderConfirmationQuestion(replyText) && integration.assistantId && supabaseConfigured(env)) {
+  const askedDealKind = detectConfirmationQuestionKind(replyText);
+  if (sent && trackedProspectId && !createdOrder && askedDealKind && integration.assistantId && supabaseConfigured(env)) {
     const draftMessages = [
       ...history.filter((entry) => entry.role === 'user').slice(-4).map((entry) => `Client : ${String(entry.text || '').slice(0, 350)}`),
       `Client : ${groupedText.slice(0, 500)}`,
@@ -1254,6 +1296,9 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
         orderDraft: {
           status: 'awaiting_confirmation',
           channel: 'Instagram',
+          // Nature de la demande : un « oui » qui suit valide CETTE demande
+          // (visite, rendez-vous, réservation, devis ou commande).
+          kind: askedDealKind,
           summary: draftMessages.join('\\n').slice(-2_000),
           updatedAt: new Date().toISOString(),
         },
