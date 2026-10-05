@@ -177,3 +177,28 @@ rendez-vous. La nature est maintenant déduite de ce qui a réellement été con
   darija et arabe, transitions d'état par nature, affichage du tableau de bord.
 - Non vérifié ici : aucun test contre un vrai compte Instagram/Gemini ni un projet
   Supabase réel — la validation repose sur la suite du dépôt.
+
+---
+
+## 8. Relances automatiques (1 h / 24 h) — 5 octobre 2026
+
+Quand un client **valide une action** (commande, visite, rendez-vous, réservation,
+devis) sur Instagram, deux relances sont planifiées sur sa fiche (`relances`) :
+**+1 h** et **+24 h**. La tâche `GET /api/cron/relances?token=…` (à appeler toutes
+les ~10 min par cron-job.org / n8n / ViaSocket) envoie en DM les relances arrivées à
+échéance puis les marque envoyées.
+
+- `functions/_shared/relances.ts` : planification (`buildRelances`), échéance
+  (`dueRelances`) et textes (`relanceText`, qui reprend la bonne nature).
+- `functions/api/webhook/instagram.ts` : crée les relances à la validation.
+- `functions/api/cron/relances.js` : l'envoi planifié (auth par `CRON_SECRET`).
+
+**À configurer pour activer :** ajouter `CRON_SECRET` dans Cloudflare Pages, puis
+créer une tâche planifiée appelant `/api/cron/relances?token=<CRON_SECRET>` toutes les
+10 minutes.
+
+**Limite Meta :** Instagram n'autorise un message sortant que dans les 24 h suivant le
+dernier message du client. La relance « 1 h » passe toujours ; la « 24 h » est à la
+limite de la fenêtre et peut être refusée par Meta — elle est tentée puis marquée
+envoyée pour ne pas boucler. Le widget web n'a pas de canal sortant : seules les
+discussions Instagram sont relancées.

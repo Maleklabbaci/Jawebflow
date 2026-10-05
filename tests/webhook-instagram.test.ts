@@ -310,6 +310,9 @@ describe('validation typée : visite, rendez-vous ou commande', () => {
     expect(prospect?.data?.orders).toHaveLength(1);
     expect(prospect?.data?.orders[0]).toMatchObject({ kind: 'visit', kindLabel: 'Visite', status: 'pending_merchant_confirmation', channel: 'Instagram' });
     expect(prospect?.data?.salesIntentType).toBe('visit');
+    // Deux relances automatiques (1 h / 24 h) sont planifiées pour cette visite.
+    expect((prospect?.data?.relances || []).map((r: any) => r.id)).toEqual(['1h', '24h']);
+    expect(prospect?.data?.relances[0].kind).toBe('visit');
     const prompt = JSON.stringify(gemini.calls[0].body.contents);
     expect(prompt).toContain('Visite');
     expect(prompt).toContain('Demande de visite enregistrée');
