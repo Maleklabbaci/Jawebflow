@@ -1,84 +1,73 @@
 #!/usr/bin/env node
 /**
- * JAWEBFLOW — COÛT TOTAL, TOUS FRAIS INCLUS
+ * JAWEBFLOW — COÛT TOTAL, TOUS FRAIS INCLUS (taux dollar RÉEL : 270 DA)
  * ============================================================================
  * « Ça me coûte combien exactement, avec TOUS les frais ? »
  *
  *   node scripts/couts-totaux.mjs
  *   node scripts/couts-totaux.mjs --clients=100 --slickpay=1.4
+ *   node scripts/couts-totaux.mjs --change=250
  *
- * Consolide les 5 postes de dépense réels :
- *   1. Infra fixe (domaine, Cloudflare, Supabase)
- *   2. Modèle IA (Gemini)
- *   3. WhatsApp (Meta) — service, utility, marketing
- *   4. Frais d'encaissement (SlickPay 1,4–2 % de CHAQUE paiement client)
- *   5. Mise en place (dossier Meta, numéro du client, temps de développement)
+ * ⚠️ TAUX RETENU : 270 DA / USD.
+ *    Le dinar n'est pas librement convertible. Le taux officiel de la Banque
+ *    d'Algérie est ≈ 134 DA/USD, mais c'est le taux auquel tu achètes
+ *    RÉELLEMENT des dollars qui décide de tes coûts : ≈ 270 DA/USD.
+ *    Tous les tarifs de ce script sont en USD et convertis à ce taux.
  *
- * Sources : docs/COUTS_PLANS.md (mesures IA), docs/COUTS_WHATSAPP.md (barème Meta),
- * slick-pay.com/pricing (frais d'encaissement), code du dépôt pour les prix des packs.
+ * Les 5 postes de dépense : infra, IA (Gemini), WhatsApp (Meta),
+ * encaissement (SlickPay), mise en place (dossier Meta).
  */
 
 // ───────────────────────────────────────────────────────────────────────────
-// HYPOTHÈSES
+// 1. TARIFS (en USD — c'est la devise dans laquelle on te facture)
 // ───────────────────────────────────────────────────────────────────────────
 
+const U = {
+  /** IA : Gemini 3.1 Flash-Lite, mesuré sur le code du dépôt. */
+  iaParMessage: 0.00138,          // ~0,186 DA au taux de 135
+  iaParConversationWeb: 0.011,    // 8 messages
+
+  /** WhatsApp (barème Meta du 01/10/2026, marché « Rest of Africa »). */
+  waService: 0.0046,              // par message, après 1 000 gratuits/mois/numéro
+  waMarketing: 0.0259,            // par message, AUCUNE franchise
+  waFranchise: 1000,
+
+  /** Infra. */
+  domaine: 0.9,
+  supabasePro: 25,
+  cloudflare: 5,
+};
+
 const H = {
-  change: 135, // 1 $ = 135 DA (taux utilisé par la console admin)
-
-  /**
-   * 💱 LE POSTE CACHÉ : pour payer Google (Gemini), Meta (WhatsApp), Supabase et
-   * Cloudflare, il faut des DOLLARS. Or le dinar n'est pas librement convertible :
-   *   • taux officiel Banque d'Algérie : ≈ 134 DA/USD (octobre 2026)
-   *   • marché parallèle (Square Port-Saïd) : ≈ 240 DA/USD (octobre 2026)
-   * Tant que les recettes sont en DA et les dépenses en USD, cet écart décide du
-   * coût réel. Les deux taux sont affichés côte à côte ci-dessous.
-   */
+  change: 270,
   tauxOfficiel: 134,
-  tauxParallele: 240,
-
-  packs: {
-    basic:      { libelle: 'Basic',        prixDzd: 6850 },
-    pro:        { libelle: 'Pro/Business', prixDzd: 18700 },
-    enterprise: { libelle: 'Enterprise',   prixDzd: 47100 },
-  },
-
-  /** Consommation IA par conversation web (mesurée). */
-  iaParConversationWeb: 1.49,
-  /** WhatsApp : Meta 0,0046 $ + IA 0,19 DA = 0,81 DA après la franchise. */
-  whatsappMetaParMessage: 0.62,
-  iaParMessageWhatsApp: 0.186,
-  whatsappFranchise: 1000,
-  /** Marketing : 0,0259 $, sans franchise. */
-  whatsappMarketingParMessage: 3.50,
-
-  /** Usage supposé par plan (web + WhatsApp inclus). */
-  usage: {
-    basic:      { convWeb: 250, messagesWhatsApp: 0 },
-    pro:        { convWeb: 200, messagesWhatsApp: 1000 },
-    enterprise: { convWeb: 500, messagesWhatsApp: 5000 },
-  },
-
-  /** Répartition du portefeuille client (hypothèse, ajustable). */
-  mix: { basic: 0.5, pro: 0.4, enterprise: 0.1 },
-
-  /** Encaissement SlickPay : 1,4 % (versement mensuel) à 2 % (instantané). */
   slickpayPct: 1.6,
 
-  /** Infra fixe. */
-  domaineUsdMois: 0.9,
-  supabaseProUsd: 25,
-  cloudflareWorkersUsd: 5,
+  /** Les 4 packs : ce qu'ils incluent. */
+  packs: [
+    { id: 'free',       libelle: 'Découverte',    prixDzd: 0,     convWebInclus: 0,    waInclus: 0,    capIaUsd: 0 },
+    { id: 'basic',      libelle: 'Basic',         prixDzd: 6850,  convWebInclus: 1000, waInclus: 0,    capIaUsd: 3 },
+    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 18700, convWebInclus: 5000, waInclus: 1000, capIaUsd: 20 },
+    { id: 'enterprise', libelle: 'Enterprise',    prixDzd: 47100, convWebInclus: null, waInclus: 5000, capIaUsd: 30 },
+  ],
 
-  /** Une ligne de conversation ≈ 8 Ko en base (message 2 000 car. + réponse 4 000 car. + index). */
+  /** Usage réaliste d'un client, par pack. */
+  usage: {
+    free:       { convWeb: 0,   wa: 0 },
+    basic:      { convWeb: 250, wa: 0 },
+    pro:        { convWeb: 200, wa: 1000 },
+    enterprise: { convWeb: 500, wa: 5000 },
+  },
+
+  /** Répartition du portefeuille client. */
+  mix: { basic: 0.5, pro: 0.4, enterprise: 0.1 },
+
+  /** Infra / base de données. */
   koParConversation: 8,
-  /** Requêtes Cloudflare par conversation (1 par message envoyé au widget). */
-  requetesParConversation: 10,
-  /** Offre gratuite Cloudflare Pages Functions : 100 000 requêtes/jour. */
-  requetesGratuitesParJour: 100000,
-  /** Mois d'historique conservés. */
   moisHistorique: 3,
-  /** Limite de l'offre gratuite Supabase. */
   supabaseGratuitMo: 500,
+  requetesParConversation: 10,
+  requetesGratuitesParJour: 100000,
 };
 
 const arg = (nom, defaut) => {
@@ -87,311 +76,303 @@ const arg = (nom, defaut) => {
   const v = Number(b.split('=')[1]);
   return Number.isFinite(v) ? v : defaut;
 };
+H.change = arg('change', H.change);
 H.slickpayPct = arg('slickpay', H.slickpayPct);
-const CLIENT_VISE = arg('clients', 50);
+const CLIENTS = arg('clients', 50);
 
+// ───────────────────────────────────────────────────────────────────────────
+// 2. CONVERSIONS & OUTILS
+// ───────────────────────────────────────────────────────────────────────────
+
+const da = (usd) => usd * H.change;
 const dzd = (v, d = 0) => `${v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })} DA`;
 const usd = (v, d = 2) => `${v.toFixed(d)} $`;
 const pct = (v) => `${v.toFixed(1).replace('.', ',')} %`;
 const pad = (v, n) => String(v).padEnd(n);
 const padL = (v, n) => String(v).padStart(n);
-const titre = (t) => `\n${'═'.repeat(88)}\n  ${t}\n${'═'.repeat(88)}`;
+const titre = (t) => `\n${'═'.repeat(92)}\n  ${t}\n${'═'.repeat(92)}`;
 
-// ───────────────────────────────────────────────────────────────────────────
-// CALCULS
-// ───────────────────────────────────────────────────────────────────────────
+/** Coût IA (Gemini) d'un usage, en USD puis en DA. */
+const iaUsd = (convWeb, wa) => convWeb * U.iaParConversationWeb + wa * U.iaParMessage;
+const iaDzd = (convWeb, wa) => da(iaUsd(convWeb, wa));
 
-/** Coût WhatsApp (Meta + IA) pour N messages de service inclus. */
-function coutWhatsApp(messages) {
-  const gratuits = Math.min(messages, H.whatsappFranchise);
-  const factures = Math.max(0, messages - H.whatsappFranchise);
-  return gratuits * H.iaParMessageWhatsApp + factures * (H.whatsappMetaParMessage + H.iaParMessageWhatsApp);
+/** Coût Meta (WhatsApp) d'un usage, en DA. Inclut la franchise de 1 000 messages. */
+function metaDzd(wa) {
+  const factures = Math.max(0, wa - U.waFranchise); // les 1 000 premiers sont gratuits
+  return da(factures * U.waService);
 }
 
-/** Coût IA web. */
-const coutWeb = (conv) => conv * H.iaParConversationWeb;
+/** Frais d'encaissement SlickPay. */
+const encaissement = (prix) => prix * (H.slickpayPct / 100);
 
-/** Revenu mensuel d'un portefeuille (utilisé pour les ratios). */
-const revenu0 = (clients) =>
-  Object.entries(H.mix).reduce((t, [id, p]) => t + clients * p * H.packs[id].prixDzd, 0);
-
-/** Frais d'encaissement sur un montant. */
-const fraisEncaissement = (montant) => montant * (H.slickpayPct / 100);
-
-/** Coût complet d'un client, hors frais fixes répartis. */
-function coutClient(planId) {
-  const u = H.usage[planId];
-  const ia = coutWeb(u.convWeb) + coutWhatsApp(u.messagesWhatsApp);
-  const encaissement = fraisEncaissement(H.packs[planId].prixDzd);
-  return { ia, encaissement, total: ia + encaissement };
+/** Coût total d'un pack pour son usage réaliste. */
+function coutPack(pack) {
+  const u = H.usage[pack.id];
+  const ia = iaDzd(u.convWeb, u.wa);
+  const meta = metaDzd(u.wa);
+  const enc = encaissement(pack.prixDzd);
+  return { ia, meta, enc, total: ia + meta + enc, u };
 }
 
-/** Coûts fixes mensuels selon le nombre de clients. */
-/** Conversations web créées par mois, tous clients confondus. */
+/** Pire cas : le client consomme jusqu'au plafond IA + tout le forfait WhatsApp. */
+function pireCas(pack) {
+  if (pack.capIaUsd === 0) return { ia: 0, meta: 0, enc: 0, total: 0, convWeb: 0 };
+  // Le plafond borne le coût GEMINI total (web + WhatsApp), pas les frais Meta.
+  const reste = Math.max(0, pack.capIaUsd - (pack.waInclus * U.iaParMessage));
+  const convWeb = reste / U.iaParConversationWeb;
+  const ia = da(pack.capIaUsd); // le plafond borne le coût Gemini
+  const meta = metaDzd(pack.waInclus);
+  const enc = encaissement(pack.prixDzd);
+  return { ia, meta, enc, total: ia + meta + enc, convWeb };
+}
+
+/** Infra fixe. */
 const conversationsMois = (clients) =>
   clients * Object.entries(H.mix).reduce((t, [id, p]) => t + p * H.usage[id].convWeb, 0);
-
-/** Taille de la base Supabase, en Mo (Ko → Mo). */
-const tailleBaseMo = (clients, mois = H.moisHistorique) =>
-  (conversationsMois(clients) * H.koParConversation * mois) / 1024;
-
-/** Requêtes Cloudflare par mois. */
+const tailleBaseMo = (clients) =>
+  (conversationsMois(clients) * H.koParConversation * H.moisHistorique) / 1024;
 const requetesMois = (clients) => conversationsMois(clients) * H.requetesParConversation;
+const revenu = (clients) =>
+  Object.entries(H.mix).reduce((t, [id, p]) => t + clients * p * H.packs.find((x) => x.id === id).prixDzd, 0);
 
-function coûtsFixes(clients) {
-  const lignes = [{ libelle: 'Nom de domaine', dzd: H.domaineUsdMois * H.change }];
-
+function infra(clients) {
   const baseMo = tailleBaseMo(clients);
-  const supabasePro = baseMo > H.supabaseGratuitMo;
-  lignes.push({
-    libelle: supabasePro
-      ? `Supabase Pro (base ≈ ${baseMo.toFixed(0)} Mo, au-delà des 500 Mo gratuits)`
-      : `Supabase gratuit (base ≈ ${baseMo.toFixed(0)} Mo sur 500 Mo)`,
-    dzd: supabasePro ? H.supabaseProUsd * H.change : 0,
-  });
-
-  const reqMois = requetesMois(clients);
-  const cfPayant = reqMois > (H.requetesGratuitesParJour * 30) * 0.8;
-  lignes.push({
-    libelle: cfPayant
-      ? `Cloudflare Workers (${Math.round(reqMois / 1000)} k requêtes/mois)`
-      : 'Cloudflare (offre gratuite)',
-    dzd: cfPayant ? H.cloudflareWorkersUsd * H.change : 0,
-  });
-
-  return { lignes, total: lignes.reduce((t, l) => t + l.dzd, 0), baseMo, reqMois };
+  const supabase = baseMo > H.supabaseGratuitMo;
+  const cf = requetesMois(clients) > U.requetesGratuitesParJour * 30 * 0.8;
+  const totalUsd = U.domaine + (supabase ? U.supabasePro : 0) + (cf ? U.cloudflare : 0);
+  return { baseMo, supabase, cf, totalUsd, total: da(totalUsd) };
 }
 
-/** Nombre de clients à partir duquel la base dépasse l'offre gratuite Supabase. */
-const seuilSupabase = Math.ceil(
-  (H.supabaseGratuitMo * 1024) /
-    (Object.entries(H.mix).reduce((t, [id, p]) => t + p * H.usage[id].convWeb, 0) *
-      H.koParConversation * H.moisHistorique),
-);
-/** Nombre de clients à partir duquel le quota Cloudflare gratuit devient juste. */
-const seuilCloudflare = Math.ceil(
-  (H.requetesGratuitesParJour * 30 * 0.8) /
-    (Object.entries(H.mix).reduce((t, [id, p]) => t + p * H.usage[id].convWeb, 0) * H.requetesParConversation),
-);
-
 // ───────────────────────────────────────────────────────────────────────────
-// RAPPORT
+// 3. RAPPORT
 // ───────────────────────────────────────────────────────────────────────────
 
 console.log(`
-╔══════════════════════════════════════════════════════════════════════════════════════╗
-║  JAWEBFLOW — COÛT TOTAL, TOUS FRAIS INCLUS                                            ║
-╚══════════════════════════════════════════════════════════════════════════════════════╝
-  Change : 1 $ = ${H.change} DA        Frais d'encaissement SlickPay : ${H.slickpayPct.toFixed(1).replace('.', ',')} % du montant encaissé
-  Frais fixes partagés + IA + WhatsApp (Meta) + encaissement + mise en place`);
+╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+║  JAWEBFLOW — COÛT TOTAL, TOUS FRAIS INCLUS                                                     ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+  Taux retenu : 1 $ = ${H.change} DA   (taux RÉEL d'accès au dollar — le taux officiel
+                                     Banque d'Algérie est ≈ ${H.tauxOfficiel} DA, non applicable à tes achats)
+  Encaissement SlickPay : ${H.slickpayPct.toFixed(1).replace('.', ',')} % du montant encaissé
+  Repère : la conversion officielle affichée dans ta console (135) SOUS-ESTIME tes coûts de ${Math.round((H.change / 135 - 1) * 100)} %.`);
 
-// --- 1. Les 5 postes de dépense ------------------------------------------
-console.log(titre('1. LES 5 POSTES QUI TE COÛTENT DE L\'ARGENT'));
+// --- 1. Les 5 postes -----------------------------------------------------
+console.log(titre('1. LES 5 POSTES QUI TE COÛTENT DE L\'ARGENT (au taux réel)'));
 console.log(`
-  ①  INFRA FIXE ................ domaine + Cloudflare + Supabase — le plus petit poste
-  ②  IA (Gemini) ............... 0,186 DA par message, 1,49 DA par conversation web
-  ③  WHATSAPP (Meta) ........... 0,62 DA par réponse APRÈS 1 000 gratuites/mois/numéro
-                                 et 3,50 DA par message marketing, SANS franchise
-  ④  ENCAISSEMENT (SlickPay) ... ${H.slickpayPct.toFixed(1).replace('.', ',')} % de CHAQUE paiement — le poste le plus gros
-  ⑤  MISE EN PLACE ............. dossier Meta gratuit, mais un numéro par client
-                                 et 15–25 jours de développement`);
+  ①  IA (Gemini) ............... ${dzd(da(U.iaParMessage), 2)} par message · ${dzd(da(U.iaParConversationWeb), 2)} par conversation web
+  ②  WHATSAPP (Meta) ........... ${dzd(da(U.waService), 2)} par réponse APRÈS ${U.waFranchise} gratuites/mois/numéro
+                                 ${dzd(da(U.waMarketing), 2)} par message MARKETING, sans aucune franchise
+  ③  ENCAISSEMENT (SlickPay) ... ${H.slickpayPct.toFixed(1).replace('.', ',')} % de chaque paiement client — le plus gros poste
+  ④  INFRA ..................... domaine + Supabase + Cloudflare : ${dzd(infra(CLIENTS).total)}/mois à ${CLIENTS} clients
+  ⑤  MISE EN PLACE ............. 0 DA chez Meta, mais un numéro par client + 15–25 j de développement`);
 
-// --- 2. Coût d'un client, plan par plan ----------------------------------
-console.log(titre('2. CE QUE COÛTE UN CLIENT (tous frais variables inclus)'));
+// --- 2. LES 4 PACKS, WHATSAPP COMPRIS ------------------------------------
+console.log(titre('2. LES 4 PACKS, WHATSAPP COMPRIS — CE QU\'ILS TE COÛTENT'));
+console.log(`
+  Ce que chaque pack inclut (décision) :
+    • Découverte  : rien (l'IA est coupée)
+    • Basic       : ${dzd(6850)} · 1 000 conversations web · PAS de WhatsApp
+    • Pro         : ${dzd(18700)} · 5 000 conversations web · + WhatsApp : ${U.waFranchise.toLocaleString('fr-FR')} messages/mois
+    • Enterprise  : ${dzd(47100)} · conversations illimitées · + WhatsApp : 5 000 messages/mois
+
+  Scénario A — usage RÉALISTE d'un client (Basic 250 conv. · Pro 200 conv. + 1 000 msg WhatsApp ·
+  Enterprise 500 conv. + 5 000 msg WhatsApp) :
+`);
 console.log(
-  pad('Plan', 16) + padL('Prix', 12) + padL('IA web', 11) + padL('WhatsApp', 12) +
-    padL('Encaissement', 14) + padL('COÛT TOTAL', 14) + padL('Marge', 12) + padL('Marge %', 10),
+  pad('Pack', 15) + padL('Prix', 11) + padL('IA web', 10) + padL('IA WhatsApp', 12) +
+    padL('Meta', 9) + padL('Encaiss.', 11) + padL('COÛT TOTAL', 13) + padL('Marge', 12) + padL('Marge %', 10),
 );
-console.log('─'.repeat(101));
-for (const planId of ['basic', 'pro', 'enterprise']) {
-  const p = H.packs[planId];
-  const u = H.usage[planId];
-  const c = coutClient(planId);
-  const wa = coutWhatsApp(u.messagesWhatsApp);
+console.log('─'.repeat(93));
+for (const p of H.packs) {
+  if (p.prixDzd === 0) {
+    console.log(pad(p.libelle, 15) + padL('0 DA', 11) + padL('—', 10) + padL('—', 12) + padL('—', 9) +
+      padL('—', 11) + padL('0 DA', 13) + padL('—', 12) + padL('—', 10));
+    continue;
+  }
+  const c = coutPack(p);
+  const u = H.usage[p.id];
+  const iaWeb = dzd(iaDzd(u.convWeb, 0));
+  const iaWa = dzd(iaDzd(0, u.wa));
   console.log(
-    pad(p.libelle, 16) + padL(dzd(p.prixDzd), 12) + padL(dzd(coutWeb(u.convWeb)), 11) +
-      padL(dzd(wa), 12) + padL(dzd(c.encaissement), 14) + padL(dzd(c.total), 14) +
+    pad(p.libelle, 15) + padL(dzd(p.prixDzd), 11) + padL(iaWeb, 10) + padL(iaWa, 12) +
+      padL(dzd(c.meta), 9) + padL(dzd(c.enc), 11) + padL(dzd(c.total), 13) +
       padL(dzd(p.prixDzd - c.total), 12) + padL(pct(((p.prixDzd - c.total) / p.prixDzd) * 100), 10),
   );
 }
-console.log(`
-  Usage supposé : Basic ${H.usage.basic.convWeb} conversations web · Pro ${H.usage.pro.convWeb} + ${H.usage.pro.messagesWhatsApp} messages WhatsApp ·
-  Enterprise ${H.usage.enterprise.convWeb} + ${H.usage.enterprise.messagesWhatsApp} messages WhatsApp. Hors frais fixes (voir §4).`);
 
-// --- 3. Détail WhatsApp --------------------------------------------------
-console.log(titre('3. LE DÉTAIL DU POSTE WHATSAPP'));
+console.log(`
+  Scénario B — usage MAXIMAL : le client consomme jusqu'au plafond IA et tout son forfait WhatsApp.
+  (C'est le pire cas : le maximum que ce client peut te coûter sans dépasser.)
+`);
 console.log(
-  pad('Messages/mois (par client)', 30) + padL('Meta', 12) + padL('IA', 11) + padL('TOTAL', 12) + padL('≈ conversations', 16),
+  pad('Pack', 15) + padL('Plafond IA', 13) + padL('Conv. web', 11) + padL('WhatsApp', 11) +
+    padL('Coût IA', 11) + padL('Dont Meta', 12) + padL('DU TOTAL', 12) + padL('Marge', 12) + padL('Marge %', 10),
 );
-console.log('─'.repeat(101));
-for (const n of [500, 1000, 2000, 5000, 10000]) {
-  const factures = Math.max(0, n - H.whatsappFranchise);
+console.log('─'.repeat(93));
+for (const p of H.packs) {
+  if (p.prixDzd === 0) continue;
+  const w = pireCas(p);
   console.log(
-    pad(n.toLocaleString('fr-FR'), 30) + padL(dzd(factures * H.whatsappMetaParMessage), 12) +
-      padL(dzd(n * H.iaParMessageWhatsApp), 11) + padL(dzd(coutWhatsApp(n)), 12) +
-      padL(`${Math.round(n / 6)}`, 16),
+    pad(p.libelle, 15) + padL(usd(p.capIaUsd, 0), 13) + padL(`${Math.floor(w.convWeb).toLocaleString('fr-FR')}`, 11) +
+      padL(p.waInclus ? p.waInclus.toLocaleString('fr-FR') : 'non inclus', 11) +
+      padL(dzd(w.ia), 11) + padL(dzd(w.meta), 12) + padL(dzd(w.total), 12) +
+      padL(dzd(p.prixDzd - w.total), 12) + padL(pct(((p.prixDzd - w.total) / p.prixDzd) * 100), 10),
   );
 }
 console.log(`
-  Les ${H.whatsappFranchise} premiers messages sont GRATUITS chez Meta : offrir 1 000 messages dans Pro
-  ne coûte donc que l'IA = ${dzd(coutWhatsApp(1000))} (${pct((coutWhatsApp(1000) / H.packs.pro.prixDzd) * 100)} du prix du pack).
-  Une campagne marketing de 1 000 messages : ${dzd(1000 * H.whatsappMarketingParMessage)} — sans franchise, non inclus dans les plans.`);
+  ⚠️ Le plafond IA (${dzd(da(3))} pour Basic, ${dzd(da(20))} pour Pro, ${dzd(da(30))} pour Enterprise au taux réel)
+     borne le coût GEMINI uniquement. Les frais Meta, eux, ne sont bornés par RIEN :
+     d'où la colonne « Dont Meta » du scénario B.`);
+
+// --- 3. Dépassement ------------------------------------------------------
+const coutMsgDepassement = da(U.waService + U.iaParMessage);
+console.log(titre('3. AU-DELÀ DU FORFAIT : COMBIEN FACTURER'));
+console.log(`
+  Coût réel d'un message WhatsApp supplémentaire : ${dzd(coutMsgDepassement, 2)}
+  (Meta ${dzd(da(U.waService), 2)} + IA ${dzd(da(U.iaParMessage), 2)})
+`);
+console.log(pad('Palier de recharge', 26) + padL('Coût réel', 14) + padL('Prix conseillé', 16) + padL('Marge', 10) + padL('Soit / message', 18));
+console.log('─'.repeat(93));
+for (const n of [1000, 5000]) {
+  const cout = n * coutMsgDepassement;
+  const prix = cout / 0.5;
+  console.log(pad(`${n.toLocaleString('fr-FR')} messages`, 26) + padL(dzd(cout), 14) + padL(dzd(prix), 16) +
+    padL('50 %', 10) + padL(dzd(prix / n, 2), 18));
+}
+console.log(`
+  Marketing (campagnes) : ${dzd(da(U.waMarketing), 2)} de coût Meta par message, SANS IA et SANS franchise.
+     1 000 messages = ${dzd(da(U.waMarketing * 1000))} de coût → à vendre ~${dzd(da(U.waMarketing * 1000) / 0.5)}.
+  → Le marketing se facture TOUJOURS à part, jamais inclus dans un forfait.`);
 
 // --- 4. Frais fixes ------------------------------------------------------
+const inf = infra(CLIENTS);
 console.log(titre('4. FRAIS FIXES (payés par toi, quel que soit le nombre de clients)'));
-const fixesVise = coûtsFixes(CLIENT_VISE);
 console.log(`
-  Pour ${CLIENT_VISE} clients (base ≈ ${fixesVise.baseMo.toFixed(0)} Mo, ${H.moisHistorique} mois d'historique conservés,
-  ${Math.round(fixesVise.reqMois / 1000)} k requêtes/mois) :
+  Pour ${CLIENTS} clients — base ≈ ${inf.baseMo.toFixed(0)} Mo, ${Math.round(requetesMois(CLIENTS) / 1000)} k requêtes/mois :
 `);
-for (const l of fixesVise.lignes) console.log(`    • ${pad(l.libelle, 46)} ${padL(dzd(l.dzd), 10)}`);
-console.log(`    ${'─'.repeat(60)}`);
-console.log(`    • ${pad('TOTAL / mois', 46)} ${padL(dzd(fixesVise.total), 10)}`);
-console.log(`    • ${pad('par client', 46)} ${padL(dzd(fixesVise.total / CLIENT_VISE), 10)}`);
+console.log(pad('Poste', 52) + padL('USD', 10) + padL('DA/mois', 13));
+console.log('─'.repeat(93));
+console.log(pad('Nom de domaine', 52) + padL(usd(U.domaine), 10) + padL(dzd(da(U.domaine)), 13));
+console.log(pad(`Supabase ${inf.supabase ? 'Pro (base au-delà des 500 Mo gratuits)' : 'gratuit'}`, 52) +
+  padL(usd(inf.supabase ? U.supabasePro : 0), 10) + padL(dzd(da(inf.supabase ? U.supabasePro : 0)), 13));
+console.log(pad(`Cloudflare ${inf.cf ? 'Workers payant' : 'gratuit'}`, 52) +
+  padL(usd(inf.cf ? U.cloudflare : 0), 10) + padL(dzd(da(inf.cf ? U.cloudflare : 0)), 13));
+console.log('─'.repeat(93));
+console.log(pad('TOTAL / mois', 52) + padL(usd(inf.totalUsd), 10) + padL(dzd(inf.total), 13));
+console.log(pad('Par client', 52) + padL('', 10) + padL(dzd(inf.total / CLIENTS), 13));
 console.log(`
-  Seuils à connaître :
-    • Supabase passe en payant (25 $/mois) quand la base dépasse 500 Mo — soit environ
-      ${seuilSupabase} clients actifs si tu gardes ${H.moisHistorique} mois d'historique détaillé.
-      → Le plus simple : purger les conversations de plus de ${H.moisHistorique} mois (la vue
-        assistant_monthly_usage agrège déjà les totaux du mois, l'historique
-        détaillé n'est pas indispensable pour le tableau de bord).
-    • Cloudflare (Pages Functions) est gratuit jusqu'à 100 000 requêtes/jour, soit
-      ~${Math.round((H.requetesGratuitesParJour * 30) / (Object.entries(H.mix).reduce((t, [id, p]) => t + p * H.usage[id].convWeb, 0) * H.requetesParConversation) / 100) * 100} clients. Le plan payant (5 $) ne devient
-      nécessaire qu'au-delà de ~${seuilCloudflare} clients actifs, ou pour des limites CPU plus hautes.
+  Seuils : Supabase payant vers ~84 clients (purger l'historique > ${H.moisHistorique} mois) ·
+  Cloudflare gratuit jusqu'à ~940 clients. À ${CLIENTS} clients : ${pct((inf.total / revenu(CLIENTS)) * 100)} du revenu.`);
 
-  Conclusion : l'infrastructure fixe reste marginale — ${pct((fixesVise.total / revenu0(CLIENT_VISE)) * 100)} du revenu
-  à ${CLIENT_VISE} clients — tant que tu purges l'historique des conversations.`);
-
-// --- 5. Mise en place (une seule fois) -----------------------------------
-console.log(titre('5. MISE EN PLACE — CE QUE ÇA COÛTE UNE SEULE FOIS'));
+// --- 5. Mise en place ----------------------------------------------------
+console.log(titre('5. MISE EN PLACE (une seule fois)'));
 console.log(`
-  ${pad('Poste', 40)}${padL('Coût', 16)}${padL('Qui paie', 16)}`);
-console.log('─'.repeat(101));
+  ${pad('Poste', 46)}${padL('Coût', 16)}${padL('Qui paie', 14)}`);
+console.log('─'.repeat(93));
 for (const [poste, cout, qui] of [
   ['Vérification d\'entreprise Meta', '0 DA', 'toi'],
   ['App Review (permissions WhatsApp)', '0 DA', 'toi'],
   ['Statut Tech Provider / Embedded Signup', '0 DA', 'toi'],
   ['Numéro dédié par client (SIM)', '≈ 500–1 500 DA', 'le client'],
   ['Développement du canal (15–25 j)', 'ton temps', 'toi'],
-  ['Meta Verified (OPTIONNEL, non requis)', 'abonnement', '—'],
-]) {
-  console.log(`  ${pad(poste, 40)}${padL(cout, 16)}${padL(qui, 16)}`);
-}
+]) console.log(`  ${pad(poste, 46)}${padL(cout, 16)}${padL(qui, 14)}`);
 console.log(`
-  ⚠️ Le point important n'est PAS le prix, c'est la contrainte : le numéro branché sur l'API
-     ne peut plus servir dans l'application WhatsApp normale. Le client doit donc accepter
-     un numéro dédié (souvent une 2ᵉ SIM), ou utiliser le mode « Coexistence » s'il veut garder
-     son app. C'est le premier frein à l'adoption, avant toute question de coût.`);
+  Le vrai frein : un numéro branché sur l'API ne peut plus servir dans l'app WhatsApp
+  normale. Le client doit accepter un numéro dédié (2ᵉ SIM) ou le mode « Coexistence ».`);
 
 // --- 6. Vue plateforme ---------------------------------------------------
-console.log(titre(`6. VUE D'ENSEMBLE À ${CLIENT_VISE} CLIENTS`));
-const repartition = Object.entries(H.mix).map(([id, p]) => ({ id, n: CLIENT_VISE * p }));
-const revenu = repartition.reduce((t, r) => t + r.n * H.packs[r.id].prixDzd, 0);
-const coutsParPlan = repartition.map((r) => ({ ...r, cout: r.n * coutClient(r.id).total }));
-const totalVariables = coutsParPlan.reduce((t, r) => t + r.cout, 0);
-const totalFixes = coûtsFixes(CLIENT_VISE).total;
-const totalGeneral = totalVariables + totalFixes;
+console.log(titre(`6. VUE D'ENSEMBLE À ${CLIENTS} CLIENTS`));
+const repartition = Object.entries(H.mix).map(([id, p]) => ({
+  pack: H.packs.find((x) => x.id === id), n: Math.round(CLIENTS * p),
+}));
+const rev = revenu(CLIENTS);
+let totalVar = 0;
+const lignes = repartition.map((r) => {
+  const c = coutPack(r.pack);
+  const t = r.n * c.total;
+  totalVar += t;
+  return { ...r, cout: c, total: t };
+});
 console.log(`
-  Portefeuille : ${repartition.map((r) => `${r.n} ${H.packs[r.id].libelle}`).join(' · ')}
+  Portefeuille : ${repartition.map((r) => `${r.n} ${r.pack.libelle}`).join(' · ')}
 `);
-console.log(pad('Poste', 42) + padL('Par mois', 16) + padL('% du revenu', 16));
-console.log('─'.repeat(101));
-console.log(pad('REVENU (abonnements)', 42) + padL(dzd(revenu), 16) + padL('100 %', 16));
-for (const r of coutsParPlan) {
-  console.log(
-    pad(`  ↳ IA + WhatsApp + encaissement · ${r.n} × ${H.packs[r.id].libelle}`, 42) +
-      padL(`- ${dzd(r.cout)}`, 16) + padL(pct((r.cout / revenu) * 100), 16),
-  );
+console.log(pad('Poste', 46) + padL('Par mois', 15) + padL('% du revenu', 14));
+console.log('─'.repeat(93));
+console.log(pad('REVENU (abonnements)', 46) + padL(dzd(rev), 15) + padL('100 %', 14));
+for (const l of lignes) {
+  console.log(pad(`  ↳ ${l.n} × ${l.pack.libelle} (IA + WhatsApp + encaissement)`, 46) +
+    padL(`- ${dzd(l.total)}`, 15) + padL(pct((l.total / rev) * 100), 14));
 }
-console.log(pad('  ↳ Frais fixes (infra)', 42) + padL(`- ${dzd(totalFixes)}`, 16) + padL(pct((totalFixes / revenu) * 100), 16));
-console.log('─'.repeat(101));
-console.log(pad('MARGE NETTE', 42) + padL(dzd(revenu - totalGeneral), 16) + padL(pct(((revenu - totalGeneral) / revenu) * 100), 16));
+console.log(pad('  ↳ Frais fixes (infra)', 46) + padL(`- ${dzd(inf.total)}`, 15) + padL(pct((inf.total / rev) * 100), 14));
+console.log('─'.repeat(93));
+console.log(pad('MARGE NETTE', 46) + padL(dzd(rev - totalVar - inf.total), 15) +
+  padL(pct(((rev - totalVar - inf.total) / rev) * 100), 14));
+const encTotal = lignes.reduce((t, l) => t + l.n * l.cout.enc, 0);
+const iaTotal = lignes.reduce((t, l) => t + l.n * l.cout.ia, 0);
+const metaTotal = lignes.reduce((t, l) => t + l.n * l.cout.meta, 0);
 console.log(`
-  Détail du coût variable : encaissement ${dzd(revenu * H.slickpayPct / 100)} · IA ${dzd(
-    repartition.reduce((t, r) => t + r.n * (coutWeb(H.usage[r.id].convWeb) + coutWhatsApp(H.usage[r.id].messagesWhatsApp)), 0),
-  )} · dont WhatsApp ${dzd(repartition.reduce((t, r) => t + r.n * coutWhatsApp(H.usage[r.id].messagesWhatsApp), 0))}`);
+  Détail : encaissement ${dzd(encTotal)} · IA ${dzd(iaTotal)} · Meta (WhatsApp) ${dzd(metaTotal)} · infra ${dzd(inf.total)}`);
 
-// --- 7. Point mort -------------------------------------------------------
-console.log(titre('7. POINT MORT ET SEUILS'));
-const margeParClient = (revenu - totalVariables) / CLIENT_VISE;
-const pointMort = Math.ceil(totalFixes / margeParClient);
-console.log(`
-  Marge par client (après tous les frais variables) : ${dzd(margeParClient)}
-  Frais fixes mensuels : ${dzd(totalFixes)}
-  → POINT MORT : ${pointMort} client(s).
-
-  Autrement dit : dès le premier client, tu couvres l'infrastructure. Le vrai coût
-  n'est pas l'infra, il est au §2 : ${dzd(coutClient('pro').total)} pour un client Pro, dont
-  ${dzd(coutClient('pro').encaissement)} de frais d'encaissement et ${dzd(coutWhatsApp(H.usage.pro.messagesWhatsApp))} de WhatsApp.`);
-
-
-// --- 9. Le poste caché : payer en dollars ---------------------------------
-console.log(titre('8. LE POSTE CACHÉ : PAYER EN DOLLARS DEPUIS L\'ALGÉRIE'));
-
-const convA = Math.round(Object.entries(H.mix).reduce((t, [id, p]) => t + p * H.usage[id].convWeb, 0) * CLIENT_VISE);
-const msgsWA = Math.round(Object.entries(H.mix).reduce((t, [id, p]) => t + p * H.usage[id].messagesWhatsApp, 0) * CLIENT_VISE);
-const iaDzdOfficiel = convA * H.iaParConversationWeb + msgsWA * H.iaParMessageWhatsApp;
-const metaDzdOfficiel = repartition.reduce((t, r) => {
-  const factures = Math.max(0, H.usage[r.id].messagesWhatsApp - H.whatsappFranchise);
-  return t + r.n * factures * H.whatsappMetaParMessage;
-}, 0);
-const infraUsdMois = H.domaineUsdMois + (tailleBaseMo(CLIENT_VISE) > H.supabaseGratuitMo ? H.supabaseProUsd : 0) +
-  (requetesMois(CLIENT_VISE) > H.requetesGratuitesParJour * 30 * 0.8 ? H.cloudflareWorkersUsd : 0);
-
-const devisesDepart = [
-  { libelle: 'IA Gemini (tokens)', dzdOfficiel: iaDzdOfficiel, usd: iaDzdOfficiel / H.tauxOfficiel },
-  { libelle: 'WhatsApp — frais Meta facturés', dzdOfficiel: metaDzdOfficiel, usd: metaDzdOfficiel / H.tauxOfficiel },
-  { libelle: `Infra (supabase + Cloudflare + domaine)`, dzdOfficiel: infraUsdMois * H.tauxOfficiel, usd: infraUsdMois },
+// --- 7. Devise -----------------------------------------------------------
+console.log(titre('7. POURQUOI LE TAUX DE 270 CHANGE TOUT'));
+const usdMois = lignes.reduce((t, l) => t + l.n * l.cout.ia / H.change, 0) +
+  lignes.reduce((t, l) => t + l.n * l.cout.meta / H.change, 0) + inf.totalUsd;
+void usdMois;
+const depensesUsd = [
+  { libelle: 'IA Gemini (tokens)', usd: iaTotal / H.change },
+  { libelle: 'WhatsApp — frais Meta', usd: metaTotal / H.change },
+  { libelle: 'Infra', usd: inf.totalUsd },
 ];
-const totalUsd = devisesDepart.reduce((t, d) => t + d.usd, 0);
 console.log(`
-  Dépenses mensuelles payables UNIQUEMENT en dollars (à ${CLIENT_VISE} clients) :
+  Tes recettes sont en dinars, tes fournisseurs facturent en dollars. Le taux que
+  tu obtiens réellement décide de TES coûts, sans que Meta ou Google bougent d'un centime.
 `);
-console.log(pad('Poste', 40) + padL('en USD', 12) + padL(`à ${H.tauxOfficiel} DA`, 16) + padL(`à ${H.tauxParallele} DA`, 18) + padL('Écart', 12));
-console.log('─'.repeat(101));
-for (const d of devisesDepart) {
-  console.log(
-    pad(d.libelle, 40) + padL(usd(d.usd), 12) + padL(dzd(d.usd * H.tauxOfficiel), 16) +
-      padL(dzd(d.usd * H.tauxParallele), 18) + padL(`+${dzd(d.usd * (H.tauxParallele - H.tauxOfficiel))}`, 12),
-  );
+console.log(pad('Poste', 38) + padL('en USD', 11) + padL('≈ taux officiel', 17) + padL('≈ 270 DA (réel)', 17) + padL('Surcoût', 13));
+console.log('─'.repeat(93));
+let totUsd = 0, totOff = 0, totReel = 0;
+for (const d of depensesUsd) {
+  totUsd += d.usd; totOff += d.usd * H.tauxOfficiel; totReel += d.usd * H.change;
+  console.log(pad(d.libelle, 38) + padL(usd(d.usd), 11) + padL(dzd(d.usd * H.tauxOfficiel), 17) +
+    padL(dzd(d.usd * H.change), 17) + padL(`+${dzd(d.usd * (H.change - H.tauxOfficiel))}`, 13));
 }
-console.log('─'.repeat(101));
-console.log(
-  pad('TOTAL / mois', 40) + padL(usd(totalUsd), 12) + padL(dzd(totalUsd * H.tauxOfficiel), 16) +
-    padL(dzd(totalUsd * H.tauxParallele), 18) + padL(`+${dzd(totalUsd * (H.tauxParallele - H.tauxOfficiel))}`, 12),
-);
+console.log('─'.repeat(93));
+console.log(pad('TOTAL / mois', 38) + padL(usd(totUsd), 11) + padL(dzd(totOff), 17) + padL(dzd(totReel), 17) +
+  padL(`+${dzd(totReel - totOff)}`, 13));
 console.log(`
-  ⚠️ Le dinar n'est pas librement convertible : le taux officiel (~${H.tauxOfficiel} DA/USD) ne s'applique
-     qu'aux opérations bancaires autorisées. L'écart avec le marché parallèle (~${H.tauxParallele} DA/USD) est de
-     ${pct(((H.tauxParallele / H.tauxOfficiel) - 1) * 100)}. Selon la façon dont tu obtiens les dollars, TES coûts en DA
-     changent d'autant — sans que les tarifs Meta ou Google bougent d'un centime.
+  👉 L'écart (×${(H.change / H.tauxOfficiel).toFixed(2).replace('.', ',')}) est le vrai « frais caché » de ce business en Algérie.
+     Conséquence : toutes les décisions se calculent au taux réel. Un poste facturé
+     1 $ te coûte ${dzd(H.change)} — pas ${dzd(135)} comme l'affiche ta console admin.
+     → À corriger dans l'affichage : AdminPage.tsx utilise 135 pour convertir les coûts IA.
 
-  Impact sur les chiffres du §3 (le message WhatsApp) :
-     • au taux officiel  : ${dzd(coutWhatsApp(1000))} pour 1 000 messages inclus dans Pro (${pct((coutWhatsApp(1000) / H.packs.pro.prixDzd) * 100)} du pack)
-     • au taux parallèle : ${dzd((1000 * H.iaParMessageWhatsApp) * (H.tauxParallele / H.tauxOfficiel))} (${pct(((1000 * H.iaParMessageWhatsApp * H.tauxParallele / H.tauxOfficiel) / H.packs.pro.prixDzd) * 100)} du pack)
-  → La conclusion ne change PAS (WhatsApp reste à ~1–2 % du pack), mais il faut
-     bien budgéter la devise : c'est le vrai « frais caché » de ce business en Algérie.
+  Pistes légales pour réduire ce poste : compte devise professionnel, allocation
+  « services numériques », ou encaisser une partie en devises (clients diaspora).
+  Le marché parallèle est illégal : il sert ici à mesurer un coût, pas de plan d'affaires.`);
 
-  Voies légales à explorer auprès de ta banque (aucun conseil réglementaire ici) :
-     • compte devise professionnel / allocation pour « services numériques » ;
-     • encaisser une partie en devises (clients diaspora, export de services) ;
-     • carte devise adossée au compte professionnel.
-     Le marché parallèle est illégal et ne doit pas être un plan d'affaires.
-`);
-
-// --- 8. Réponse directe --------------------------------------------------
-console.log(titre('9. LA RÉPONSE EN UNE PHRASE'));
+// --- 8. Réponse ----------------------------------------------------------
+console.log(titre('8. LA RÉPONSE'));
+const pro = H.packs.find((p) => p.id === 'pro');
+const ent = H.packs.find((p) => p.id === 'enterprise');
+const cPro = coutPack(pro), wPro = pireCas(pro);
+const cEnt = coutPack(ent), wEnt = pireCas(ent);
 console.log(`
-  • Ajouter WhatsApp au plan Pro te coûte ${dzd(coutWhatsApp(1000))} par client et par mois
-    (1 % du prix du pack), tout compris : Meta 0 DA grâce à la franchise, IA incluse.
-  • Un client Pro complet (web + WhatsApp + encaissement) te coûte ${dzd(coutClient('pro').total)},
-    soit ${pct((coutClient('pro').total / H.packs.pro.prixDzd) * 100)} de ce qu'il paie — et jusqu'à
-    ${dzd(coutClient('pro').total + (coutClient('pro').ia * (H.tauxParallele / H.tauxOfficiel - 1)))}
-    (${pct(((coutClient('pro').total + coutClient('pro').ia * (H.tauxParallele / H.tauxOfficiel - 1)) / H.packs.pro.prixDzd) * 100)}) si tu obtiens les dollars au taux parallèle.
-  • Les frais fixes sont négligeables : ${dzd(coûtsFixes(CLIENT_VISE).total)} /mois à ${CLIENT_VISE} clients
-    (${dzd(coûtsFixes(CLIENT_VISE).total / CLIENT_VISE)} par client).
-  • Le seul poste qui grandit avec le succès, c'est l'ENCAISSEMENT (${H.slickpayPct.toFixed(1).replace('.', ',')} % du revenu) —
-    pas l'IA, pas Meta. C'est aussi le seul que tu peux négocier (versement mensuel = 1,4 %).
+  AU TAUX RÉEL DE ${H.change} DA/$ :
 
-  Variables d'ajustement : --clients=100 --slickpay=1.4
+  • WhatsApp dans le plan Pro (1 000 messages inclus)
+      coût réel : ${dzd(iaDzd(200, 1000))} (part WhatsApp) — ${dzd(cPro.total)} tout compris
+      pire cas  : ${dzd(wPro.total)} → ${pct((wPro.total / pro.prixDzd) * 100)} du pack
+
+  • WhatsApp dans le plan Enterprise (5 000 messages inclus)
+      coût réel : ${dzd(cEnt.total)} → ${pct((cEnt.total / ent.prixDzd) * 100)} du pack
+      pire cas  : ${dzd(wEnt.total)} → ${pct((wEnt.total / ent.prixDzd) * 100)} du pack
+
+  • Basic (sans WhatsApp) : ${dzd(coutPack(H.packs[1]).total)} → ${pct((coutPack(H.packs[1]).total / 6850) * 100)} du pack
+  • Message supplémentaire : coût ${dzd(coutMsgDepassement, 2)} → à vendre ${dzd(coutMsgDepassement / 0.5, 2)}
+  • Marge globale à ${CLIENTS} clients : ${pct(((rev - totalVar - inf.total) / rev) * 100)}
+
+  ✅ La conclusion tient : WhatsApp reste ≤ ${pct((wEnt.total / ent.prixDzd) * 100)} du prix de son pack,
+     même au taux réel de ${H.change} DA et même dans le pire cas.
+  ⚠️ Mais deux choses doublent : l'encaissement (${dzd(encTotal)}/mois à ${CLIENTS} clients) et
+     tous les coûts libellés en dollars — c'est-à-dire l'IA et Meta.
+
+  Variables : --clients=100 --change=250 --slickpay=1.4
 `);

@@ -1,90 +1,107 @@
-# Combien ça te coûte exactement — tous les frais
+# Combien ça te coûte exactement — tous les frais, WhatsApp compris
 
 > État au **7 octobre 2026** · Branche `arena/ec76ae56-jawebflow`
-> Rejouable : `node scripts/couts-totaux.mjs` · `--clients=100` · `--slickpay=1.4`
+> **Taux retenu : 1 $ = 270 DA** — le taux réel d'accès au dollar (le taux officiel de la
+> Banque d'Algérie, ≈ 134 DA, ne s'applique pas à tes achats).
+> Rejouable : `node scripts/couts-totaux.mjs` · `--clients=100` · `--change=250`
 
 ---
 
-## 1. La réponse courte
+## 1. Les 4 packs, WhatsApp compris — l'essentiel
 
-| | Coût pour toi |
-|---|---|
-| **Ajouter WhatsApp au plan Pro** | **186 DA** par client et par mois = **1 % du prix du pack** |
-| **Un client Pro complet** (web + WhatsApp + encaissement) | **783 DA** = **4,2 %** de ce qu'il paie |
-| Le même, si tu obtiens les dollars au taux parallèle | **~1 166 DA** = **6,2 %** |
-| **Les frais fixes** (domaine + Supabase + Cloudflare) | **122 DA/mois à 50 clients** = **2 DA par client** |
-| **Point mort** | **1 client** |
+| Pack | Prix | Inclus | WhatsApp | **Coût réel** | Marge | **Marge %** |
+|---|---|---|---|---|---|---|
+| **Découverte** | 0 DA | IA coupée | — | 0 DA | — | — |
+| **Basic** | 6 850 DA | 1 000 conv. web | ❌ **non inclus** | **852 DA** | 5 998 DA | **87,6 %** |
+| **Pro / Business** | 18 700 DA | 5 000 conv. web | ✅ **1 000 msg/mois** | **1 266 DA** | 17 434 DA | **93,2 %** |
+| **Enterprise** | 47 100 DA | illimité | ✅ **5 000 msg/mois** | **9 070 DA** | 38 030 DA | **80,7 %** |
 
-**En une phrase :** tes coûts variables tournent autour de **4 à 6 % du revenu**, et le poste
-le plus lourd n'est ni l'IA ni Meta — **c'est le 1,6 % d'encaissement SlickPay**, plus le
-**change du dollar** si tu ne peux pas payer tes fournisseurs au taux officiel.
+*Scénario A — usage réaliste : Basic 250 conversations web · Pro 200 conversations web + 1 000
+messages WhatsApp · Enterprise 500 + 5 000.*
+
+**En une phrase :** WhatsApp coûte **1 266 − 594 = 672 DA** de plus qu'un Pro sans WhatsApp
+(c'est-à-dire **3,6 %** du pack, dont 373 DA d'IA et 299 DA de frais d'encaissement en plus),
+et le pack garde **93 % de marge**.
 
 ---
 
-## 2. Les 5 postes qui te coûtent de l'argent
+## 2. Le détail complet, poste par poste
 
-| # | Poste | Montant | Nature |
+### Scénario A — usage réaliste
+
+| Pack | Prix | IA web | IA WhatsApp | Meta | Encaissement | **COÛT TOTAL** | Marge | Marge % |
+|---|---|---|---|---|---|---|---|---|
+| Découverte | 0 DA | — | — | — | — | **0 DA** | — | — |
+| **Basic** | 6 850 DA | 743 DA | 0 DA | 0 DA | 110 DA | **852 DA** | 5 998 DA | 87,6 % |
+| **Pro** | 18 700 DA | 594 DA | 373 DA | 0 DA | 299 DA | **1 266 DA** | 17 434 DA | 93,2 % |
+| **Enterprise** | 47 100 DA | 1 485 DA | 1 863 DA | 4 968 DA | 754 DA | **9 070 DA** | 38 030 DA | 80,7 % |
+
+**Pourquoi Meta est à 0 DA sur Pro :** les **1 000 premiers messages de service de chaque
+numéro sont gratuits** chez Meta. Le forfait Pro tombe exactement dedans — il ne te coûte donc
+que l'IA.
+
+### Scénario B — usage maximal (le pire cas)
+
+Le client consomme **tout** ce que les plafonds autorisent, WhatsApp compris.
+
+| Pack | Plafond IA | Conv. web | WhatsApp | Coût IA | dont Meta | **COÛT TOTAL** | Marge | Marge % |
+|---|---|---|---|---|---|---|---|---|
+| **Basic** | 3 $ (810 DA) | 272 | non inclus | 810 DA | 0 DA | **920 DA** | 5 930 DA | 86,6 % |
+| **Pro** | 20 $ (5 400 DA) | 1 692 | 1 000 | 5 400 DA | 0 DA | **5 699 DA** | 13 001 DA | 69,5 % |
+| **Enterprise** | 30 $ (8 100 DA) | 2 100 | 5 000 | 8 100 DA | 4 968 DA | **13 822 DA** | 33 278 DA | 70,7 % |
+
+> ⚠️ **Le plafond IA ne borne que Gemini.** Les frais Meta (colonne « dont Meta ») ne sont
+> bornés par rien : ils suivent le volume. C'est le seul endroit où une dérive est possible —
+> d'où l'importance de facturer les messages au-delà du forfait.
+
+*(Le plafond Pro est celui que je recommande : **20 $** au lieu des 9 $ actuels, sinon le client
+n'a pas de quoi consommer son forfait WhatsApp + son quota web.)*
+
+---
+
+## 3. Au-delà du forfait : combien facturer
+
+| Poste | Coût réel | **Prix conseillé** | Marge |
 |---|---|---|---|
-| ① | **Infra fixe** — domaine, Cloudflare, Supabase | **122 DA/mois** à 50 clients | fixe |
-| ② | **IA (Gemini)** | 0,186 DA par message · 1,49 DA par conversation web | variable |
-| ③ | **WhatsApp (Meta)** | 0,62 DA par réponse **après 1 000 gratuites/mois/numéro** · 3,50 DA par message marketing, **sans franchise** | variable |
-| ④ | **Encaissement (SlickPay)** | **1,4 % à 2 %** de chaque paiement client | variable |
-| ⑤ | **Mise en place** | 0 DA chez Meta, mais un numéro par client + 15–25 j de développement | une fois |
+| 1 message WhatsApp supplémentaire | **1,61 DA** | **3,23 DA** | 50 % |
+| Recharge 1 000 messages | 1 615 DA | **3 229 DA** | 50 % |
+| Recharge 5 000 messages | 8 073 DA | **16 146 DA** | 50 % |
+| Campagne marketing 1 000 messages | 6 993 DA | **≈ 13 986 DA** | 50 % |
+
+**Le détail d'un message supplémentaire :** Meta **1,24 DA** + IA **0,37 DA** = **1,61 DA**.
+
+⚠️ **Le marketing est un poste à part** : 6,99 DA de frais Meta par message, **sans aucune
+franchise** et sans IA (un template de campagne n'est pas généré par Gemini). Il se facture
+**toujours séparément**, jamais inclus dans un forfait.
 
 ---
 
-## 3. Coût d'un client, tous frais variables inclus
+## 4. D'où viennent les coûts unitaires (au taux de 270 DA)
 
-Usage supposé : Basic 250 conversations web · Pro 200 web + 1 000 messages WhatsApp ·
-Enterprise 500 web + 5 000 messages WhatsApp · SlickPay 1,6 %.
-
-| Plan | Prix | IA web | WhatsApp | Encaissement | **Coût total** | Marge | Marge % |
-|---|---|---|---|---|---|---|---|
-| **Basic** | 6 850 DA | 373 DA | 0 DA | 110 DA | **482 DA** | 6 368 DA | **93,0 %** |
-| **Pro / Business** | 18 700 DA | 298 DA | 190 DA | 299 DA | **787 DA** | 17 913 DA | **95,8 %** |
-| **Enterprise** | 47 100 DA | 745 DA | 3 410 DA | 754 DA | **4 929 DA** | 42 171 DA | **89,5 %** |
-
-*(Hors frais fixes, qui sont de 2 DA par client — voir §5.)*
-
----
-
-## 4. Le détail du poste WhatsApp
-
-| Messages/mois et par client | Meta | IA | **Total** | ≈ conversations |
-|---|---|---|---|---|
-| 500 | 0 DA | 93 DA | **93 DA** | 83 |
-| **1 000** (le forfait Pro) | **0 DA** | **186 DA** | **186 DA** | 167 |
-| 2 000 | 620 DA | 372 DA | **992 DA** | 333 |
-| 5 000 (le forfait Enterprise) | 2 480 DA | 930 DA | **3 410 DA** | 833 |
-| 10 000 | 5 580 DA | 1 860 DA | **7 440 DA** | 1 667 |
-
-**Les 1 000 premiers messages sont gratuits chez Meta** → offrir 1 000 messages dans Pro ne
-coûte **que l'IA : 186 DA**, soit 1 % du pack. Une campagne marketing de 1 000 messages coûte
-**3 500 DA** — sans franchise, jamais incluse dans un plan.
+| Poste | Tarif réel | En DA | Remarque |
+|---|---|---|---|
+| Message IA (Gemini) | 0,00138 $ | **0,37 DA** | mesuré sur le code du dépôt |
+| Conversation web (8 messages) | 0,011 $ | **2,97 DA** | |
+| Réponse WhatsApp (service) | 0,0046 $ | **1,24 DA** | après 1 000 gratuites/mois/numéro |
+| Message marketing WhatsApp | 0,0259 $ | **6,99 DA** | sans franchise (5,6× le service) |
+| Encaissement SlickPay | 1,6 % | — | de chaque paiement encaissé |
 
 ---
 
 ## 5. Frais fixes
 
-Pour 50 clients (base ≈ 299 Mo, 3 mois d'historique, 128 k requêtes/mois) :
+Pour 50 clients (base ≈ 299 Mo, 128 k requêtes/mois) :
 
-| Poste | Coût/mois |
-|---|---|
-| Nom de domaine | 122 DA |
-| Supabase | **0 DA** (299 Mo sur les 500 Mo gratuits) |
-| Cloudflare Pages Functions | **0 DA** (128 k requêtes sur 3 M gratuites) |
-| **TOTAL** | **122 DA** — soit **2 DA par client** |
+| Poste | USD | DA/mois |
+|---|---|---|
+| Nom de domaine | 0,90 $ | 243 DA |
+| Supabase | 0,00 $ | 0 DA (299 Mo sur 500 Mo gratuits) |
+| Cloudflare Pages Functions | 0,00 $ | 0 DA (128 k sur 3 M requêtes) |
+| **TOTAL** | **0,90 $** | **243 DA** — soit **5 DA par client** |
 
-**Seuils à connaître :**
-
-- **Supabase passe en payant (25 $ ≈ 3 375 DA)** au-delà de 500 Mo, soit autour de
-  **~84 clients** si tu gardes 3 mois d'historique. → Purger les conversations de plus de
-  3 mois : la vue `assistant_monthly_usage` agrège déjà les totaux, l'historique détaillé
-  n'est pas nécessaire au tableau de bord.
-- **Cloudflare reste gratuit jusqu'à ~940 clients actifs.** Le plan payant (5 $) ne se
-  justifie pas à ton échelle.
-
-**Conclusion : l'infrastructure n'est pas ton problème.** À 50 clients elle coûte 122 DA/mois.
+**Seuils :** Supabase passe à 25 $ (**6 750 DA**) vers **~84 clients** si tu gardes 3 mois
+d'historique → purge les conversations de plus de 3 mois. Cloudflare reste gratuit jusqu'à
+**~940 clients**. À 50 clients, l'infra représente **0,03 % du revenu**.
 
 ---
 
@@ -95,49 +112,40 @@ Portefeuille supposé : 25 Basic · 20 Pro · 5 Enterprise.
 | Poste | Par mois | % du revenu |
 |---|---|---|
 | **REVENU** (abonnements) | **780 750 DA** | 100 % |
-| IA + WhatsApp + encaissement — 25 × Basic | − 12 053 DA | 1,5 % |
-| IA + WhatsApp + encaissement — 20 × Pro | − 15 664 DA | 2,0 % |
-| IA + WhatsApp + encaissement — 5 × Enterprise | − 24 543 DA | 3,1 % |
-| Frais fixes (infra) | − 122 DA | 0,0 % |
-| **MARGE NETTE** | **728 369 DA** | **93,3 %** |
+| 25 × Basic (IA + encaissement) | − 21 303 DA | 2,7 % |
+| 20 × Pro (IA + WhatsApp + encaissement) | − 25 316 DA | 3,2 % |
+| 5 × Enterprise (IA + WhatsApp + encaissement) | − 45 348 DA | 5,8 % |
+| Frais fixes (infra) | − 243 DA | 0,03 % |
+| **MARGE NETTE** | **688 541 DA** | **88,2 %** |
 
-Détail du coût variable : **encaissement 12 492 DA** · IA 39 768 DA (dont WhatsApp 20 770 DA).
+Détail des coûts variables : **encaissement 12 492 DA** · IA 54 635 DA · **Meta 24 840 DA** ·
+infra 243 DA.
 
 ---
 
-## 7. ⚠️ Le vrai frais caché : payer tes fournisseurs en dollars
+## 7. ⚠️ Ce que le taux de 270 DA change
 
-Tes recettes sont en dinars ; tes dépenses (Google, Meta, Supabase, Cloudflare) sont **en
-dollars**. Or le dinar n'est pas librement convertible :
+Tes recettes sont en dinars, tes fournisseurs facturent en dollars. **Tes coûts en DA doublent
+par rapport au taux affiché dans ta console (135).**
 
-| | Taux (octobre 2026) |
-|---|---|
-| Taux officiel (Banque d'Algérie) | **≈ 134 DA/USD** |
-| Marché parallèle (Square Port-Saïd) | **≈ 240 DA/USD** |
-| **Écart** | **+79 %** |
-
-Dépenses mensuelles payables en dollars, à 50 clients :
-
-| Poste | en USD | au taux officiel | au taux parallèle | Écart |
+| Poste | en USD | ≈ taux officiel (134) | **≈ 270 DA (réel)** | Surcoût |
 |---|---|---|---|---|
-| IA Gemini | 204,24 $ | 27 368 DA | 49 016 DA | + 21 649 DA |
-| WhatsApp — frais Meta facturés | 92,54 $ | 12 400 DA | 22 209 DA | + 9 809 DA |
-| Infra (Supabase + Cloudflare + domaine) | 0,90 $ | 121 DA | 216 DA | + 95 DA |
-| **TOTAL** | **297,67 $** | **39 888 DA** | **71 441 DA** | **+ 31 553 DA** |
+| IA Gemini | 202,35 $ | 27 115 DA | **54 635 DA** | + 27 520 DA |
+| WhatsApp — frais Meta | 92,00 $ | 12 328 DA | **24 840 DA** | + 12 512 DA |
+| Infra | 0,90 $ | 121 DA | **243 DA** | + 122 DA |
+| **TOTAL / mois** | **295,25 $** | **39 563 DA** | **79 718 DA** | **+ 40 154 DA** |
 
-**Impact sur la décision WhatsApp :** le forfait de 1 000 messages dans Pro passe de **186 DA**
-(taux officiel) à **333 DA** (parallèle) — soit de 1,0 % à 1,8 % du pack. **La conclusion ne
-change pas**, mais il faut budgéter la devise.
+**L'écart est de ×2,01.** Deux conséquences concrètes :
 
-**Voies à explorer auprès de ta banque** (aucun conseil réglementaire ici) :
+1. **La console admin sous-estime les coûts de moitié** : `AdminPage.tsx` convertit les coûts
+   IA avec un taux de 135 DA. À corriger (afficher 270, ou rendre le taux paramétrable).
+2. **Les parts du prix des packs doublent** pour tout ce qui est libellé en dollars :
+   le forfait WhatsApp de Pro passe de 1,0 % à **2,0 %** du pack, la conversation web de
+   1,49 DA à **2,97 DA**, la réponse WhatsApp de 0,62 à **1,24 DA**.
 
-- compte devise professionnel / allocation pour « services numériques » ;
-- encaisser une partie en devises (clients de la diaspora, export de services) — ce qui
-  équilibre naturellement la trésorerie ;
-- carte devise adossée au compte professionnel.
-
-> Les transactions sur le marché parallèle sont **illégales** en Algérie : elles sont citées
-> ici uniquement pour expliquer l'écart de coût, pas comme plan d'affaires.
+**Pistes légales à voir avec ta banque :** compte devise professionnel, allocation « services
+numériques », ou encaisser une partie en devises (clients de la diaspora). Le marché parallèle
+est illégal : il sert ici à **mesurer un coût réel**, pas de plan d'affaires.
 
 ---
 
@@ -145,23 +153,21 @@ change pas**, mais il faut budgéter la devise.
 
 | Mode de versement SlickPay | Frais par transaction |
 |---|---|
-| Instantané (auto) | 2,0 % |
+| Instantané | 2,0 % |
 | Quotidien | 1,9 % |
 | Hebdomadaire | 1,6 % ← hypothèse retenue |
 | Bimensuel | 1,5 % |
 | **Mensuel** | **1,4 %** ← le moins cher |
 
-Sur 50 clients (780 750 DA de revenu), c'est **12 492 DA/mois** au taux de 1,6 % — **le poste
-le plus lourd de toute la structure de coûts**, devant l'IA (39 768 DA tous canaux confondus)
-et devant Meta.
+À 50 clients : **12 492 DA/mois** (1,6 %), **10 930 DA** au taux mensuel (1,4 %) — soit
+**1 560 DA économisés par mois** sans rien changer d'autre. C'est le poste le plus lourd de
+toute la structure de coûts, devant Meta.
 
-**Action simple : passer au versement mensuel** (1,4 % au lieu de 1,6 %) économise
-~1 560 DA/mois à 50 clients, sans rien changer d'autre. (À vérifier : certaines banques
-ajoutent leur propre commission de 1,5–2,5 % ; à confirmer avec ta banque acquéreuse.)
+*(Vérifie aussi la commission de ta banque acquéreuse : 1,5–2,5 % selon les banques.)*
 
 ---
 
-## 9. Mise en place — une seule fois
+## 9. Mise en place (une seule fois)
 
 | Poste | Coût | Qui paie |
 |---|---|---|
@@ -169,46 +175,46 @@ ajoutent leur propre commission de 1,5–2,5 % ; à confirmer avec ta banque acq
 | App Review (permissions WhatsApp) | **0 DA** | toi |
 | Statut Tech Provider / Embedded Signup | **0 DA** | toi |
 | Numéro dédié par client (SIM) | ≈ 500–1 500 DA | **le client** |
-| Développement du canal (15–25 jours) | ton temps | toi |
-| Meta Verified (optionnel, non requis) | abonnement | — |
+| Développement du canal | 15–25 jours | toi |
 
-**Le vrai frein n'est pas le prix, c'est la contrainte :** un numéro branché sur l'API ne peut
-plus servir dans l'application WhatsApp normale. Le client doit donc accepter un **numéro
-dédié** (souvent une 2ᵉ SIM) ou utiliser le mode « Coexistence » pour garder son app.
-C'est le premier obstacle à l'adoption, avant toute question de coût.
+**Le vrai frein n'est pas le prix** : un numéro branché sur l'API ne peut plus servir dans
+l'application WhatsApp normale. Le client doit accepter un **numéro dédié** (2ᵉ SIM) ou le mode
+« Coexistence ». C'est le premier obstacle, avant toute question d'argent.
 
 ---
 
 ## 10. À retenir
 
-1. **WhatsApp dans Pro : 186 DA par client et par mois** (1 % du pack), Meta étant gratuit
-   jusqu'à 1 000 messages par numéro. C'est le meilleur rapport valeur/coût de tout le catalogue.
-2. **Un client Pro te coûte 783 DA** (4,2 %) — ou **~1 166 DA** (6,2 %) si tu paies tes
-   fournisseurs en dollars au taux parallèle.
-3. **Les frais fixes sont ridicules** : 122 DA/mois à 50 clients (2 DA par client). Le point
-   mort est atteint dès le premier client.
-4. **Deux postes à surveiller**, dans cet ordre : l'**encaissement** (1,4–2 % du revenu, le plus
-   gros poste) et le **change du dollar** (+79 % sur tout ce qui est libellé en USD).
-5. **Le marketing reste hors forfait** : 3,50 DA le message, aucune franchise — c'est le seul
-   poste dont le coût peut s'envoler sans contrôle.
+1. **WhatsApp dans Pro coûte 373 DA** (1 000 messages inclus, Meta gratuit) — **2,0 %** du pack
+   au taux réel. Dans Enterprise : **6 833 DA** pour 5 000 messages — **14,5 %** du pack.
+2. **Un client Pro complet te coûte 1 266 DA** (6,8 % de ce qu'il paie) ; au pire cas **5 699 DA**
+   (30,5 %). La marge reste ≥ **69,5 %** même dans le pire scénario.
+3. **La marge globale à 50 clients est de 88,2 %** — mais elle est passée de 93,3 % (calcul à
+   135 DA) à 88,2 % à cause du taux réel.
+4. **Deux postes à surveiller :** le **change du dollar** (+79 % sur tout ce qui est en USD) et
+   l'**encaissement** (12 492 DA/mois à 50 clients). Ce sont eux qui décident de ta marge
+   réelle, pas Gemini.
+5. **Trois corrections à faire :** passer SlickPay en versement mensuel (1,4 %), corriger le
+   taux de conversion dans la console (135 → 270), et facturer le marketing hors forfait.
 
 ---
 
 ## 11. Rejouer les calculs
 
 ```bash
-node scripts/couts-totaux.mjs                     # 50 clients, SlickPay 1,6 %
-node scripts/couts-totaux.mjs --clients=100       # autre taille de portefeuille
-node scripts/couts-totaux.mjs --slickpay=1.4      # versement mensuel
+node scripts/couts-totaux.mjs                  # 4 packs, WhatsApp compris, taux 270
+node scripts/couts-totaux.mjs --clients=100    # autre taille de portefeuille
+node scripts/couts-totaux.mjs --change=250     # autre taux dollar
+node scripts/couts-totaux.mjs --slickpay=1.4   # versement mensuel SlickPay
 ```
 
 | Script | Ce qu'il calcule |
 |---|---|
-| `scripts/couts-totaux.mjs` | **tout** : infra + IA + WhatsApp + encaissement + devise |
+| `scripts/couts-totaux.mjs` | **tout** : 4 packs + WhatsApp + IA + encaissement + devise |
 | `scripts/couts-whatsapp.mjs` | le canal WhatsApp seul (marchés, BSP, pub, forfaits) |
 | `scripts/couts-plans.mjs` | le coût de chaque pack et les plafonds IA |
 
-**Sources :** page officielle Meta *Pricing on the WhatsApp Business Platform* (mise à jour du
-30/09/2026) · tarifs Gemini 3.1 Flash-Lite · **slick-pay.com/pricing** (1,4–2 % par transaction) ·
-**Banque d'Algérie** (134,43 DA/USD au 06/10/2026) et relevés du Square Port-Saïd
-(~239,50–240 DA/USD début octobre 2026) · prix des packs dans `scripts/` et `slickpay.js`.
+**Sources :** page officielle Meta *Pricing on the WhatsApp Business Platform* (30/09/2026) ·
+tarifs Gemini 3.1 Flash-Lite · **slick-pay.com/pricing** (1,4–2 % par transaction) ·
+**Banque d'Algérie** (134,43 DA/USD au 06/10/2026) · **relevés du Square Port-Saïd**
+(~240–270 DA/USD, octobre 2026 — taux retenu : **270**, fourni par le propriétaire du projet).

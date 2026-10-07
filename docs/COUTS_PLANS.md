@@ -4,6 +4,24 @@
 > Tous les chiffres sont **calculés depuis le code du dépôt**, pas repris d'un guide.
 > Pour les rejouer : `node scripts/couts-plans.mjs`
 
+> ⚠️ **MISE À JOUR — taux du dollar porté à 270 DA.**
+> Ce document a été écrit avec un taux de 135 DA/$. Au taux réel d'accès au dollar (**270 DA**),
+> **tous les montants libellés en dollars doublent** (et leur part dans le prix des packs aussi).
+> Chiffres recalculés : **`docs/COUT_TOTAL.md`** (`node scripts/couts-totaux.mjs`).
+>
+> | Avant (135 DA) | Après (270 DA) |
+> |---|---|
+> | 0,19 DA par message IA | **0,37 DA** |
+> | 1,49 DA par conversation web | **2,97 DA** |
+> | 0,62 DA par réponse WhatsApp | **1,24 DA** |
+> | 3,50 DA par message marketing | **6,99 DA** |
+> | 186 DA (1 000 msg WhatsApp dans Pro) | **373 DA** |
+> | 3 414 DA (5 000 msg dans Enterprise) | **6 833 DA** |
+> | 0,81 DA par réponse WhatsApp (Meta + IA) | **1,61 DA** |
+> | Marge globale (50 clients) | 93,3 % → **88,2 %** |
+>
+> Les tarifs en USD (Meta, Gemini) et les prix des packs en DA sont inchangés.
+
 ---
 
 ## 1. La réponse en une table

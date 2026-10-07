@@ -26,7 +26,7 @@
 
 const HYPOTHESES = {
   /** Taux de change utilisé par le dépôt pour l'affichage admin (AdminPage.tsx). */
-  changeDzdParUsd: 135,
+  changeDzdParUsd: 270,
 
   /** Tarif officiel Gemini 3.1 Flash-Lite (vérifié le 07/10/2026). */
   prixEntreeUsdParMTok: 0.25,

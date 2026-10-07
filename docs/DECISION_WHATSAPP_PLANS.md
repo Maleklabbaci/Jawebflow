@@ -3,6 +3,24 @@
 > État au **7 octobre 2026** · Branche `arena/ec76ae56-jawebflow`
 > Chiffres issus de `node scripts/couts-whatsapp.mjs` (§11) et `docs/COUTS_WHATSAPP.md`.
 
+> ⚠️ **MISE À JOUR — taux du dollar porté à 270 DA.**
+> Ce document a été écrit avec un taux de 135 DA/$. Au taux réel d'accès au dollar (**270 DA**),
+> **tous les montants libellés en dollars doublent** (et leur part dans le prix des packs aussi).
+> Chiffres recalculés : **`docs/COUT_TOTAL.md`** (`node scripts/couts-totaux.mjs`).
+>
+> | Avant (135 DA) | Après (270 DA) |
+> |---|---|
+> | 0,19 DA par message IA | **0,37 DA** |
+> | 1,49 DA par conversation web | **2,97 DA** |
+> | 0,62 DA par réponse WhatsApp | **1,24 DA** |
+> | 3,50 DA par message marketing | **6,99 DA** |
+> | 186 DA (1 000 msg WhatsApp dans Pro) | **373 DA** |
+> | 3 414 DA (5 000 msg dans Enterprise) | **6 833 DA** |
+> | 0,81 DA par réponse WhatsApp (Meta + IA) | **1,61 DA** |
+> | Marge globale (50 clients) | 93,3 % → **88,2 %** |
+>
+> Les tarifs en USD (Meta, Gemini) et les prix des packs en DA sont inchangés.
+
 ---
 
 ## 0. La meilleure place : **le plan Pro**
@@ -12,13 +30,13 @@ Pas réservé à Enterprise.
 
 | | Coût pour toi | Ce que ça change |
 |---|---|---|
-| **Inclure 1 000 messages dans Pro** | **186 DA** = **1 % du prix du pack** | La raison de passer de Basic (6 850 DA) à Pro (18 700 DA) : **+11 850 DA** |
-| **1 client qui monte en gamme** | — | finance **~63 forfaits WhatsApp** (11 850 ÷ 186) |
+| **Inclure 1 000 messages dans Pro** | **373 DA** = **2 % du prix du pack** | La raison de passer de Basic (6 850 DA) à Pro (18 700 DA) : **+11 850 DA** |
+| **1 client qui monte en gamme** | — | finance **~32 forfaits WhatsApp** (11 850 ÷ 373) |
 
 **Pourquoi Pro est le bon endroit, pour TOI :**
 
-1. **C'est ton meilleur levier d'ARPU.** Le canal coûte 1 % du pack mais vaut les yeux de la
-   tête pour un commerçant algérien. Un seul passage Basic → Pro finance 63 forfaits WhatsApp.
+1. **C'est ton meilleur levier d'ARPU.** Le canal coûte 2 % du pack mais vaut les yeux de la
+   tête pour un commerçant algérien. Un seul passage Basic → Pro finance 32 forfaits WhatsApp.
 2. **Ne le vends PAS à l'unité sur Basic.** Une option à 2 500 DA te rapporterait 2 314 DA de
    marge… mais ferait renoncer à une montée de gamme de 11 850 DA. Tu troquerais 11 850 DA
    contre 2 500 DA. (Exception : un client qui ne *peut pas* payer Pro — au cas par cas, hors
@@ -78,12 +96,19 @@ dans Pro pour 1 % du prix, et ça devient la raison de passer de Basic à Pro.
 
 ### 1 bis. Le montage client, concrètement (prépayé, pas post-payé)
 
-| Élément | Prix | Coût pour toi | Marge |
+| Élément | Prix client | Coût pour toi | Marge |
 |---|---|---|---|
-| Inclus dans Pro | — | 186 DA/mois | — |
-| **Recharge 1 000 messages** | **1 800 DA** (1,80 DA/msg) | 807 DA | 55 % |
-| **Recharge 5 000 messages** | **8 000 DA** (1,60 DA/msg) | 4 035 DA | 50 % |
-| **Pack campagne 1 000 messages** (marketing) | **7 000 DA** | 3 497 DA | 50 % |
+| Inclus dans Pro | — | 373 DA/mois | — |
+| Inclus dans Enterprise (5 000 msg) | — | 6 833 DA/mois | 14,5 % du pack |
+| **Recharge 1 000 messages** | **3 200 DA** (3,20 DA/msg) | 1 615 DA | **50 %** |
+| **Recharge 5 000 messages** | **16 000 DA** (3,20 DA/msg) | 8 073 DA | **50 %** |
+| **Pack campagne 1 000 messages** (marketing) | **14 000 DA** | 6 993 DA | **50 %** |
+
+> ⚠️ **Ces prix ont été recalculés au taux réel du dollar (270 DA).** Au taux de 135 DA, une
+> recharge de 1 000 messages vendue 1 800 DA laissait 55 % de marge ; à 270 DA, **elle serait
+> vendue SOUS son coût** (1 615 DA de coût pour 1 800 DA de prix = 10 % de marge).
+> C'est le piège classique : les prix de vente en dinars doivent suivre le taux d'accès au dollar,
+> sinon la marge disparaît sans que rien ne change dans le produit.
 
 Trois garde-fous, dans cet ordre :
 
@@ -108,15 +133,15 @@ Le paiement en ligne pourra être branché ensuite sur le même flux.
 **Pro / Business** — remplacer la ligne actuelle
 « Accès anticipé WhatsApp & réseaux sociaux (prochainement) » par :
 
-> **WhatsApp inclus : 1 000 messages par mois**, puis 1,61 DA le message supplémentaire.
-> Les 1 000 premiers messages ne nous coûtent rien : c'est Meta qui les offre.
+> **WhatsApp inclus : 1 000 messages par mois**, puis **3,20 DA** le message supplémentaire.
+> Les 1 000 premiers messages ne coûtent rien *à Meta* : c'est sa franchise mensuelle.
 
 *(Tant que le canal n'est pas livré, garder la mention « en préparation » — mais le chiffre
 de 1 000 doit déjà être annoncé, pour ne pas promettre autre chose plus tard.)*
 
 **Enterprise** — remplacer « Tous les canaux dès leur disponibilité (web, WhatsApp, réseaux) » par :
 
-> **WhatsApp inclus : 5 000 messages par mois**, au-delà au tarif négocié.
+> **WhatsApp inclus : 5 000 messages par mois**, au-delà **3,20 DA** le message.
 > Tous les canaux (web, WhatsApp, réseaux) dès leur disponibilité.
 
 **Basic** — **supprimer toute mention WhatsApp** de la liste des fonctionnalités.
@@ -182,9 +207,10 @@ Et Meta reclasse lui-même un template jugé promotionnel : on ne peut pas conto
    compter qui consomme quoi.
 3. **Le plafond IA de Pro doit monter.** Les conversations WhatsApp consomment le **même**
    compteur (`conversation_contexts`) et le **même plafond de coût** que le web. Aujourd'hui,
-   Pro s'arrête à **817 conversations** (plafond 9 $ ≈ 1 215 DA) : le client n'aurait même pas de
-   quoi consommer son forfait WhatsApp + son quota web. → passer le plafond de Pro à **~20 $**
-   (voir `docs/COUTS_PLANS.md` §5), sinon la promesse est incohérente dès le premier mois.
+   Pro s'arrête à **817 conversations** (plafond 9 $ ≈ **2 430 DA** au taux réel) : le client
+   n'aurait même pas de quoi consommer son forfait WhatsApp + son quota web.
+   → passer le plafond de Pro à **20 $ (5 400 DA)**, sinon la promesse est incohérente dès le
+   premier mois. À noter : ce plafond ne borne **pas** les frais Meta.
 4. **Le pays des clients finaux change le prix.** Meta facture selon le pays du **destinataire** :
    un client qui vend en France paie **2,66 DA/réponse, soit 4,3× l'Algérie**. → une clause
    « tarif selon le pays de tes clients » est nécessaire avant de vendre à prix fixe.
@@ -200,7 +226,7 @@ Et Meta reclasse lui-même un template jugé promotionnel : on ne peut pas conto
 | 3 | `functions/api/webhook/whatsapp.ts` (nouveau) | Sur chaque statut de message, lire **`pricing.billable` / `pricing.type` / `pricing.category`** renvoyés par Meta et incrémenter le compteur |
 | 4 | `src/pages/PricingPage.tsx` | Remplacer les lignes WhatsApp de Pro et Enterprise (§2) ; retirer toute mention côté Basic |
 | 5 | `src/pages/AdminPage.tsx` + tableau de bord | Afficher « WhatsApp : X / 1 000 » par client, et l'alerte de dépassement |
-| 6 | `functions/_shared/limits.ts` | `COST_CAP_USD_PER_PLAN.pro` : 9 → **20 $** (§3.3) |
+| 6 | `functions/_shared/limits.ts` | `COST_CAP_USD_PER_PLAN.pro` : 9 → **20 $** (5 400 DA au taux réel) |
 | 7 | `docs/NOUVEAUX_CANAUX.md` + `docs/COUTS_WHATSAPP.md` | Mettre à jour avec la décision (Basic : non · Pro : 1 000 · Enterprise : 5 000) |
 
 **Le compteur peut être exact, il n'y a rien à estimer** : Meta renvoie dans le webhook de
@@ -219,17 +245,18 @@ de bord peut séparer l'usage web de l'usage WhatsApp sans migration lourde.
 
 ## 5. Résumé en une ligne
 
-**Basic : rien. Pro : 1 000 messages inclus (1 % du prix) puis 1,61 DA/message.
+**Basic : rien. Pro : 1 000 messages inclus (2 % du prix) puis 3,20 DA/message.
 Enterprise : 5 000 inclus puis négocié.**
 
 Le « marketing » dont je parlais n'existe pas dans le produit actuel : le bot ne fait que
 répondre, et répondre c'est du « service ». Il n'apparaît que le jour où on branche des
 **campagnes promotionnelles** sur WhatsApp — et c'est le seul poste qui coûte vraiment cher
-(3,50 DA le message, sans franchise). Les relances de suivi que le dépôt envoie déjà
-(`relances.ts`) restent, elles, du « utility » à 0,62 DA et peuvent entrer dans le forfait.
+(6,99 DA le message au taux réel, sans franchise). Les relances de suivi que le dépôt envoie
+déjà (`relances.ts`) restent, elles, du « utility » à 1,24 DA de frais Meta et peuvent entrer
+dans le forfait.
 
 **Arbitrage chiffré, si l'idée d'une option payante sur Basic revient** : vendre
-« 1 000 messages » 2 500 DA/mois garde 2 314 DA de marge (coût 186 DA) — mais si ce client
+« 1 000 messages » 2 500 DA/mois garde 2 127 DA de marge (coût 373 DA) — mais si ce client
 aurait de toute façon pris Pro pour WhatsApp, tu échanges **11 850 DA de montée de gamme
 contre 2 500 DA**. Règle simple : **aucune option WhatsApp au tarif public en dessous de Pro.**
 Pour un client qui ne peut réellement pas payer Pro, décide au cas par cas (remise de montée

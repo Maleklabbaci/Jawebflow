@@ -39,7 +39,7 @@
 
 const H = {
   /** Taux de change utilisé ailleurs dans le dépôt (AdminPage.tsx affiche 135). */
-  change: 135,
+  change: 270,
 
   /**
    * Tarifs Meta par marché (USD par message livré), barème du 01/10/2026.
