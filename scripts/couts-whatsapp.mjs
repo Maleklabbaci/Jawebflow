@@ -419,3 +419,34 @@ console.log(`
   ⚠️ Avant de publier un tarif : reconfirmer le barème « Rest of Africa » du 01/10/2026
      dans le Billing Hub Meta (les chiffres retenus ici viennent de barèmes partenaires).
 `);
+
+// --- 11. Répartition par plan (la décision) ------------------------------
+console.log(titre('11. QUELLE PART DE WHATSAPP CHAQUE PLAN PEUT ABSORBER'));
+
+/** Coût pour JawebFlow de X messages inclus : les 1 000 premiers sont gratuits chez Meta. */
+const coutInclus = (messages) =>
+  Math.min(messages, H.messagesServiceGratuits) * COUT_IA_DZD_PAR_MESSAGE +
+  Math.max(0, messages - H.messagesServiceGratuits) * coutMessageDzd;
+
+console.log(`
+  Rappel : les ${H.messagesServiceGratuits} premiers messages de service de chaque numéro sont
+  GRATUITS chez Meta. Donc offrir « ${H.messagesServiceGratuits} messages » ne coûte que l'IA
+  (${dzd(COUT_IA_DZD_PAR_MESSAGE, 2)} par message) — pas 0,81 DA.
+`);
+console.log(
+  pad('Messages inclus', 20) + padL('Coût réel/mois', 16) + padL('% du pack Pro', 16) + padL('% du pack Enterprise', 22) + padL('Couvre ≈', 12),
+);
+console.log('─'.repeat(93));
+for (const n of [500, 1000, 1500, 2000, 3000, 5000, 10000]) {
+  const cout = coutInclus(n);
+  console.log(
+    pad(n.toLocaleString('fr-FR'), 20) + padL(dzd(cout), 16) +
+      padL(pct((cout / 18700) * 100), 16) + padL(pct((cout / 47100) * 100), 22) +
+      padL(`${Math.round(n / H.reponsesParConversation)} conv.`, 12),
+  );
+}
+
+console.log(`
+  Lecture : offrir 1 000 messages dans Pro coûte ${dzd(coutInclus(1000))} — soit ${pct((coutInclus(1000) / 18700) * 100)} du prix du pack,
+  parce que Meta offre déjà ces 1 000 messages. C'est l'argument le moins cher de tout le catalogue.
+  Au-delà, chaque message coûte vraiment 0,81 DA et il faut le facturer.`);
