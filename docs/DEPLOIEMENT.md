@@ -60,6 +60,8 @@ Le fichier **`.github/workflows/deploy.yml`** est déjà écrit. Il lui manque s
 3. GitHub → dépôt → **Settings → Secrets and variables → Actions → New repository secret** :
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
+   - `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` (indispensables : le workflow construit le site
+     lui-même, donc Cloudflare ne peut pas les fournir — voir « Dépannage » plus bas)
 
 Ensuite, à chaque push :
 
@@ -88,6 +90,72 @@ un échec rouge) : rien à nettoyer si tu choisis la solution 1.
 
 - Tu veux **le plus simple** → solution 1.
 - Tu veux **ne jamais publier du code cassé** → solution 2.
+
+---
+
+## Dépannage : « supabaseUrl is required » / page blanche
+
+**C'est LE piège à connaître**, et il n'a rien à voir avec Cloudflare :
+
+> Les variables `VITE_*` sont **injectées dans le JavaScript au moment de la construction**
+> (`npm run build`). Elles n'existent pas à l'exécution. Les définir dans Cloudflare ne sert donc à
+> rien **si la construction n'a pas lieu chez Cloudflare** (machine locale, GitHub Actions…).
+
+Le site se construit alors avec des valeurs vides, se déploie sans broncher, et affiche une page
+blanche devant tes clients. Un garde-fou empêche désormais ce scénario : la construction est refusée
+et la marche à suivre s'affiche (voir plus bas).
+
+### Reconnaître le cas
+
+| Symptôme | Ce que ça veut dire |
+|---|---|
+| Page blanche + `supabaseUrl is required` dans la console | le bundle a été construit sans `VITE_SUPABASE_URL` |
+| Écran sombre « le site n'est pas encore configuré » | idem, mais l'explication est à l'écran (garde-fou côté site) |
+| `CONSTRUCTION ARRÊTÉE : configuration manquante` | le garde-fou a bloqué le déploiement : c'est le bon comportement |
+
+### Vérifier ce que le serveur voit
+
+`https://jawebflow.pages.dev/api/health` renvoie, en booléens, l'état des intégrations côté serveur
+(`supabase`, `gemini`, `metaWebhookVerify`, paiements…). ⚠️ Cette route teste les variables **côté
+serveur** (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) : elle peut donc dire « tout va bien » alors
+que le site (navigateur) manque de `VITE_SUPABASE_URL`. Les deux jeux de variables sont distincts :
+
+| Où | Nom | Rôle |
+|---|---|---|
+| Site (navigateur) | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | injectées à la construction |
+| Serveur (Functions) | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | lues à l'exécution |
+
+### Les trois corrections possibles
+
+1. **Laisser Cloudflare construire** (recommandé, cf. solution 1 ci-dessus) : les variables déjà
+   présentes dans Cloudflare sont alors utilisées au moment de la construction.
+2. **Construire sur ta machine** : crée un fichier `.env` (copie de `.env.example`) avec les deux
+   valeurs `VITE_*` — elles se trouvent dans Supabase → *Project Settings* → *API*.
+3. **Construire via GitHub Actions** (solution 2) : ajoute `VITE_SUPABASE_URL` et
+   `VITE_SUPABASE_ANON_KEY` comme secrets **ou** variables du dépôt ; le workflow les transmet à la
+   construction. (Ce sont des valeurs publiques : elles finissent dans le JavaScript du site — d'où
+   l'innocuité de les mettre en « Variables » plutôt qu'en « Secrets ».)
+
+### Le garde-fou
+
+`scripts/check-env.mjs`, exécuté automatiquement avant `npm run build:pages`, refuse la construction
+si les deux variables manquent, en expliquant quoi faire. Pour construire malgré tout (site
+volontairement sans base) :
+
+```bash
+SKIP_ENV_CHECK=1 npm run build:pages            # macOS / Linux
+set SKIP_ENV_CHECK=1 && npm run build:pages     # Windows
+```
+
+⚠️ **Ordre important** : une variable ajoutée dans Cloudflare ne s'applique qu'à la **construction
+suivante**. Après l'ajout, relance un déploiement (ou pousse un commit) — sinon l'ancien bundle,
+construit sans elle, reste en ligne.
+
+### À ne jamais faire
+
+Ne préfixe **jamais** `SUPABASE_SERVICE_ROLE_KEY` par `VITE_`. Tout ce qui commence par `VITE_` finit
+dans le JavaScript public : la clé service donnerait un accès **total** à la base, à n'importe qui.
+Seule la clé `anon` (protégée par les règles RLS) peut être exposée.
 
 ---
 

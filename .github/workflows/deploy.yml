@@ -12,6 +12,12 @@ name: Déployer sur Cloudflare Pages
 #   CLOUDFLARE_API_TOKEN   → Cloudflare → My Profile → API Tokens
 #                            (modèle « Cloudflare Pages — Edit »)
 #   CLOUDFLARE_ACCOUNT_ID  → Cloudflare → Workers & Pages → Identifiant de compte
+#
+# Et pour que le SITE construisé puisse joindre sa base (sinon page blanche) :
+#   VITE_SUPABASE_URL      → Supabase → Project Settings → API (URL du projet)
+#   VITE_SUPABASE_ANON_KEY → Supabase → Project Settings → API (clé « anon »)
+# Ces deux-là peuvent être des « Variables » (et non des secrets) : elles sont
+# publiques par nature, puisqu'elles finissent dans le JavaScript du site.
 
 on:
   push:
@@ -69,8 +75,15 @@ jobs:
         if: steps.guard.outputs.ready == '1'
         run: npm test
 
+      # ⚠️ Vite FIGE ces deux valeurs dans le JavaScript ici même : Cloudflare ne
+      # les fournit pas à une construction qui n'a pas lieu chez lui. Sans elles,
+      # le garde-fou scripts/check-env.mjs arrête la construction (mieux vaut ça
+      # qu'un site en ligne avec une page blanche).
       - name: Construire le site
         if: steps.guard.outputs.ready == '1'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
         run: npm run build:pages
 
       - name: Déployer (production sur main, aperçu ailleurs)
