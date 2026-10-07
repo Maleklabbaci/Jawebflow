@@ -72,7 +72,12 @@ npm run deploy:cloudflare   # build vite + wrangler pages deploy dist
   que les 691 tests sont construits ; ne mettez jamais la logique directement dans
   le handler HTTP.
 - `npm run deploy:cloudflare` déploie le site ; les `functions/` sont servies
-  automatiquement par Cloudflare Pages (pas de `wrangler.toml`, pas de CI).
+  automatiquement par Cloudflare Pages (pas de `wrangler.toml`).
+- **Déploiement automatique** : `.github/workflows/deploy.yml` publie à chaque
+  push (production sur `main`, aperçu sur les autres branches) après avoir lancé
+  types + tests. Il s'active en ajoutant les secrets `CLOUDFLARE_API_TOKEN` et
+  `CLOUDFLARE_ACCOUNT_ID` — ou, sans rien ajouter, brancher le dépôt dans
+  Cloudflare (Workers & Pages → Builds & deployments). Voir `docs/DEPLOIEMENT.md`.
 
 ---
 
