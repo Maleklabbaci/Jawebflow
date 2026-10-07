@@ -109,9 +109,12 @@ C'est la seule dépense que « et tout » ajoute réellement.
 | Canal | Coût récurrent | Où le placer |
 |---|---|---|
 | Web + Instagram | 0 | tous les packs (déjà en place) |
-| **Messenger + Telegram** | 0 (hors IA) | **tous les packs payants, Basic compris** — c'est de la valeur gratuite |
+| **Messenger** | 0 (hors IA) | **tous les packs payants, Basic compris** — 29,3 M d'utilisateurs en Algérie |
 | **TikTok** | 0 (hors IA) | tous les packs payants, **mais après le test d'éligibilité** |
+| Telegram | 0 | **nulle part** — banc d'essai de développement seulement (absent du marché algérien) |
 | **WhatsApp** | 1,24 DA/message | **Pro (1 000 inclus) · Enterprise (5 000)** |
+
+> Détail de la décision par canal, chiffres algériens à l'appui : **`docs/QUELS_CANAUX.md`**.
 
 **Pourquoi donner Messenger et Telegram à Basic ne coûte rien :** aucun frais de plateforme.
 Le seul effet, c'est que **le plafond IA de Basic se remplit plus vite** — un commerçant
@@ -129,11 +132,14 @@ présent sur 4 réseaux atteint ses **272 conversations** en quelques semaines.
 
 ### Ordre de mise en œuvre recommandé
 
-1. **Telegram** (2–4 j) — valide l'architecture multi-canal sans dépendre de Meta, gratuit.
-2. **Messenger** (5–8 j) — le plus gros gain en Algérie après WhatsApp, coût nul, réutilise
-   le « commentaire → MP » déjà écrit pour Instagram.
-3. **TikTok** (5–10 j) — **après** un compte pilote pour vérifier l'éligibilité METAP.
-4. **WhatsApp** (15–25 j + dossier Meta) — le seul canal payant, à cadrer commercialement.
+1. **Factorisation multi-canal** (2–3 j) — 17 fichiers portent aujourd'hui du code spécifique à
+   Instagram ; sans cette étape, chaque nouveau canal se paie deux fois.
+2. **Messenger** (5–8 j) — **le plus grand canal d'Algérie** (29,3 M d'utilisateurs), gratuit,
+   réutilise le « commentaire → MP » déjà écrit pour Instagram.
+3. **WhatsApp** (15–25 j + dossier Meta) — le seul canal payant, à cadrer commercialement.
+4. **TikTok** (5–10 j) — **après** un compte pilote pour vérifier l'éligibilité METAP.
+5. ~~Telegram~~ — **banc d'essai de développement uniquement**, jamais vendu
+   (aucune présence dans les statistiques d'usage algériennes).
 
 ---
 
@@ -274,10 +280,10 @@ l'application WhatsApp normale. Le client doit accepter un **numéro dédié** (
    réelle, pas Gemini.
 5. **Trois corrections à faire :** passer SlickPay en versement mensuel (1,4 %), corriger le
    taux de conversion dans la console (135 → 270), et facturer le marketing hors forfait.
-6. **« Et tout » ne coûte presque rien en frais** : Messenger, Telegram et TikTok n'ont
-   **aucun** frais au message. Le vrai coût, c'est **27 à 47 jours de développement** et
-   l'IA des conversations supplémentaires. Offre-les généreusement — ils font monter la
-   valeur perçue de Basic sans toucher ta marge au-delà de l'IA.
+6. **« Et tout » ne coûte presque rien en frais** : Messenger et TikTok n'ont **aucun** frais
+   au message. Le vrai coût, c'est le développement et l'IA des conversations supplémentaires.
+   **Mais tout n'est pas à ajouter** : Messenger est prioritaire (29,3 M d'utilisateurs en
+   Algérie), TikTok mérite un test, **Telegram n'a pas de marché ici** (`docs/QUELS_CANAUX.md`).
 
 ---
 
