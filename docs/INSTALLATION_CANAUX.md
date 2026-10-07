@@ -183,7 +183,20 @@ Test de fumée manuel, une fois un canal branché :
 
 ## 5. Brancher depuis le tableau de bord (recommandé)
 
-Menu **Canaux → Messenger & WhatsApp**. Le marchand y trouve les 4 cartes, colle deux informations
+Menu **Canaux**, puis **un onglet par canal** :
+
+```
+Canaux ▾
+   Instagram
+   Messenger
+   WhatsApp
+   Telegram
+   TikTok
+   Mon site
+   Automatisations
+```
+
+Chaque onglet n'affiche que son canal. Le marchand colle deux informations
 (l'identifiant du compte et le jeton) et clique **« Tester et connecter »** :
 
 | Ce que fait l'écran | Pourquoi c'est important |

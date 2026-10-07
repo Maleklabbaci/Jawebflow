@@ -49,6 +49,12 @@ interface WaUsage {
 interface Props {
   assistantId: string;
   plan?: string;
+  /**
+   * N'afficher QUE ce canal (« messenger », « whatsapp », « telegram »,
+   * « tiktok »). Chaque entrée du menu « Canaux » ouvre ainsi son propre écran.
+   * Vide = les quatre d'un coup.
+   */
+  channel?: string;
 }
 
 const CHANNEL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -63,7 +69,7 @@ const field = 'mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3
 const primary = 'inline-flex items-center gap-2 rounded-full bg-[#1b1647] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 cursor-pointer';
 const ghost = 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer';
 
-export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan }) => {
+export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channel }) => {
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [usage, setUsage] = useState<WaUsage | null>(null);
@@ -99,6 +105,10 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan }) => {
   }, [assistantId, authHeader]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Un onglet du menu = un canal : on ne montre que le sien.
+  const visibleChannels = channel ? channels.filter((c) => c.id === channel) : channels;
+  const single = channel ? channels.find((c) => c.id === channel) : undefined;
 
   const integrationOf = (id: string) => integrations.find((i) => i.channel === id);
   const formOf = (id: string) => form[id] || { accountId: '', token: '', phoneNumber: '' };
@@ -180,10 +190,11 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan }) => {
   return (
     <div className="space-y-6" data-testid="channels-integration">
       <div className={card}>
-        <h1 className="text-3xl text-[#1b1647]">Messageries</h1>
+        <h1 className="text-3xl text-[#1b1647]">{single ? single.label : 'Messageries'}</h1>
         <p className="mt-2 text-[15px] text-slate-500">
-          Branchez vos messageries : votre assistant répond alors partout où vos clients vous écrivent —
-          même quand vous dormez. Aucun jeton ne s’affiche jamais sur cet écran.
+          {single
+            ? single.what
+            : 'Branchez vos messageries : votre assistant répond alors partout où vos clients vous écrivent — même quand vous dormez. Aucun jeton ne s’affiche jamais sur cet écran.'}
         </p>
       </div>
 
@@ -208,7 +219,7 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan }) => {
         </div>
       )}
 
-      {channels.map((ch) => {
+      {visibleChannels.map((ch) => {
         const it = integrationOf(ch.id);
         const Icon = CHANNEL_ICONS[ch.id] || Plug;
         const values = formOf(ch.id);
