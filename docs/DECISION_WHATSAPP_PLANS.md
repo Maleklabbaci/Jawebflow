@@ -5,6 +5,47 @@
 
 ---
 
+## 0. La meilleure place : **le plan Pro**
+
+WhatsApp va dans **Pro** (avec un forfait plus large dans **Enterprise**). Pas dans Basic.
+Pas réservé à Enterprise.
+
+| | Coût pour toi | Ce que ça change |
+|---|---|---|
+| **Inclure 1 000 messages dans Pro** | **186 DA** = **1 % du prix du pack** | La raison de passer de Basic (6 850 DA) à Pro (18 700 DA) : **+11 850 DA** |
+| **1 client qui monte en gamme** | — | finance **~63 forfaits WhatsApp** (11 850 ÷ 186) |
+
+**Pourquoi Pro est le bon endroit, pour TOI :**
+
+1. **C'est ton meilleur levier d'ARPU.** Le canal coûte 1 % du pack mais vaut les yeux de la
+   tête pour un commerçant algérien. Un seul passage Basic → Pro finance 63 forfaits WhatsApp.
+2. **Ne le vends PAS à l'unité sur Basic.** Une option à 2 500 DA te rapporterait 2 314 DA de
+   marge… mais ferait renoncer à une montée de gamme de 11 850 DA. Tu troquerais 11 850 DA
+   contre 2 500 DA. (Exception : un client qui ne *peut pas* payer Pro — au cas par cas, hors
+   tarif public.)
+3. **Le travail humain suit l'argent.** Chaque client WhatsApp demande un numéro dédié, un
+   onboarding Meta, et surtout **l'approbation de ses templates** par Meta — c'est du travail
+   non automatisable, à refaire par client. Tu veux le faire pour des clients à 18 700 DA,
+   pas pour la masse des clients Basic à 6 850 DA.
+4. **Pas réservé à Enterprise** : WhatsApp est le canal grand public en Algérie, pas un besoin
+   de grand compte. L'enfermer dans le pack à 47 100 DA prive 90 % de tes clients du canal —
+   et toi de la montée de gamme Pro.
+
+**Pourquoi Pro est le bon endroit, pour TES CLIENTS :**
+
+1. **1 000 messages ≈ 167 vraies conversations** — de quoi couvrir un commerce normal, alors
+   que le pack commence par coûter 0 DA à JawebFlow (c'est Meta qui offre les 1 000 premiers).
+   C'est de la valeur perçue quasi gratuite.
+2. **C'est le canal qu'ils utilisent déjà** : leur client écrit sur WhatsApp, pas sur leur site.
+   Le widget web devient un bonus, pas l'argument principal.
+3. **Zéro paperasse pour eux** : ils branchent WhatsApp depuis le tableau de bord (Embedded
+   Signup), sans jamais voir Meta, un BSP ou une facture en dollars.
+4. **Aucune facture surprise** : recharge **prépayée** (pas de post-payé à la fin du mois) et
+   **arrêt automatique** à la fin du forfait + recharges achetées. Un commerçant préfère
+   « ça s'arrête » à « tu me dois 12 000 DA ».
+
+---
+
 ## 1. La décision, plan par plan
 
 | Plan | WhatsApp | Inclus | Coût réel pour toi | Effet sur la marge |
@@ -33,6 +74,32 @@ Meta offre **1 000 messages de service gratuits par numéro d'entreprise et par 
 
 👉 **C'est l'argument commercial le moins cher de tout le catalogue** : « WhatsApp inclus »
 dans Pro pour 1 % du prix, et ça devient la raison de passer de Basic à Pro.
+
+
+### 1 bis. Le montage client, concrètement (prépayé, pas post-payé)
+
+| Élément | Prix | Coût pour toi | Marge |
+|---|---|---|---|
+| Inclus dans Pro | — | 186 DA/mois | — |
+| **Recharge 1 000 messages** | **1 800 DA** (1,80 DA/msg) | 807 DA | 55 % |
+| **Recharge 5 000 messages** | **8 000 DA** (1,60 DA/msg) | 4 035 DA | 50 % |
+| **Pack campagne 1 000 messages** (marketing) | **7 000 DA** | 3 497 DA | 50 % |
+
+Trois garde-fous, dans cet ordre :
+
+1. **Le forfait inclus** (1 000 dans Pro, 5 000 dans Enterprise) — au-delà, rien ne part.
+2. **Recharge prépayée** : le client achète un pack *avant* de consommer. Pas de facture en fin
+   de mois, donc pas d'impayés en dollars à rattraper côté JawebFlow.
+3. **Arrêt net** à épuisement : l'IA s'arrête, le client est prévenu, le widget web et
+   Instagram continuent de fonctionner normalement (le code sait déjà faire ce type de blocage
+   avec `LIMIT_REACHED` dans `chat.js`).
+
+**Aucun nouveau système de paiement à construire pour démarrer** : la console admin sait déjà
+créer des factures en DA (section *Factures* d'`AdminPage.tsx`). Une recharge = une facture.
+Le paiement en ligne pourra être branché ensuite sur le même flux.
+
+**Les campagnes marketing sont toujours hors forfait** — c'est le seul poste dont le coût
+échappe au contrôle (3,50 DA le message, sans franchise Meta).
 
 ---
 
@@ -161,6 +228,9 @@ répondre, et répondre c'est du « service ». Il n'apparaît que le jour où o
 (3,50 DA le message, sans franchise). Les relances de suivi que le dépôt envoie déjà
 (`relances.ts`) restent, elles, du « utility » à 0,62 DA et peuvent entrer dans le forfait.
 
-Et si tu veux monétiser Basic plus tard, l'option payante « 1 000 messages » se vend
-~950 DA/mois en gardant 80 % de marge (coût 186 DA) — à garder en réserve, pas à lancer
-maintenant : elle affaiblit la raison de passer à Pro.
+**Arbitrage chiffré, si l'idée d'une option payante sur Basic revient** : vendre
+« 1 000 messages » 2 500 DA/mois garde 2 314 DA de marge (coût 186 DA) — mais si ce client
+aurait de toute façon pris Pro pour WhatsApp, tu échanges **11 850 DA de montée de gamme
+contre 2 500 DA**. Règle simple : **aucune option WhatsApp au tarif public en dessous de Pro.**
+Pour un client qui ne peut réellement pas payer Pro, décide au cas par cas (remise de montée
+de gamme plutôt qu'option Basic : tu gardes le client dans la bonne grille tarifaire).
