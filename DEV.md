@@ -1,7 +1,7 @@
 # Développer le bot JawebFlow — guide pratique
 
 > Objectif : savoir **où** toucher, **comment** vérifier, **comment** déployer.
-> État vérifié le 5 octobre 2026 : `npm test` → **36 fichiers / 568 tests OK**,
+> État vérifié le 7 octobre 2026 : `npm test` → **39 fichiers / 657 tests OK**,
 > `npm run lint` (tsc) → 0 erreur.
 
 ---
@@ -39,7 +39,9 @@ commerçant**, pas de code.
 | `functions/_shared/widget-access.ts`, `rate-limit.ts` | Clé widget, domaines autorisés, débit | L'isolation |
 | `functions/_shared/ig-api.ts`, `ig-automations.ts` | Envoi Instagram, automatisations | Le canal Instagram |
 | `functions/api/chat.js` (≈780 lignes) | **L'orchestrateur web** : accès → quotas → contexte → appel Gemini → écriture du lead | Brancher une nouvelle règle |
-| `functions/api/webhook/instagram.ts` | L'orchestrateur Instagram | Idem, côté IG |
+| `functions/api/webhook/instagram.ts` | L'orchestrateur Instagram (à faire converger vers le pipeline, voir ci-dessous) | Idem, côté IG |
+| `functions/_shared/channels/pipeline.ts` | **Le cerveau multi-canal** : quotas → connaissances → Gemini → envoi → journalisation. Un seul chemin pour Messenger, WhatsApp, Telegram et TikTok | Ajouter/retirer une étape commune à tous les canaux |
+| `functions/_shared/channels/<canal>.ts` | L'adaptateur d'UN canal : lecture pure des messages, accusés de livraison, envoi. Le webhook ne fait que « vérifier → router » | Brancher un canal (voir `docs/INSTALLATION_CANAUX.md`) |
 | `functions/api/leads.js` | API des clients pour le tableau de bord (paginée) | Un champ côté dashboard |
 | `functions/api/cron/relances.js` | Le cron des relances (`?token=CRON_SECRET`) | Planification |
 | `src/components/DashboardPlatform.tsx` | Ce que le commerçant voit et règle | L'interface |
@@ -54,17 +56,19 @@ précis. Si vous voulez une nouvelle action, elle passe par le code.
 ## 2. Le cycle de travail
 
 ```bash
-npm test          # 568 tests, 36 fichiers — doit rester à 0 échec
+npm test          # 657 tests, 39 fichiers — doit rester à 0 échec
 npm run lint      # = tsc --noEmit — 0 erreur
 npm run dev       # serveur local (server.ts) avec un .env → site + widget réels
 npm run deploy:cloudflare   # build vite + wrangler pages deploy dist
 ```
 
 - **Les tests tournent sans aucune clé réelle** : `tests/helpers/fakes.ts`
-  installe un faux Supabase (`FakeSupabase.seed/rows`, pagination + `Content-Range`)
-  et une fausse API Meta (`FakeMeta.sent('messages')`). C'est le filet de sécurité.
+  installe un faux Supabase (`FakeSupabase.seed/rows`, pagination + `Content-Range`),
+  une fausse API Meta (`FakeMeta.sent('messages')`) et les faux serveurs des canaux
+  (`FakeGraph` pour Messenger/WhatsApp, `FakeTelegram`, `FakeTikTok`). C'est le filet
+  de sécurité : `fx.other` doit rester vide, sinon un test échoue.
 - **Un changement de comportement = une fonction pure + un test.** C'est comme ça
-  que les 568 tests sont construits ; ne mettez jamais la logique directement dans
+  que les 657 tests sont construits ; ne mettez jamais la logique directement dans
   le handler HTTP.
 - `npm run deploy:cloudflare` déploie le site ; les `functions/` sont servies
   automatiquement par Cloudflare Pages (pas de `wrangler.toml`, pas de CI).
