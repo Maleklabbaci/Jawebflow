@@ -57,12 +57,59 @@ Le canal devient explicitement un avantage du plan supérieur.
 
 ---
 
+## 2 bis. « Marketing » : de quoi je parle exactement
+
+**« Marketing » n'est pas ce que fait JawebFlow — c'est une *catégorie de message* chez Meta.**
+Meta classe chaque message sortant dans l'une de ces catégories, et c'est elle qui fixe le prix :
+
+| Catégorie | C'est quoi, concrètement | Prix en Algérie | Franchise |
+|---|---|---|---|
+| **Service** | **Ta réponse** à un client qui t'a écrit, dans les 24 h | 0,62 DA | 1 000/mois offerts |
+| **Utility** | Message **que tu déclenches**, lié à une action du client : confirmation de commande, rappel de RDV, avis de livraison | 0,62 DA | ❌ aucune |
+| **Marketing** | Message **que tu déclenches pour vendre** : promo, offre, « votre panier vous attend », relance d'un client inactif, newsletter | **3,50 DA** | ❌ aucune |
+| **Authentication** | Code OTP (hors sujet ici) | 0,62 DA | ❌ aucune |
+
+### Ce que ça change pour JawebFlow : rien, tant qu'on ne fait que répondre
+
+**Tout ce que le bot fait aujourd'hui est du « service »** : il ne parle qu'à des gens qui lui
+ont écrit. Donc **aucun coût marketing** dans le produit actuel — et c'est déjà pris en compte
+dans le calcul du plan Pro (1 000 messages = 186 DA).
+
+### Le marketing apparaît seulement si on ajoute des messages SORTANTS
+
+Et le dépôt en a déjà un : `functions/_shared/relances.ts` envoie deux relances
+automatiques (**+1 h** et **+24 h**) après une demande validée, via le cron
+`/api/cron/relances`. Aujourd'hui elles partent en **DM Instagram**, dans la fenêtre de
+24 h de Meta — donc gratuitement.
+
+Si on les branche sur WhatsApp, la facture dépend **entièrement de la façon dont elles sont écrites** :
+
+| Ce que dit la relance | Catégorie Meta | Coût |
+|---|---|---|
+| « Petit point sur votre commande : l'équipe finalise la confirmation » *(texte actuel du dépôt)* | **Utility** | **0,62 DA** |
+| « Il vous reste un article dans votre panier, -10 % aujourd'hui ! » | **Marketing** | **3,50 DA** |
+
+**Même outil, même client, même minute : 5,6× d'écart — à cause d'une seule phrase.**
+Et Meta reclasse lui-même un template jugé promotionnel : on ne peut pas contourner en
+étiquetant une promo en « utility ».
+
+### La règle à retenir pour l'offre
+
+- **Relances transactionnelles** (suivi de commande, rappel de RDV) → **utility, 0,62 DA** :
+  elles peuvent entrer dans le forfait inclus du plan Pro, comme les réponses de service.
+- **Campagnes promotionnelles** (promo, panier abandonné, réengagement) → **marketing, 3,50 DA** :
+  facturées à l'unité, jamais incluses.
+
+---
+
 ## 3. Les 4 règles à ne pas enfreindre
 
-1. **Le marketing n'est jamais inclus.** Une relance ou une promo coûte **3,50 DA** sans
-   aucune franchise (5,6× une réponse de service). Une campagne à 1 000 contacts = **3 497 DA**.
-   → facturé au message, ou vendu en pack (« 1 000 relances : X DA »). **Jamais « illimité »** :
-   c'est le moyen le plus rapide de perdre de l'argent.
+1. **Distinguer relance transactionnelle et campagne promotionnelle** (voir §2 bis).
+   Une relance de suivi (« votre commande est confirmée ») est de l'**utility : 0,62 DA** —
+   elle peut entrer dans le forfait. Une **promo** (« -10 % aujourd'hui ! ») est du
+   **marketing : 3,50 DA**, sans franchise : une campagne à 1 000 contacts = **3 497 DA**.
+   → Le promotionnel se facture au message ou en pack (« 1 000 relances : X DA »).
+   **Jamais « illimité »** : c'est le moyen le plus rapide de perdre de l'argent.
 2. **Un numéro WhatsApp par client.** La franchise de 1 000 messages est **par numéro** et par
    mois. Un numéro partagé entre plusieurs clients gaspillerait la franchise et empêcherait de
    compter qui consomme quoi.
@@ -106,7 +153,13 @@ de bord peut séparer l'usage web de l'usage WhatsApp sans migration lourde.
 ## 5. Résumé en une ligne
 
 **Basic : rien. Pro : 1 000 messages inclus (1 % du prix) puis 1,61 DA/message.
-Enterprise : 5 000 inclus puis négocié. Marketing toujours hors forfait.**
+Enterprise : 5 000 inclus puis négocié.**
+
+Le « marketing » dont je parlais n'existe pas dans le produit actuel : le bot ne fait que
+répondre, et répondre c'est du « service ». Il n'apparaît que le jour où on branche des
+**campagnes promotionnelles** sur WhatsApp — et c'est le seul poste qui coûte vraiment cher
+(3,50 DA le message, sans franchise). Les relances de suivi que le dépôt envoie déjà
+(`relances.ts`) restent, elles, du « utility » à 0,62 DA et peuvent entrer dans le forfait.
 
 Et si tu veux monétiser Basic plus tard, l'option payante « 1 000 messages » se vend
 ~950 DA/mois en gardant 80 % de marge (coût 186 DA) — à garder en réserve, pas à lancer
