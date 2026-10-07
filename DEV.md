@@ -1,7 +1,7 @@
 # Développer le bot JawebFlow — guide pratique
 
 > Objectif : savoir **où** toucher, **comment** vérifier, **comment** déployer.
-> État vérifié le 7 octobre 2026 : `npm test` → **39 fichiers / 657 tests OK**,
+> État vérifié le 7 octobre 2026 : `npm test` → **41 fichiers / 690 tests OK**,
 > `npm run lint` (tsc) → 0 erreur.
 
 ---
@@ -42,6 +42,7 @@ commerçant**, pas de code.
 | `functions/api/webhook/instagram.ts` | L'orchestrateur Instagram (à faire converger vers le pipeline, voir ci-dessous) | Idem, côté IG |
 | `functions/_shared/channels/pipeline.ts` | **Le cerveau multi-canal** : quotas → connaissances → Gemini → envoi → journalisation. Un seul chemin pour Messenger, WhatsApp, Telegram et TikTok | Ajouter/retirer une étape commune à tous les canaux |
 | `functions/_shared/channels/<canal>.ts` | L'adaptateur d'UN canal : lecture pure des messages, accusés de livraison, envoi. Le webhook ne fait que « vérifier → router » | Brancher un canal (voir `docs/INSTALLATION_CANAUX.md`) |
+| `src/components/ChannelsIntegration.tsx` + `functions/api/channels/integrations.ts` | L'écran **Canaux → Messenger & WhatsApp** et son API : test du jeton avant enregistrement, jeton jamais renvoyé au navigateur | Brancher/débrancher un canal depuis le tableau de bord |
 | `functions/api/leads.js` | API des clients pour le tableau de bord (paginée) | Un champ côté dashboard |
 | `functions/api/cron/relances.js` | Le cron des relances (`?token=CRON_SECRET`) | Planification |
 | `src/components/DashboardPlatform.tsx` | Ce que le commerçant voit et règle | L'interface |
@@ -56,7 +57,7 @@ précis. Si vous voulez une nouvelle action, elle passe par le code.
 ## 2. Le cycle de travail
 
 ```bash
-npm test          # 657 tests, 39 fichiers — doit rester à 0 échec
+npm test          # 690 tests, 41 fichiers — doit rester à 0 échec
 npm run lint      # = tsc --noEmit — 0 erreur
 npm run dev       # serveur local (server.ts) avec un .env → site + widget réels
 npm run deploy:cloudflare   # build vite + wrangler pages deploy dist
@@ -68,7 +69,7 @@ npm run deploy:cloudflare   # build vite + wrangler pages deploy dist
   (`FakeGraph` pour Messenger/WhatsApp, `FakeTelegram`, `FakeTikTok`). C'est le filet
   de sécurité : `fx.other` doit rester vide, sinon un test échoue.
 - **Un changement de comportement = une fonction pure + un test.** C'est comme ça
-  que les 657 tests sont construits ; ne mettez jamais la logique directement dans
+  que les 690 tests sont construits ; ne mettez jamais la logique directement dans
   le handler HTTP.
 - `npm run deploy:cloudflare` déploie le site ; les `functions/` sont servies
   automatiquement par Cloudflare Pages (pas de `wrangler.toml`, pas de CI).

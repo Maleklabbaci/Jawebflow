@@ -356,6 +356,195 @@ export async function supabaseUpsertInstagramIntegration(
   return igRowToCamel(rows[0] || row);
 }
 
+// ----------------------------------------------------------------------
+// Canaux de messagerie (Messenger, WhatsApp, Telegram, TikTok)
+// ----------------------------------------------------------------------
+
+/**
+ * Ce que le tableau de bord a le droit de voir d'une connexion.
+ * ⚠️ JAMAIS `access_token` : on n'expose que `hasToken` (vrai/faux). Le jeton
+ * ne quitte le serveur sous aucun prétexte, même vers son propriétaire.
+ */
+export interface ChannelIntegrationPublic {
+  channel: string;
+  accountId: string;
+  displayName?: string | null;
+  phoneNumber?: string | null;
+  connected: boolean;
+  lastError?: string | null;
+  hasToken: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+function channelRowToPublic(row: Record<string, any>): ChannelIntegrationPublic {
+  return {
+    channel: String(row.channel || ''),
+    accountId: String(row.account_id || ''),
+    displayName: row.display_name ?? null,
+    phoneNumber: row.phone_number ?? null,
+    connected: row.connected !== false,
+    lastError: row.last_error ?? null,
+    hasToken: Boolean(row.access_token),
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+export async function supabaseListChannelIntegrations(
+  env: SupabaseEnv,
+  userId: string
+): Promise<{ ok: boolean; setupRequired: boolean; integrations: ChannelIntegrationPublic[] }> {
+  const res = await request(
+    env,
+    `channel_integrations?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.asc`
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    // Table absente = migration SQL pas encore passée : on le dit, on ne plante pas.
+    const setupRequired = res.status === 404 || /PGRST20[0-9]/.test(body);
+    return { ok: false, setupRequired, integrations: [] };
+  }
+  const rows = (await res.json()) as any[];
+  return { ok: true, setupRequired: false, integrations: (Array.isArray(rows) ? rows : []).map(channelRowToPublic) };
+}
+
+/**
+ * Cherche une connexion déjà existante pour ce compte de plateforme, TOUS
+ * propriétaires confondus. Sert à refuser qu'un marchand « récupère » la page
+ * ou le numéro WhatsApp d'un autre en collant les mêmes identifiants.
+ */
+export async function supabaseFindChannelIntegration(
+  env: SupabaseEnv,
+  channel: string,
+  accountId: string
+): Promise<{ id: string; userId: string; assistantId: string; connected: boolean } | null> {
+  const res = await request(
+    env,
+    `channel_integrations?channel=eq.${encodeURIComponent(channel)}` +
+      `&account_id=eq.${encodeURIComponent(accountId)}&select=id,user_id,assistant_id,connected&limit=1`
+  );
+  if (!res.ok) return null;
+  const rows = (await res.json()) as any[];
+  const row = rows?.[0];
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    userId: String(row.user_id || ''),
+    assistantId: String(row.assistant_id || ''),
+    connected: row.connected !== false,
+  };
+}
+
+/**
+ * Le jeton d'une connexion existante — RÉSERVÉ AU SERVEUR.
+ * Sert à « Vérifier à nouveau » : le navigateur ne connaît pas le jeton (il ne
+ * l'a jamais reçu), c'est donc le serveur qui retente avec celui qu'il a rangé.
+ */
+export async function supabaseGetChannelSecret(
+  env: SupabaseEnv,
+  userId: string,
+  channel: string
+): Promise<{ accountId: string; accessToken: string; assistantId: string } | null> {
+  const res = await request(
+    env,
+    `channel_integrations?user_id=eq.${encodeURIComponent(userId)}&channel=eq.${encodeURIComponent(channel)}` +
+      `&select=account_id,access_token,assistant_id&limit=1`
+  );
+  if (!res.ok) return null;
+  const rows = (await res.json()) as any[];
+  const row = rows?.[0];
+  if (!row) return null;
+  return {
+    accountId: String(row.account_id || ''),
+    accessToken: String(row.access_token || ''),
+    assistantId: String(row.assistant_id || ''),
+  };
+}
+
+export async function supabaseUpsertChannelIntegration(
+  env: SupabaseEnv,
+  userId: string,
+  patch: {
+    channel: string;
+    accountId: string;
+    assistantId: string;
+    accessToken?: string;
+    displayName?: string;
+    phoneNumber?: string;
+  }
+): Promise<{ ok: boolean; error?: string; integration?: ChannelIntegrationPublic }> {
+  const row: Record<string, any> = {
+    user_id: userId,
+    assistant_id: patch.assistantId,
+    channel: patch.channel,
+    account_id: patch.accountId,
+    connected: true,
+    last_error: null,
+    updated_at: new Date().toISOString(),
+  };
+  // On n'écrase un jeton QUE s'il est fourni : modifier les réglages d'un canal
+  // déjà connecté ne doit pas effacer le jeton existant.
+  if (patch.accessToken) row.access_token = patch.accessToken;
+  if (patch.displayName !== undefined) row.display_name = patch.displayName;
+  if (patch.phoneNumber !== undefined) row.phone_number = patch.phoneNumber;
+
+  const res = await request(env, 'channel_integrations?on_conflict=channel,account_id', {
+    method: 'POST',
+    body: JSON.stringify(row),
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const setupRequired = res.status === 404 || /PGRST20[0-9]/.test(body);
+    return {
+      ok: false,
+      error: setupRequired
+        ? 'La table des connexions est absente : exécutez supabase/migration_channels.sql.'
+        : `Enregistrement refusé (${res.status})`,
+    };
+  }
+  const rows = (await res.json()) as any[];
+  return { ok: true, integration: channelRowToPublic(rows?.[0] || row) };
+}
+
+/** Déconnecte un canal. `keepToken` sert aux tests et à une simple mise en pause. */
+export async function supabaseSetChannelConnected(
+  env: SupabaseEnv,
+  userId: string,
+  channel: string,
+  connected: boolean,
+  opts: { dropToken?: boolean } = {}
+): Promise<{ ok: boolean; error?: string }> {
+  const patch: Record<string, any> = { connected, updated_at: new Date().toISOString() };
+  if (!connected && opts.dropToken) patch.access_token = null;
+  const res = await request(
+    env,
+    `channel_integrations?user_id=eq.${encodeURIComponent(userId)}&channel=eq.${encodeURIComponent(channel)}`,
+    { method: 'PATCH', body: JSON.stringify(patch), headers: { Prefer: 'return=minimal' } }
+  );
+  if (!res.ok) return { ok: false, error: `Mise à jour refusée (${res.status})` };
+  return { ok: true };
+}
+
+/** Note une erreur de canal, pour que le marchand la voie dans son tableau de bord. */
+export async function supabaseSetChannelError(
+  env: SupabaseEnv,
+  channel: string,
+  accountId: string,
+  lastError: string | null
+): Promise<void> {
+  try {
+    await request(
+      env,
+      `channel_integrations?channel=eq.${encodeURIComponent(channel)}&account_id=eq.${encodeURIComponent(accountId)}`,
+      { method: 'PATCH', body: JSON.stringify({ last_error: lastError, updated_at: new Date().toISOString() }), headers: { Prefer: 'return=minimal' } }
+    );
+  } catch {
+    /* un diagnostic qui échoue ne doit jamais casser une réponse client */
+  }
+}
+
 export async function supabaseListKnowledge(env: SupabaseEnv, assistantId: string) {
   const res = await request(env, `knowledge_documents?assistant_id=eq.${encodeURIComponent(assistantId)}&select=title,content,source_url&order=scanned_at.desc&limit=100`);
   if (!res.ok) return [];

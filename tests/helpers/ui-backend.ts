@@ -4,6 +4,7 @@
  * traversent donc toute la pile : bouton → fetch → fonction serveur → base → moteur.
  */
 import { vi } from 'vitest';
+import * as channels from '../../functions/api/channels/integrations';
 import * as copilot from '../../functions/api/copilot';
 import * as quickAdd from '../../functions/api/knowledge/quick-add';
 import * as automations from '../../functions/api/instagram/automations';
@@ -25,6 +26,8 @@ const ROUTES: Record<string, Handlers> = {
   '/api/instagram/diagnostics': { GET: diagnostics.onRequestGet, POST: diagnostics.onRequestPost },
   '/api/instagram/integration': { GET: integration.onRequestGet, POST: integration.onRequestPost },
   '/api/instagram/subscribe': { POST: subscribe.onRequestPost },
+  // Branchement des messageries (Messenger, WhatsApp, Telegram, TikTok).
+  '/api/channels/integrations': { GET: channels.onRequestGet, POST: channels.onRequestPost, DELETE: channels.onRequestDelete },
 };
 
 export interface UiBackend extends ReturnType<typeof installFakes> {

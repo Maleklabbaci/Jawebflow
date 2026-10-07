@@ -429,7 +429,14 @@ export class FakeTelegram {
     if (/\/sendMessage$/.test(call.path)) {
       return j({ ok: true, result: { message_id: ++this.seq, chat: { id: call.body?.chat_id }, text: call.body?.text } });
     }
-    if (/\/(getMe|setWebhook|deleteWebhook)$/.test(call.path)) return j({ ok: true, result: { id: 1, is_bot: true, username: 'jawebflow_test_bot' } });
+    if (/\/(getMe|setWebhook|deleteWebhook)$/.test(call.path)) {
+      // Comme Telegram : un jeton inconnu est refusé (401 + description).
+      const token = this.tokenOf(call);
+      if (token && token !== TG_TOKEN) {
+        return j({ ok: false, error_code: 401, description: 'Unauthorized' }, 401);
+      }
+      return j({ ok: true, result: { id: 1, is_bot: true, username: 'jawebflow_test_bot' } });
+    }
     return j({ ok: false, error_code: 404, description: `route non simulée ${call.method} ${call.path}` }, 404);
   };
 }
@@ -494,7 +501,10 @@ export function seedMerchant(supabase: FakeSupabase, over: Row = {}) {
     last_connected_at: new Date().toISOString(),
     ...over,
   }]);
-  supabase.seed('assistants', [{ id: 'asst1', user_id: USER_ID, business_name: 'Boutique Nour', config: {} }]);
+  // Le plan vit dans `config.plan` (voir updateAssistantPlan côté client) :
+  // un assistant « realiste » doit donc avoir ce champ, sinon la jauge WhatsApp
+  // et le quota de conversations testeraient un cas qui n'existe pas en prod.
+  supabase.seed('assistants', [{ id: 'asst1', user_id: USER_ID, business_name: 'Boutique Nour', config: { plan: 'basic' } }]);
   supabase.addUser('BEARER_U1', USER_ID);
 }
 
@@ -568,10 +578,14 @@ export function seedChannel(supabase: FakeSupabase, channel: string, over: Row =
   return row;
 }
 
-/** Passe l'assistant « asst1 » sur un plan donné (pro, enterprise…). */
+/**
+ * Passe l'assistant « asst1 » sur un plan donné (pro, enterprise…).
+ * ⚠️ Le plan vit dans `config.plan` (colonne jsonb), pas dans une colonne
+ * dédiée : on écrit donc au bon endroit, comme le fait le tableau de bord.
+ */
 export function seedPlan(supabase: FakeSupabase, plan: string) {
   const asst = supabase.rows('assistants').find((a) => a.id === 'asst1');
-  if (asst) asst.plan = plan;
+  if (asst) asst.config = { ...(asst.config || {}), plan };
 }
 
 /** Charge utile « Messenger » telle que Meta l'envoie. */

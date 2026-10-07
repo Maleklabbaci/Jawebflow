@@ -67,6 +67,7 @@ import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
 import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
+import { ChannelsIntegration } from './ChannelsIntegration';
 import { InstagramAutomations } from './InstagramAutomations';
 import { CopilotChat, CopilotLauncher } from './CopilotChat';
 import { StatCard } from './dashboard/StatCard';
@@ -78,7 +79,7 @@ import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 import { DEAL_KIND_LABELS, DEAL_NEXT_ACTIONS, DEAL_STEPS, SALES_INTENT_LABELS, buildDealRecap, dealKindOf, dealStatusLabel, type DealKind } from '../../functions/_shared/sales-intent';
 
-export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'channels' | 'settings' | 'billing';
 
 type LeadOrder = {
   id: string;
@@ -128,6 +129,7 @@ const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: Dashboar
     title: 'Canaux',
     tabs: [
       { id: 'instagram', label: 'Instagram' },
+      { id: 'channels', label: 'Messenger & WhatsApp' },
       { id: 'integration', label: 'Mon site' },
       { id: 'automations', label: 'Automatisations' },
     ],
@@ -2617,6 +2619,18 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             </div>
             )}
             </>
+          )}
+
+          {/* =================================================================
+              SECTION: MESSAGERIES (Messenger, WhatsApp, Telegram, TikTok)
+              ================================================================= */}
+          {currentSection === 'channels' && (
+            <div className="animate-in fade-in duration-200">
+              <ChannelsIntegration
+                assistantId={assistantId || currentWidgetId || ''}
+                plan={activePlan !== 'free' ? activePlan : (profile?.plan || activePlan)}
+              />
+            </div>
           )}
 
           {/* =================================================================

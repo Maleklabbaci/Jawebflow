@@ -1,6 +1,6 @@
 # Brancher les canaux (Messenger, WhatsApp, TikTok, Telegram)
 
-> Guide d'installation, côté propriétaire (toi). Le commerçant, lui, n'aura qu'à cliquer sur « Connecter » quand l'interface sera branchée.
+> Guide d'installation, côté propriétaire (toi). Le marchand branche ses canaux depuis le tableau de bord (**Canaux → Messenger & WhatsApp**) : voir §5. Les étapes SQL ci-dessous servent au dépannage.
 >
 > Décisions commerciales : `docs/DECISION_WHATSAPP_PLANS.md` (WhatsApp dans Pro/Enterprise)
 > et `docs/QUELS_CANAUX.md` (quels canaux valent le coup en Algérie).
@@ -181,11 +181,28 @@ Test de fumée manuel, une fois un canal branché :
 
 ---
 
-## 5. Ce qui reste à faire (côté interface)
+## 5. Brancher depuis le tableau de bord (recommandé)
 
-Le serveur est complet et testé. Il reste l'écran marchand — **aucune ligne de ce qui suit n'est encore écrite** :
+Menu **Canaux → Messenger & WhatsApp**. Le marchand y trouve les 4 cartes, colle deux informations
+(l'identifiant du compte et le jeton) et clique **« Tester et connecter »** :
 
-1. **Boutons « Connecter »** par canal dans le tableau de bord (aujourd'hui : insertion SQL manuelle, comme ci-dessus).
-2. **Diagnostics en clair** : afficher `last_error` de `channel_integrations` (« jeton expiré », « page non autorisée »…) et un bouton **« Réactiver »**.
-3. **Jauge WhatsApp** : « 743 / 1 000 messages ce mois-ci » + bouton de recharge (la vue `channel_monthly_usage` est déjà prête pour ça).
-4. **Fusion de `functions/api/webhook/instagram.ts`** dans le même pipeline (≈1 500 lignes en moins à maintenir) — c'est le prochain gros gain, à faire quand Instagram sera à nouveau testable.
+| Ce que fait l'écran | Pourquoi c'est important |
+|---|---|
+| **Teste le jeton AVANT d'enregistrer** | Un jeton pourri est refusé tout de suite, avec la raison exacte (« Jeton expiré ou révoqué (Meta)… ») au lieu d'un silence de trois jours |
+| **Vérifie que c'est le bon compte** | Un jeton de la mauvaise page est détecté (« Ce jeton est celui d'une autre page ») |
+| **N'affiche jamais le jeton** | Le serveur ne renvoie que `hasToken: true/false` — même au propriétaire |
+| **Refuse le canal d'un autre marchand** | Un compte (page, numéro) déjà relié ailleurs n'est pas récupérable (409) |
+| **« Vérifier à nouveau »** | Re-teste le jeton rangé, sans le redemander ni l'écraser |
+| **« Déconnecter »** | Coupe la connexion **et efface le jeton** : plus aucun message n'est traité |
+
+S'ajoutent la **jauge WhatsApp** (« 743 / 1 000 ce mois-ci »), le **diagnostic en clair** de la dernière
+erreur, et l'**adresse du webhook à copier** pour chaque canal déjà connecté.
+
+Les étapes SQL ci-dessus restent utiles pour un débogage à la main, mais ne sont plus nécessaires :
+l'onglet fait le même travail, avec les contrôles en plus.
+
+## 6. Ce qui reste à faire
+
+1. **Fusion de `functions/api/webhook/instagram.ts`** dans le pipeline multi-canal (≈1 500 lignes en moins à maintenir) — le prochain gros gain.
+2. **Recharge WhatsApp en un clic** : la jauge est affichée, le bouton d'achat de crédits (`channel_credits`) reste à câbler sur SlickPay.
+3. **OAuth Meta (Embedded Signup)** pour remplacer le copier-coller des jetons Messenger/WhatsApp — à faire quand l'application Meta sera validée.

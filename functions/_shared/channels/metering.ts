@@ -92,8 +92,12 @@ export async function whatsappUsage(env: SupabaseEnv, assistantId: string): Prom
     const free = list.length - billable;
 
     // Forfait du plan + recharges prépayées.
-    const asst = await supabaseRequest(env, `assistants?id=eq.${encodeURIComponent(assistantId)}&select=plan`);
-    const plan = asst.ok ? String(((await asst.json().catch(() => [])) as any[])?.[0]?.plan || 'basic') : 'basic';
+    // ⚠️ Le plan vit dans la colonne jsonb `config.plan` (voir updateAssistantPlan
+    // côté client) — PAS dans une colonne `plan`. Le lire au mauvais endroit
+    // donnait un forfait de 0 à tout le monde : plus aucune réponse WhatsApp.
+    const asst = await supabaseRequest(env, `assistants?id=eq.${encodeURIComponent(assistantId)}&select=*`);
+    const asstRow = asst.ok ? ((await asst.json().catch(() => [])) as any[])?.[0] : null;
+    const plan = String(asstRow?.config?.plan || asstRow?.plan || 'basic');
     const quota = waQuotaForPlan(plan);
 
     const credit = await supabaseRequest(

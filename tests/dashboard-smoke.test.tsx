@@ -44,6 +44,7 @@ const SECTIONS: Array<{ id: string; nav: string }> = [
   { id: 'orders', nav: 'Commandes & RDV' },
   { id: 'integration', nav: 'Mon site' },
   { id: 'instagram', nav: 'Instagram' },
+  { id: 'channels', nav: 'Messenger & WhatsApp' },
   { id: 'automations', nav: 'Automatisations' },
   { id: 'billing', nav: 'Abonnement & factures' },
   { id: 'settings', nav: 'Mon profil' },

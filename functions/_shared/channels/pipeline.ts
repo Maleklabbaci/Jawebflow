@@ -280,7 +280,9 @@ export async function handleInbound(
     }
   }
 
-  const plan = String(assistant.plan || 'basic').toLowerCase();
+  // ⚠️ Le plan vit dans `config.plan` (jsonb), pas dans une colonne : le lire
+  // au mauvais endroit ferait retomber tout le monde sur « basic ».
+  const plan = String((assistant as any).config?.plan || (assistant as any).plan || 'basic').toLowerCase();
 
   // ── Forfait 1 : quota de conversations et plafond de coût IA ────────────
   const limits = await supabaseGetPlanLimits(env);

@@ -8,7 +8,7 @@ import { fireEvent } from '@testing-library/react';
 export const MENU_ENTRY: Record<string, string> = {
   overview: 'overview', summary: 'summary', simulator: 'simulator', leads: 'leads', orders: 'orders',
   knowledge: 'knowledge', crawler: 'knowledge', behavior: 'knowledge', widget: 'knowledge', learning: 'knowledge',
-  integration: 'integration', instagram: 'integration', automations: 'integration',
+  integration: 'integration', instagram: 'integration', automations: 'integration', channels: 'integration',
 };
 
 export function goTo(id: string) {
