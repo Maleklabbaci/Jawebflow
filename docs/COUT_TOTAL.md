@@ -59,6 +59,84 @@ n'a pas de quoi consommer son forfait WhatsApp + son quota web.)*
 
 ---
 
+## 2 bis. « Et tout » : Messenger + Telegram + TikTok + WhatsApp
+
+### La règle qui simplifie tout : **seul WhatsApp a des frais au message**
+
+| Canal | Frais plateforme / message | Dev. | État | Prérequis |
+|---|---|---|---|---|
+| Widget web | **AUCUN** | 0 j | en production | — |
+| Instagram (DM + commentaires) | **AUCUN** | 0 j | en production | App Meta (déjà en place) |
+| **Telegram** | **AUCUN** | 2–4 j | à développer | aucun (BotFather) |
+| **Facebook Messenger** | **AUCUN** | 5–8 j | à développer | App Review Meta (`pages_messaging`) |
+| **TikTok** (DM + commentaires) | **AUCUN** | 5–10 j | beta, à tester | Business Messaging API + approbation |
+| **WhatsApp** | **1,24 DA** | 15–25 j | à développer | Tech Provider + vérification d'entreprise |
+
+**Meta ne facture rien sur Messenger** (la Send API est gratuite) et **TikTok ne facture rien
+sur aucune API officielle** — aucun tarif au message n'existe sur le portail développeur.
+Leur seul coût récurrent, c'est **l'IA : 2,97 DA par conversation**, la même quelle que soit
+la plateforme.
+
+### Le vrai coût de « et tout », c'est le développement
+
+**27 à 47 jours de travail** : Messenger 5–8 j + Telegram 2–4 j + TikTok 5–10 j +
+WhatsApp 15–25 j. Les frais d'API sont nuls pour 3 canaux sur 4 : ce que tu paies, c'est
+le temps — et, pour WhatsApp, le dossier Meta.
+
+> ⚠️ **TikTok** : accès gratuit mais **payant en temps** — compte Business obligatoire,
+> candidature à la Business Messaging API, revue de sécurité des données, et l'API reste en
+> **beta restreinte** (APAC, LATAM, METAP, Amérique du Nord ; l'EEE, la Suisse et le
+> Royaume-Uni en sont exclus). **L'Algérie relève de METAP** : éligibilité probable, mais **à
+> confirmer avec un compte pilote avant de le promettre à un client.**
+
+### Le coût des packs si le client utilise TOUS les canaux
+
+Usage « et tout » : Basic 400 conversations tous canaux · Pro 900 + 1 000 messages WhatsApp ·
+Enterprise 2 500 + 5 000 messages WhatsApp.
+
+| Pack | Prix | IA canaux | IA WhatsApp | Meta | Encaissement | **COÛT TOTAL** | **Marge %** |
+|---|---|---|---|---|---|---|---|
+| **Basic** | 6 850 DA | 1 188 DA | 0 DA | 0 DA | 110 DA | **1 298 DA** | **81,1 %** |
+| **Pro** | 18 700 DA | 2 673 DA | 373 DA | 0 DA | 299 DA | **3 345 DA** | **82,1 %** |
+| **Enterprise** | 47 100 DA | 7 425 DA | 1 863 DA | 4 968 DA | 754 DA | **15 010 DA** | **68,1 %** |
+
+**À lire attentivement :** la marge baisse **non pas à cause des nouveaux réseaux** (ils sont
+gratuits) mais parce que **plus de canaux = plus de conversations = plus de tokens Gemini**.
+C'est la seule dépense que « et tout » ajoute réellement.
+
+### Où mettre chaque canal (recommandation)
+
+| Canal | Coût récurrent | Où le placer |
+|---|---|---|
+| Web + Instagram | 0 | tous les packs (déjà en place) |
+| **Messenger + Telegram** | 0 (hors IA) | **tous les packs payants, Basic compris** — c'est de la valeur gratuite |
+| **TikTok** | 0 (hors IA) | tous les packs payants, **mais après le test d'éligibilité** |
+| **WhatsApp** | 1,24 DA/message | **Pro (1 000 inclus) · Enterprise (5 000)** |
+
+**Pourquoi donner Messenger et Telegram à Basic ne coûte rien :** aucun frais de plateforme.
+Le seul effet, c'est que **le plafond IA de Basic se remplit plus vite** — un commerçant
+présent sur 4 réseaux atteint ses **272 conversations** en quelques semaines.
+
+### Les plafonds IA à ajuster en conséquence
+
+| Pack | Plafond actuel | Couvre | **Plafond proposé** | Couvre |
+|---|---|---|---|---|
+| Basic | 3 $ (810 DA) | 272 conv. | **5 $ (1 350 DA)** | **454 conv.** (4 canaux, sans WhatsApp) |
+| Pro | 9 $ (2 430 DA) | 817 conv. | **20 $ (5 400 DA)** | 1 692 conv. + 1 000 msg WhatsApp |
+| Enterprise | 30 $ (8 100 DA) | 2 100 conv. | **30 $ (8 100 DA)** | 2 100 conv. + 5 000 msg WhatsApp |
+
+*Rappel : ce plafond ne borne que Gemini — les frais Meta suivent le volume.*
+
+### Ordre de mise en œuvre recommandé
+
+1. **Telegram** (2–4 j) — valide l'architecture multi-canal sans dépendre de Meta, gratuit.
+2. **Messenger** (5–8 j) — le plus gros gain en Algérie après WhatsApp, coût nul, réutilise
+   le « commentaire → MP » déjà écrit pour Instagram.
+3. **TikTok** (5–10 j) — **après** un compte pilote pour vérifier l'éligibilité METAP.
+4. **WhatsApp** (15–25 j + dossier Meta) — le seul canal payant, à cadrer commercialement.
+
+---
+
 ## 3. Au-delà du forfait : combien facturer
 
 | Poste | Coût réel | **Prix conseillé** | Marge |
@@ -196,6 +274,10 @@ l'application WhatsApp normale. Le client doit accepter un **numéro dédié** (
    réelle, pas Gemini.
 5. **Trois corrections à faire :** passer SlickPay en versement mensuel (1,4 %), corriger le
    taux de conversion dans la console (135 → 270), et facturer le marketing hors forfait.
+6. **« Et tout » ne coûte presque rien en frais** : Messenger, Telegram et TikTok n'ont
+   **aucun** frais au message. Le vrai coût, c'est **27 à 47 jours de développement** et
+   l'IA des conversations supplémentaires. Offre-les généreusement — ils font monter la
+   valeur perçue de Basic sans toucher ta marge au-delà de l'IA.
 
 ---
 

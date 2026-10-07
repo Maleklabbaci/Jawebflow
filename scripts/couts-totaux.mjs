@@ -62,6 +62,23 @@ const H = {
   /** Répartition du portefeuille client. */
   mix: { basic: 0.5, pro: 0.4, enterprise: 0.1 },
 
+  /** Les canaux : seul WhatsApp a des frais au message. */
+  canaux: [
+    { id: 'web',       libelle: 'Widget web',            fraisUsd: 0,         dev: '0 j',      etat: 'en production',   prerequis: '—' },
+    { id: 'instagram', libelle: 'Instagram (DM + commentaires)', fraisUsd: 0,  dev: '0 j',      etat: 'en production',   prerequis: 'App Meta (déjà en place)' },
+    { id: 'telegram',  libelle: 'Telegram',              fraisUsd: 0,         dev: '2–4 j',    etat: 'à développer',    prerequis: 'aucun (BotFather)' },
+    { id: 'messenger', libelle: 'Facebook Messenger',    fraisUsd: 0,         dev: '5–8 j',    etat: 'à développer',    prerequis: 'App Review Meta (pages_messaging)' },
+    { id: 'tiktok',    libelle: 'TikTok (DM + commentaires)', fraisUsd: 0,    dev: '5–10 j',   etat: 'beta, à tester',  prerequis: 'Business Messaging API + approbation' },
+    { id: 'whatsapp',  libelle: 'WhatsApp',              fraisUsd: U.waService, dev: '15–25 j', etat: 'à développer',   prerequis: 'Tech Provider + vérification d\'entreprise' },
+  ],
+
+  /** Usage « et tout » : un client qui utilise plusieurs canaux. */
+  usageTout: {
+    basic:      { conv: 400,  wa: 0 },
+    pro:        { conv: 900,  wa: 1000 },
+    enterprise: { conv: 2500, wa: 5000 },
+  },
+
   /** Infra / base de données. */
   koParConversation: 8,
   moisHistorique: 3,
@@ -223,6 +240,75 @@ console.log(`
   ⚠️ Le plafond IA (${dzd(da(3))} pour Basic, ${dzd(da(20))} pour Pro, ${dzd(da(30))} pour Enterprise au taux réel)
      borne le coût GEMINI uniquement. Les frais Meta, eux, ne sont bornés par RIEN :
      d'où la colonne « Dont Meta » du scénario B.`);
+
+
+// --- 2 bis. Les canaux ---------------------------------------------------
+console.log(titre('2 bis. TOUS LES CANAUX : CE QUE CHACUN COÛTE RÉELLEMENT'));
+console.log(`
+  La règle qui simplifie tout : SEUL WHATSAPP a des frais au message.
+  Instagram, Messenger, Telegram et TikTok ne facturent RIEN (aucun tarif au message
+  chez Meta ni chez TikTok). Leur seul coût récurrent, c'est l'IA par conversation
+  (${dzd(da(U.iaParConversationWeb), 2)}) — la même quelle que soit la plateforme.
+`);
+console.log(
+  pad('Canal', 32) + padL('Frais/message', 15) + padL('Dev.', 10) + '  ' + pad('État', 16) + 'Prérequis',
+);
+console.log('─'.repeat(93));
+for (const c of H.canaux) {
+  console.log(
+    pad(c.libelle, 32) +
+      padL(c.fraisUsd === 0 ? 'AUCUN' : dzd(da(c.fraisUsd), 2), 15) +
+      padL(c.dev, 10) + '  ' + pad(c.etat, 16) + c.prerequis,
+  );
+}
+console.log(`
+  Développement total pour « tout ajouter » : Messenger 5–8 j + Telegram 2–4 j +
+  TikTok 5–10 j + WhatsApp 15–25 j = 27 à 47 jours de travail. C'est le VRAI coût de
+  « et tout » — pas les frais d'API, qui sont nuls pour 3 canaux sur 4.
+
+  À noter pour TikTok : toutes les API officielles sont gratuites, mais l'accès se paie
+  en temps — compte Business obligatoire, candidature à la Business Messaging API, revue
+  de sécurité des données, et l'API reste en beta restreinte (APAC, LATAM, METAP, Amérique
+  du Nord — l'EEE, la Suisse et le Royaume-Uni en sont exclus). L'Algérie relève de METAP :
+  éligibilité probable, à confirmer avec un compte pilote AVANT de le promettre à un client.`);
+
+// --- 2 ter. Packs avec tous les canaux ----------------------------------
+console.log(titre('2 ter. LES PACKS SI LE CLIENT UTILISE TOUS LES CANAUX'));
+console.log(`
+  Usage « et tout » : le commerçant reçoit des messages sur le web, Instagram, Messenger,
+  Telegram et TikTok en même temps (plus de conversations), et sur WhatsApp s'il y est.
+  • Basic      : ${H.usageTout.basic.conv} conversations tous canaux
+  • Pro        : ${H.usageTout.pro.conv} conversations + ${H.usageTout.pro.wa.toLocaleString('fr-FR')} messages WhatsApp
+  • Enterprise : ${H.usageTout.enterprise.conv.toLocaleString('fr-FR')} conversations + ${H.usageTout.enterprise.wa.toLocaleString('fr-FR')} messages WhatsApp
+`);
+console.log(
+  pad('Pack', 15) + padL('Prix', 12) + padL('IA canaux', 12) + padL('IA WhatsApp', 12) +
+    padL('Meta', 10) + padL('Encaiss.', 11) + padL('COÛT TOTAL', 13) + padL('Marge %', 10),
+);
+console.log('─'.repeat(93));
+for (const p of H.packs) {
+  if (p.prixDzd === 0) continue;
+  const t = H.usageTout[p.id];
+  const iaCanaux = da(t.conv * U.iaParConversationWeb);
+  const iaWa = da(t.wa * U.iaParMessage);
+  const meta = metaDzd(t.wa);
+  const enc = encaissement(p.prixDzd);
+  const total = iaCanaux + iaWa + meta + enc;
+  console.log(
+    pad(p.libelle, 15) + padL(dzd(p.prixDzd), 12) + padL(dzd(iaCanaux), 12) + padL(dzd(iaWa), 12) +
+      padL(dzd(meta), 10) + padL(dzd(enc), 11) + padL(dzd(total), 13) +
+      padL(pct(((p.prixDzd - total) / p.prixDzd) * 100), 10),
+  );
+}
+console.log(`
+  Comparé à l'usage « un seul canal » du §2, la marge baisse — non pas à cause des
+  nouveaux réseaux (gratuits), mais parce que PLUS DE CANAUX = PLUS DE CONVERSATIONS,
+  donc plus de tokens Gemini. C'est la seule vraie dépense que « et tout » ajoute.
+
+  ⚠️ Conséquence à décider : les plafonds IA doivent suivre. Le plafond de Basic
+     (${usd(3, 0)} = ${dzd(da(3))}) ne couvre que ${Math.floor(da(3) / da(U.iaParConversationWeb))} conversations — un commerçant
+     présent sur 4 réseaux les atteint en quelques semaines. Idem pour Pro (${usd(20, 0)} = ${dzd(da(20))} :
+     ${Math.floor((da(20) - H.usageTout.pro.wa * da(U.iaParMessage)) / da(U.iaParConversationWeb))} conversations après le forfait WhatsApp).`);
 
 // --- 3. Dépassement ------------------------------------------------------
 const coutMsgDepassement = da(U.waService + U.iaParMessage);
