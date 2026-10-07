@@ -15,7 +15,7 @@ Voici tout ce qu'on peut ajouter, classé par rapport intérêt / coût :
 |---|---|---|---|---|
 | **Facebook Messenger** (+ commentaires de Page) | Oui — même app Meta qu'Instagram | **0 $** (Send API gratuite, Meta ne facture rien) | 5–8 j | ✅ **À faire en premier** : gain fort, coût marginal nul |
 | **Telegram** | Oui — Bot API | **0 $** (aucun frais, aucune validation d'app) | 2–4 j | ✅ Rapide et gratuit, mais petite audience en Algérie |
-| **WhatsApp Cloud API** | Oui — parcours « Tech Provider » Meta | Algérie : **0,0040 $** (~0,54 DA) par réponse, **1 000 gratuites/numéro/mois** ; marketing 0,0225 $ (~3 DA) | 15–25 j **+ 2 à 6 semaines d'attente Meta** | ⚠️ Le plus demandé **et** le plus lourd — à cadrer commercialement avant de coder |
+| **WhatsApp Cloud API** | Oui — parcours « Tech Provider » Meta | Algérie : **0,62 DA** par réponse, **1 000 gratuites/numéro/mois** ; marketing **3,50 DA** | 15–25 j **+ 2 à 6 semaines d'attente Meta** | ⚠️ Le plus demandé **et** le plus lourd — à cadrer commercialement avant de coder |
 | **TikTok** (Business Messaging API) | Beta, **région-restreint**, approbation requise | 0 $ (côté messages) | 5–10 j + approbation | 🔎 À surveiller, pas à promettre |
 | **X (Twitter)** | Techniquement, mais… | Facturation à l'usage ; DM réservés aux offres entreprise | — | ❌ Plus de palier gratuit depuis févr. 2026 → non viable |
 | **LinkedIn** | Messagerie API fermée aux partenaires | — | — | ❌ Peu pertinent pour la cible |
@@ -156,30 +156,35 @@ C'est le point le plus important de ce document.
 
 | Catégorie | Tarif | ≈ en DA (à 135 DA/$) | Quand ça s'applique |
 |---|---|---|---|
-| **Marketing** | 0,0225 $ | ≈ **3,04 DA** | promotions, relances, campagnes |
-| **Utility** | 0,0040 $ | ≈ **0,54 DA** | confirmations de commande, rappels de RDV |
-| **Service** (les réponses du bot) | 0,0040 $ | ≈ **0,54 DA** | au-delà de **1 000 gratuites/numéro/mois** ; c'était gratuit avant le 01/10/2026 |
-| **Authentication** | 0,0040 $ | ≈ **0,54 DA** | codes OTP (peu utile ici) |
+| **Marketing** | 0,0259 $ | ≈ **3,50 DA** | promotions, relances, campagnes — **sans aucune franchise** |
+| **Utility** | 0,0046 $ | ≈ **0,62 DA** | confirmations de commande, rappels de RDV |
+| **Service** (les réponses du bot) | 0,0046 $ | ≈ **0,62 DA** | au-delà de **1 000 gratuites/numéro/mois** ; c'était gratuit avant le 01/10/2026 |
+| **Authentication** | 0,0046 $ | ≈ **0,62 DA** | codes OTP (peu utile ici) |
 | Messages **entrants** (le client écrit) | **0 $** | 0 DA | toujours gratuit |
 | Fenêtre **72 h** après un clic sur une pub WhatsApp | **0 $** | 0 DA | tout message, templates compris |
 
-> Les tarifs publiés varient légèrement selon la source (le « Rest of Africa » est à ~0,0259 $
-> en marketing / 0,0046 $ en service, l'Algérie étant passée en tarif propre). **À revérifier sur
-> la page officielle Meta avant de publier un prix.**
+> ⚠️ **Correction :** la doc officielle Meta classe l'**Algérie dans la région « Rest of Africa »**
+> (indicatif +213 dans la table des codes pays), et **non** en tarif propre : ce sont donc les
+> taux « Rest of Africa » qui s'appliquent. Une fourchette de 0,0040–0,0046 $ circule selon les
+> barèmes partenaires. **À revérifier dans le Billing Hub Meta avant de publier un prix.**
+> Le calcul complet est dans **`docs/COUTS_WHATSAPP.md`** (`node scripts/couts-whatsapp.mjs`).
 
 ### 3.3 Ce que ça donne concrètement
 
-Hypothèses : **4 à 6 réponses du bot par conversation**, 1 numéro par client.
+Hypothèses : **6 réponses du bot par conversation**, 1 numéro par client, aucune campagne
+marketing. (Détail complet : `docs/COUTS_WHATSAPP.md`.)
 
-| Profil | Conversations/mois | Messages du bot | Facturés (après les 1 000 gratuits) | Coût Meta/mois |
+| Profil | Conversations/mois | Messages du bot | Facturés (après les 1 000 gratuits) | Coût Meta + IA/mois |
 |---|---|---|---|---|
-| Petit commerce | 300 | 1 500 | 500 | **≈ 2,00 $ ≈ 270 DA** |
-| Client actif | 1 000 (= quota *Basic*) | 5 000 | 4 000 | **≈ 16,00 $ ≈ 2 160 DA** |
-| Gros client | 5 000 (= quota *Pro*) | 25 000 | 24 000 | **≈ 96,00 $ ≈ 12 960 DA** |
+| Petit commerce | 40 | 240 | 0 | **45 DA** (IA seule) |
+| Client actif (≈ quota Basic) | 200 | 1 200 | 200 | **347 DA** |
+| Gros client | 800 | 4 800 | 3 800 | **3 253 DA** (47,5 % du pack Basic) |
+| Très gros client | 2 500 | 15 000 | 14 000 | **11 484 DA** |
 
 **⚠️ Alerte marge :** vos plans actuels sont **Basic 6 850 DA** et **Pro 18 700 DA** par mois.
-Si un client *Basic* fait tourner **tout** son trafic sur WhatsApp, le coût Meta absorbe ~**30 %**
-de l'abonnement ; sur un *Pro* à plein régime, plus de **60 %**. Trois façons de s'en sortir :
+À **800 conversations WhatsApp/mois**, le coût du canal absorbe déjà **47,5 %** du pack Basic
+et **17 %** du pack Pro ; à **2 500 conversations**, il dépasse le prix du pack Basic
+(**167 %**). Trois façons de s'en sortir :
 
 1. **Pass-through** : le client paie Meta au message (comme un crédit prépayé), vous prenez une
    marge dessus. Le plus sain économiquement.
@@ -197,8 +202,9 @@ Meta vend son **propre agent IA** intégré : depuis le **1er août 2026** il es
 par million de jetons** (≈ **4–5 cents par message**, soit ~5,50–6,75 DA — **10× votre tarif
 algérien**). Meta ne facture jamais deux fois le même message : une réponse du Business Agent est
 facturée au jeton, une réponse de **votre** IA est facturée comme message de service.
-**Conclusion : votre bot maison est beaucoup moins cher en Algérie.** Le vrai coût, c'est les
-frais Meta par message de service (0,54 DA), pas le modèle Gemini.
+**Conclusion : votre bot maison est beaucoup moins cher en Algérie.** Une réponse du bot
+coûte 0,81 DA (Meta 0,62 DA + IA 0,19 DA), contre ~5,4 à 6,8 DA pour l'agent de Meta, soit
+**~7× moins cher**. Le vrai coût, c'est le tarif Meta par message, pas le modèle Gemini.
 
 ### 3.5 Si vous ne voulez pas du statut Tech Provider
 
@@ -206,7 +212,7 @@ Il est possible de passer par un **BSP** (Twilio, 360dialog, Infobip…). C'est 
 brancher, mais :
 
 - Twilio : **+0,005 $ par message** (entrant comme sortant) → le message de service Algérie passe
-  de 0,0040 $ à **0,0090 $ ≈ 1,22 DA**, soit **×2,25** ;
+  de 0,0046 $ à **0,0096 $ ≈ 1,30 DA**, soit **×2,1** ;
 - 360dialog : ~49 $/mois de base + 0,005 $/message ;
 - Vous restez **dépendant d'un tiers** pour l'onboarding de vos clients.
 
@@ -221,7 +227,7 @@ si c'est un test, un BSP peut servir de sonde pendant quelques semaines.
 |---|---|---|
 | Messenger (service client, commentaires) | personne | **0 $** |
 | Telegram | personne | **0 $** |
-| WhatsApp — frais Meta | le client (recommandé) | Algérie : **0,0040 $/réponse** (~0,54 DA) au-delà de **1 000/numéro/mois** ; marketing **0,0225 $** (~3,04 DA) |
+| WhatsApp — frais Meta | le client (recommandé) | Algérie : **0,62 DA/réponse** au-delà de **1 000/numéro/mois** ; marketing **3,50 DA** (sans franchise) |
 | TikTok | personne (côté messages) | **0 $** + candidature |
 | Accès API (Cloud API, Embedded Signup, App Review, vérification d'entreprise) | vous | **0 $** — c'est du temps et de la conformité, pas de l'argent |
 | Domaine, hébergement site + API | vous | Cloudflare Pages/Workers : offre gratuite largement suffisante (100 000 requêtes/jour) ; **5 $/mois** si dépassement |
@@ -262,7 +268,7 @@ réseaux sociaux en général.
   15/10/2026**, prérequis Tech Provider / Solution Partner) : https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation/
 - Meta — *Onboarding WhatsApp Business app users* (prérequis Solution Partner / Tech Provider,
   mode Coexistence) : https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users/
-- Tarifs par pays (barème du 01/10/2026, Algérie 0,0225 $ / 0,0040 $ / 0,0040 $) : relevés BSP
+- Tarifs par pays (barème du 01/10/2026 ; **Algérie = « Rest of Africa »**, 0,0259 $ / 0,0046 $ / 0,0046 $) : relevés BSP
   et agrégateurs — Whautomate (https://whautomate.com/whatsapp-business-api-pricing),
   Gallabox (https://docs.gallabox.com/pricing-and-billing/whatsapp-pricing/rate-card),
   ManyChat (https://help.manychat.com/hc/en-us/articles/14281380243740-WhatsApp-pricing-guide).
