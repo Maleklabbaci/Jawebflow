@@ -17,11 +17,63 @@
   var theme = (scriptEl && scriptEl.getAttribute('data-theme')) || 'dark';
   var shape = (scriptEl && scriptEl.getAttribute('data-shape')) || 'circle';
   var icon = (scriptEl && scriptEl.getAttribute('data-icon')) || 'sparkles';
-  var teaserText = (scriptEl && scriptEl.getAttribute('data-teaser')) || 'Une question ? Discutons en direct \uD83D\uDC4B';
+  // Teaser : attribut ABSENT -> phrase par défaut ; attribut VIDE -> éteint.
+  // (Avant, « teaser désactivé » remettait la phrase par défaut : le marchand
+  // ne pouvait pas l'éteindre.)
+  var teaserAttr = scriptEl ? scriptEl.getAttribute('data-teaser') : null;
+  var teaserText = teaserAttr === null ? 'Une question ? Discutons en direct \uD83D\uDC4B' : teaserAttr;
   var welcomeMessage = (scriptEl && scriptEl.getAttribute('data-welcome')) || ("Bonjour ! \uD83D\uDC4B Comment puis-je vous aider aujourd'hui ?");
   var whatsappNumber = (scriptEl && scriptEl.getAttribute('data-whatsapp')) || '';
   var avatarUrl = (scriptEl && scriptEl.getAttribute('data-avatar-url')) || '';
-  var brandingEnabled = true;
+  var brandingEnabled = (scriptEl && scriptEl.getAttribute('data-branding')) !== 'false';
+  if (widgetMode === 'voice' && teaserAttr === null) teaserText = callCtaText;
+  var size = (scriptEl && scriptEl.getAttribute('data-size')) || 'standard';
+  var headerTitle = (scriptEl && scriptEl.getAttribute('data-header-title')) || '';
+  var headerSubtitle = (scriptEl && scriptEl.getAttribute('data-header-subtitle')) || '';
+  var onlineBadge = (scriptEl && scriptEl.getAttribute('data-badge')) !== 'false';
+
+  // Taille de la bulle et arrondi : une seule source de vérité, utilisée pour
+  // le style de départ ET pour la mise à jour quand la config arrive du serveur.
+  function bubbleDims(value) {
+    if (value === 'compact') return { size: 48, icon: 22 };
+    if (value === 'large') return { size: 64, icon: 30 };
+    return { size: 56, icon: 26 };
+  }
+  function shapeRadius(value) {
+    if (value === 'squircle') return '16px';
+    if (value === 'compact') return '12px';
+    return '50%';
+  }
+
+  // ── Appel vocal (agent voix) : le marchand l'allume depuis son tableau de
+  // bord, ou avec data-voice="on" pour un test rapide.
+  var voiceEnabled = ((scriptEl && scriptEl.getAttribute('data-voice')) || '').toLowerCase() === 'on';
+  var voiceGreeting = (scriptEl && scriptEl.getAttribute('data-voice-greeting')) || '';
+  var voiceMaxMinutes = 5;
+
+  // ── 🎯 MODE & ACCROCHE (décision du 14/10/2026) : le marchand décide de tout.
+  // 'both' = écrit + appels · 'voice' = LE BOT QUI APPELLE seulement (pas de
+  // chat) · 'chat' = écrit seulement (le micro disparaît même si la voix est
+  // allumée). pulse / teaser-delay / auto-open / proactive servent à attirer
+  // l'attention du visiteur pour qu'il engage la conversation.
+  var widgetMode = ((scriptEl && scriptEl.getAttribute('data-mode')) || 'both').toLowerCase();
+  if (widgetMode !== 'voice' && widgetMode !== 'chat') widgetMode = 'both';
+  var pulse = ((scriptEl && scriptEl.getAttribute('data-pulse')) || 'on').toLowerCase() !== 'off';
+  var teaserDelaySeconds = Number(scriptEl && scriptEl.getAttribute('data-teaser-delay')) || 0;
+  var autoOpenSeconds = Number(scriptEl && scriptEl.getAttribute('data-auto-open')) || 0;
+  var proactiveText = (scriptEl && scriptEl.getAttribute('data-proactive')) || '';
+  var callCtaText = (scriptEl && scriptEl.getAttribute('data-call-cta')) || 'Appelez-moi';
+  var customCss = '';
+  var teaserVisible = teaserDelaySeconds <= 0;
+  var attentionArmed = false;
+  var callActive = false;      // un appel est en cours (ou en train de s'ouvrir)
+  var callSession = null;      // le moteur d'appel, une fois chargé
+  var callState = '';          // connecting | listening | speaking | error
+  var callLines = [];          // ce qui se dit, en direct
+  var callSeconds = 0;
+  var callMuted = false;
+  var callError = '';
+  var callTimerId = null;
 
   var namedColors = {
     violet: '#8b5cf6', cyan: '#06b6d4', orange: '#f97316', mono: '#334155',
@@ -61,6 +113,12 @@
     if (name === 'bot' || name === 'robot' || name === 'ai') {
       return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>';
     }
+    if (name === 'mic' || name === 'micro') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+    }
+    if (name === 'hangup') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67"/><path d="M5 10v2a7 7 0 0 0 12 5"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
+    }
     if (name === 'arrowdown') {
       return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="m6 9 6 6 6-6"/></svg>';
     }
@@ -87,12 +145,12 @@
   var styleEl = document.createElement('style');
   styleEl.id = 'jawebflow-widget-styles';
   styleEl.textContent =
-    ':host{--primary:' + primaryColor + ';--secondary:' + secondaryColor + ';--radius-shape:' + (shape === 'squircle' ? '16px' : '50%') + ';--window-radius:20px;--font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
+    ':host{--primary:' + primaryColor + ';--secondary:' + secondaryColor + ';--radius-shape:' + shapeRadius(shape) + ';--bubble-size:' + bubbleDims(size).size + 'px;--bubble-icon:' + bubbleDims(size).icon + 'px;--window-radius:20px;--font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
     '#jw-widget-wrapper{position:fixed;bottom:24px;' + (isLeft ? 'left:24px;' : 'right:24px;') + 'z-index:2147483647;font-family:var(--font-family);display:flex;flex-direction:column;align-items:' + (isLeft ? 'flex-start' : 'flex-end') + ';pointer-events:none;}' +
     '#jw-widget-wrapper *{box-sizing:border-box;pointer-events:auto;}' +
-    '.jw-bubble-btn{width:60px;height:60px;border-radius:var(--radius-shape);background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 8px 24px -4px var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;border:none;outline:none;transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s;padding:0;overflow:hidden;}' +
+    '.jw-bubble-btn{width:var(--bubble-size);height:var(--bubble-size);border-radius:var(--radius-shape);background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 8px 24px -4px var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;border:none;outline:none;transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s;padding:0;overflow:hidden;}' +
     '.jw-bubble-btn:hover{transform:scale(1.06);}' +
-    '.jw-bubble-btn svg{width:26px;height:26px;}' +
+    '.jw-bubble-btn svg{width:var(--bubble-icon);height:var(--bubble-icon);}' +
     '.jw-teaser{margin-bottom:12px;padding:10px 16px;border-radius:16px;font-size:13px;font-weight:500;background:' + (isDark ? '#111524' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#1e293b') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';box-shadow:0 8px 24px -4px rgba(0,0,0,.15);cursor:pointer;display:flex;align-items:center;gap:10px;max-width:320px;}' +
     '.jw-teaser-close{opacity:.5;font-size:11px;padding:2px 4px;cursor:pointer;margin-left:auto;}' +
     '.jw-chat-window{width:380px;max-width:calc(100vw - 48px);height:540px;max-height:80vh;border-radius:var(--window-radius);overflow:hidden;display:flex;flex-direction:column;margin-bottom:16px;box-shadow:0 16px 40px -10px rgba(0,0,0,' + (isDark ? '.6' : '.18') + ');background:' + (isDark ? '#0c0f1d' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#0f172a') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';}' +
@@ -125,7 +183,33 @@
     '.jw-feedback{display:flex;gap:2px;align-self:flex-start;margin:-8px 0 0 4px;}' +
     '.jw-feedback button{background:none;border:none;cursor:pointer;font-size:11px;opacity:.4;padding:1px 3px;transition:opacity .15s,transform .15s;}' +
     '.jw-feedback button:hover{opacity:1;}' +
-    '.jw-feedback button.jw-fb-on{opacity:1;transform:scale(1.2);}';
+    '.jw-feedback button.jw-fb-on{opacity:1;transform:scale(1.2);}' +
+    '.jw-header-mic{background:rgba(255,255,255,.15);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;margin-right:8px;}' +
+    '.jw-header-mic svg{width:14px;height:14px;stroke-width:2.5;}' +
+    '.jw-call{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:22px 18px;overflow-y:auto;}' +
+    '.jw-call-avatar{width:88px;height:88px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;overflow:hidden;}' +
+    '.jw-call-avatar svg{width:38px;height:38px;}' +
+    '.jw-call-avatar img{width:100%;height:100%;object-fit:cover;}' +
+    '.jw-call-live .jw-call-avatar{animation:jwPulse 1.8s infinite;}' +
+    '@keyframes jwPulse{0%{box-shadow:0 0 0 0 rgba(139,92,246,.45);}70%{box-shadow:0 0 0 26px rgba(139,92,246,0);}100%{box-shadow:0 0 0 0 rgba(139,92,246,0);}}' +
+    '.jw-call-title{font-size:15px;font-weight:700;}' +
+    '.jw-call-status{font-size:12.5px;opacity:.75;}' +
+    '.jw-call-timer{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;}' +
+    '.jw-call-lines{width:100%;max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:4px;text-align:left;}' +
+    '.jw-call-line{font-size:12px;line-height:1.45;padding:7px 10px;border-radius:12px;background:rgba(127,127,127,.12);}' +
+    '.jw-call-actions{display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap;}' +
+    '.jw-call-btn{border:none;cursor:pointer;border-radius:999px;padding:11px 18px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;font-family:inherit;}' +
+    '.jw-call-btn svg{width:16px;height:16px;}' +
+    '.jw-call-mute{background:rgba(127,127,127,.18);color:inherit;}' +
+    '.jw-call-hang{background:#e11d48;color:#fff;}' +
+    '.jw-call-error{font-size:12.5px;line-height:1.5;color:#e11d48;max-width:280px;}' +
+    '.jw-call-start{background:#10b981;color:#fff;font-size:15px;padding:14px 28px;}' +
+    '.jw-bubble-pulse::before{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--primary);opacity:.5;animation:jwBubblePulse 2.4s infinite;z-index:-1;}' +
+    '.jw-bubble-btn{position:relative;}' +
+    '@keyframes jwBubblePulse{0%{transform:scale(1);opacity:.45;}70%{transform:scale(1.6);opacity:0;}100%{transform:scale(1.6);opacity:0;}}' +
+    '.jw-cta{margin:10px 12px 0;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:13.5px;color:#fff;background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 6px 18px -6px var(--primary);}' +
+    '.jw-cta svg{width:16px;height:16px;}' +
+    '.jw-cta:hover{transform:translateY(-1px);}';
   shadow.appendChild(styleEl);
 
   // --- Suivi prospect (Supabase via /api/track, best-effort, ne bloque jamais l'IA) ---
@@ -203,11 +287,253 @@
       });
   }
 
+  // ── APPEL VOCAL (agent voix) ─────────────────────────────────────────────
+  // Le visiteur appuie sur le micro : le serveur autorise l'appel (forfait,
+  // quota, plafond de coût) puis rend un jeton éphémère. Le moteur
+  // /cdn/voice.js ouvre alors le direct avec Gemini Live. L'audio passe par le
+  // navigateur du visiteur, JAMAIS par nos serveurs : seuls la durée et les
+  // tokens consommés remontent, pour que le forfait du marchand reste juste.
+  var VOICE_FALLBACK_ERROR = "L'appel vocal n'est pas disponible. Ecrivez-nous dans le chat.";
+
+  function formatTimer(total) {
+    var s = Math.max(0, Math.floor(total || 0));
+    var m = Math.floor(s / 60), r = s % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+  }
+
+  function addCallLine(speaker, text) {
+    if (!text) return;
+    var last = callLines[callLines.length - 1];
+    // La transcription arrive par morceaux : on complete la derniere ligne de
+    // la meme personne au lieu d'empiler des bouts de phrase.
+    if (last && last.speaker === speaker) last.text = text;
+    else callLines.push({ speaker: speaker, text: text });
+  }
+
+  function reportCall(info) {
+    try {
+      fetch((apiOrigin || '') + '/api/voice/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: assistantId,
+          sessionId: visitorId,
+          seconds: (info && info.seconds) || 0,
+          tokensIn: (info && info.tokensIn) || 0,
+          tokensOut: (info && info.tokensOut) || 0,
+          transcript: (info && info.transcript) || ''
+        }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) { /* silencieux : un releve rate ne casse pas l'appel */ }
+  }
+
+  function hangUp() {
+    if (callSession && callSession.stop) callSession.stop('client');
+    else { callActive = false; callState = ''; callError = ''; render(); }
+  }
+
+  function startVoice() {
+    if (callActive) return;
+    callActive = true; callState = 'connecting'; callError = '';
+    callLines = []; callSeconds = 0; callMuted = false; callSession = null;
+    render();
+
+    fetch((apiOrigin || '') + '/api/voice/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assistantId: assistantId, origin: window.location.origin, sessionId: visitorId })
+    })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (data) {
+        if (!data || !data.ok || !data.wsUrl) {
+          callState = 'error';
+          callError = (data && (data.error || data.message)) || VOICE_FALLBACK_ERROR;
+          render();
+          return null;
+        }
+        return import((apiOrigin || '') + '/cdn/voice.js').then(function (mod) {
+          callSession = mod.createVoiceCall({
+            wsUrl: data.wsUrl,
+            setup: data.setup,
+            greeting: data.greeting || voiceGreeting,
+            maxSeconds: data.maxSeconds || (voiceMaxMinutes * 60) || 300,
+            onState: function (state) { callState = state; render(); },
+            onTranscript: function (t) { addCallLine(t.speaker, t.text); render(); },
+            onError: function (e) { callError = (e && e.message) || VOICE_FALLBACK_ERROR; callState = 'error'; render(); },
+            onEnd: function (info) {
+              callActive = false; callState = ''; callSession = null;
+              if (callTimerId) { clearInterval(callTimerId); callTimerId = null; }
+              reportCall(info);
+              render();
+            }
+          });
+          callSession.start();
+          if (callTimerId) clearInterval(callTimerId);
+          callTimerId = setInterval(function () {
+            callSeconds = callSession && callSession.getSeconds ? callSession.getSeconds() : callSeconds + 1;
+            var timerEl = shadow.querySelector('.jw-call-timer');
+            if (timerEl) timerEl.textContent = formatTimer(callSeconds);
+          }, 1000);
+          return null;
+        });
+      })
+      .catch(function () {
+        callState = 'error';
+        callError = VOICE_FALLBACK_ERROR;
+        render();
+      });
+  }
+
+  function buildCallPanel() {
+    var overlay = document.createElement('div');
+    overlay.className = 'jw-call';
+    overlay.setAttribute('data-jw-call', '1');
+    overlay.style.cssText = 'position:absolute;inset:0;z-index:9;background:' + (isDark ? '#0c0f1d' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#0f172a') + ';';
+
+    var avatar = document.createElement('div');
+    avatar.className = 'jw-call-avatar' + (callState === 'listening' || callState === 'speaking' ? ' jw-call-live' : '');
+    if (avatarUrl) avatar.innerHTML = '<img src="' + avatarUrl + '" alt="" referrerpolicy="no-referrer">';
+    else avatar.innerHTML = icon24('mic', 38);
+    overlay.appendChild(avatar);
+
+    var title = document.createElement('div');
+    title.className = 'jw-call-title';
+    title.textContent = businessName;
+    overlay.appendChild(title);
+
+    if (callState === 'error') {
+      var err = document.createElement('div');
+      err.className = 'jw-call-error';
+      err.textContent = callError || VOICE_FALLBACK_ERROR;
+      overlay.appendChild(err);
+    } else {
+      var status = document.createElement('div');
+      status.className = 'jw-call-status';
+      status.textContent = !callActive ? 'Appuyez : l\u2019assistant decroche tout de suite.'
+        : callState === 'connecting' ? 'Connexion a l\u2019appel...'
+        : callState === 'speaking' ? 'Il vous repond...'
+        : callState === 'listening' ? 'Je vous ecoute : parlez normalement.'
+        : 'Appel en cours';
+      overlay.appendChild(status);
+
+      if (callActive) {
+        var timer = document.createElement('div');
+        timer.className = 'jw-call-timer';
+        timer.textContent = formatTimer(callSeconds);
+        overlay.appendChild(timer);
+      }
+    }
+
+    if (callLines.length) {
+      var lines = document.createElement('div');
+      lines.className = 'jw-call-lines';
+      callLines.slice(-6).forEach(function (line) {
+        var el = document.createElement('div');
+        el.className = 'jw-call-line';
+        el.textContent = (line.speaker === 'user' ? 'Vous : ' : businessName + ' : ') + line.text;
+        lines.appendChild(el);
+      });
+      overlay.appendChild(lines);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'jw-call-actions';
+    if (!callActive && callState !== 'error') {
+      // Avant l'appel : un seul bouton, gros et évident.
+      var pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'jw-call-btn jw-call-start';
+      pick.innerHTML = icon24('mic', 16) + '<span>' + callCtaText + '</span>';
+      pick.onclick = function () { startVoice(); };
+      actions.appendChild(pick);
+
+      if (widgetMode !== 'voice') {
+        var writeInstead = document.createElement('button');
+        writeInstead.type = 'button';
+        writeInstead.className = 'jw-call-btn jw-call-mute';
+        writeInstead.textContent = 'Ecrire a la place';
+        writeInstead.onclick = function () { isOpen = false; render(); };
+        actions.appendChild(writeInstead);
+      }
+    } else if (callState === 'error') {
+      var retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'jw-call-btn jw-call-hang';
+      retry.innerHTML = icon24('mic', 16) + '<span>Reessayer</span>';
+      retry.onclick = function () { callState = ''; callActive = false; callError = ''; startVoice(); };
+      actions.appendChild(retry);
+
+      var write = document.createElement('button');
+      write.type = 'button';
+      write.className = 'jw-call-btn jw-call-mute';
+      write.textContent = 'Ecrire a la place';
+      write.onclick = function () { callState = ''; callError = ''; callActive = false; render(); };
+      actions.appendChild(write);
+    } else {
+      var mute = document.createElement('button');
+      mute.type = 'button';
+      mute.className = 'jw-call-btn jw-call-mute';
+      mute.textContent = callMuted ? 'Reactiver le micro' : 'Couper le micro';
+      mute.onclick = function () {
+        if (callSession && callSession.setMuted) { callMuted = callSession.setMuted(!callMuted); render(); }
+      };
+      actions.appendChild(mute);
+
+      var hang = document.createElement('button');
+      hang.type = 'button';
+      hang.className = 'jw-call-btn jw-call-hang';
+      hang.innerHTML = icon24('hangup', 16) + '<span>Raccrocher</span>';
+      hang.onclick = hangUp;
+      actions.appendChild(hang);
+    }
+    overlay.appendChild(actions);
+    return overlay;
+  }
+
   // --- Rendu ---
+  /** Le CSS du marchand : injecté dans le shadow DOM, donc scoped au widget. */
+  function applyCustomCss() {
+    if (!customCss) return;
+    var el = shadow.querySelector('#jawebflow-custom-css');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'jawebflow-custom-css';
+      shadow.appendChild(el);
+    }
+    el.textContent = String(customCss).slice(0, 4000);
+  }
+
+  /**
+   * Attire l'attention : accroche retardée puis ouverture automatique, avec le
+   * message du bot s'il en a écrit un. Un seul armement (le marchand peut
+   * recharger sa config, on ne double pas les minuteurs).
+   */
+  function armAttentionTimers() {
+    if (attentionArmed) return;
+    attentionArmed = true;
+    if (teaserDelaySeconds > 0) {
+      setTimeout(function () {
+        if (isOpen) return;
+        teaserVisible = true;
+        render();
+      }, Math.min(120, teaserDelaySeconds) * 1000);
+    }
+    if (autoOpenSeconds > 0 && widgetMode !== 'voice') {
+      setTimeout(function () {
+        if (isOpen || callActive) return;
+        isOpen = true;
+        if (proactiveText) messages.push({ sender: 'bot', text: proactiveText });
+        trackProspect('opened_bubble');
+        render();
+      }, Math.min(120, autoOpenSeconds) * 1000);
+    }
+  }
+
   function render() {
     wrapper.innerHTML = '';
 
-    if (!isOpen && teaserText) {
+    if (!isOpen && teaserText && teaserVisible) {
       var teaser = document.createElement('div');
       teaser.className = 'jw-teaser';
       var teaserSpan = document.createElement('span');
@@ -218,7 +544,14 @@
       teaserClose.textContent = '\u2715';
       teaserClose.onclick = function (ev) { ev.stopPropagation(); teaserText = ''; render(); };
       teaser.appendChild(teaserClose);
-      teaser.onclick = function (ev) { if (ev.target !== teaserClose) { isOpen = true; trackProspect('opened_bubble'); render(); } };
+      teaser.onclick = function (ev) {
+        if (ev.target === teaserClose) return;
+        isOpen = true;
+        trackProspect('opened_bubble');
+        render();
+        // Mode « le bot qui appelle » : l'accroche lance l'appel directement.
+        if (widgetMode === 'voice' && !callActive) startVoice();
+      };
       wrapper.appendChild(teaser);
     }
 
@@ -244,18 +577,29 @@
       var title = document.createElement('div');
       title.className = 'jw-header-title';
       var titleText = document.createElement('span');
-      titleText.textContent = businessName;
+      titleText.textContent = headerTitle || businessName;
       title.appendChild(titleText);
-      var dot = document.createElement('span');
-      dot.className = 'jw-header-status-dot';
-      title.appendChild(dot);
+      if (onlineBadge) {
+        var dot = document.createElement('span');
+        dot.className = 'jw-header-status-dot';
+        title.appendChild(dot);
+      }
       meta.appendChild(title);
       var subtitle = document.createElement('div');
       subtitle.className = 'jw-header-subtitle';
-      subtitle.textContent = 'En ligne \u00b7 Reponse IA immediate';
+      subtitle.textContent = headerSubtitle || 'En ligne \u00b7 R\u00e9ponse IA imm\u00e9diate';
       meta.appendChild(subtitle);
       headerInfo.appendChild(meta);
       header.appendChild(headerInfo);
+      if (voiceEnabled && widgetMode !== 'chat') {
+        var micBtn = document.createElement('button');
+        micBtn.type = 'button';
+        micBtn.className = 'jw-header-mic';
+        micBtn.setAttribute('aria-label', 'Appeler : parler a voix haute');
+        micBtn.innerHTML = icon24('mic', 14);
+        micBtn.onclick = function () { if (!callActive) startVoice(); };
+        header.appendChild(micBtn);
+      }
       var closeBtn = document.createElement('button');
       closeBtn.className = 'jw-header-close';
       closeBtn.innerHTML = icon24('close', 14);
@@ -317,6 +661,15 @@
         body.appendChild(wa);
       }
 
+      if (voiceEnabled && widgetMode !== 'chat' && !callActive) {
+        var cta = document.createElement('button');
+        cta.type = 'button';
+        cta.className = 'jw-cta';
+        cta.innerHTML = icon24('mic', 16) + '<span>' + callCtaText + '</span>';
+        cta.onclick = function () { startVoice(); };
+        win.appendChild(cta);
+      }
+
       var form = document.createElement('form');
       form.className = 'jw-input-bar';
       var inputWrap = document.createElement('div');
@@ -374,13 +727,18 @@
         win.appendChild(branding);
       }
 
+      if (callActive || callState === 'error' || (widgetMode === 'voice' && isOpen)) {
+        win.style.position = 'relative';
+        win.appendChild(buildCallPanel());
+      }
+
       wrapper.appendChild(win);
       setTimeout(function () { body.scrollTop = body.scrollHeight; }, 15);
     }
 
     var bubble = document.createElement('button');
-    bubble.className = 'jw-bubble-btn';
-    bubble.setAttribute('aria-label', 'Ouvrir le chat');
+    bubble.className = 'jw-bubble-btn' + (pulse && !isOpen ? ' jw-bubble-pulse' : '');
+    bubble.setAttribute('aria-label', widgetMode === 'voice' ? 'Appeler' : 'Ouvrir le chat');
     if (isOpen) {
       bubble.innerHTML = icon24('arrowdown', 24);
     } else if (avatarUrl) {
@@ -390,9 +748,20 @@
       bubbleImg.src = avatarUrl; bubbleImg.referrerPolicy = 'no-referrer';
       bubble.appendChild(bubbleImg);
     } else {
-      bubble.innerHTML = icon24(icon, 24);
+      bubble.innerHTML = icon24(widgetMode === 'voice' ? 'mic' : icon, 24);
     }
-    bubble.onclick = function () { isOpen = !isOpen; if (isOpen) trackProspect('opened_bubble'); render(); };
+    bubble.onclick = function () {
+      if (widgetMode === 'voice') {
+        isOpen = true;
+        trackProspect('opened_bubble');
+        render();
+        if (!callActive) startVoice();
+        return;
+      }
+      isOpen = !isOpen;
+      if (isOpen) trackProspect('opened_bubble');
+      render();
+    };
     wrapper.appendChild(bubble);
   }
 
@@ -412,17 +781,39 @@
       if (c.themeMode) { theme = c.themeMode; isDark = theme === 'dark'; }
       if (c.position) { position = c.position; isLeft = position === 'bottom-left'; }
       if (c.shape) shape = c.shape;
-      if (c.teaserText) teaserText = c.teaserText;
+      if (c.showTeaser === false) teaserText = '';
+      else if (c.teaserText) teaserText = c.teaserText;
       if (c.welcomeMessage) messages[0] = { sender: 'bot', text: c.welcomeMessage };
-      if (c.headerTitle) businessName = c.headerTitle;
-      if (c.icon) icon = c.icon;
+      if (c.headerTitle) headerTitle = c.headerTitle;
+      if (c.headerSubtitle) headerSubtitle = c.headerSubtitle;
+      if (typeof c.onlineBadge === 'boolean') onlineBadge = c.onlineBadge;
+      if (typeof c.showBranding === 'boolean') brandingEnabled = c.showBranding !== false;
+      if (c.size) size = c.size;
+      if (c.iconType) icon = c.iconType;
+      else if (c.icon) icon = c.icon;
+      if (c.mode) widgetMode = String(c.mode);
+      if (c.attention && typeof c.attention === 'object') {
+        if (typeof c.attention.pulse === 'boolean') pulse = c.attention.pulse;
+        if (c.attention.teaserDelaySeconds) teaserDelaySeconds = Number(c.attention.teaserDelaySeconds) || 0;
+        if (c.attention.autoOpenSeconds) autoOpenSeconds = Number(c.attention.autoOpenSeconds) || 0;
+        if (c.attention.proactiveText) proactiveText = String(c.attention.proactiveText);
+        if (c.attention.callCtaText) callCtaText = String(c.attention.callCtaText);
+      }
+      if (typeof c.customCss === 'string') { customCss = c.customCss; applyCustomCss(); }
+      if (c.voice && typeof c.voice === 'object') {
+        if (c.voice.enabled === true) voiceEnabled = true;
+        if (c.voice.greeting) voiceGreeting = String(c.voice.greeting);
+        if (c.voice.maxMinutes) voiceMaxMinutes = Number(c.voice.maxMinutes) || voiceMaxMinutes;
+      }
       var s = shadow.querySelector('#jawebflow-widget-styles') || styleEl;
       s.textContent = s.textContent
         .replace(/--primary:\s*[^;]+/g, '--primary: ' + primaryColor)
         .replace(/--secondary:\s*[^;]+/g, '--secondary: ' + secondaryColor)
-        .replace(/--radius-shape:\s*[^;]+/g, '--radius-shape: ' + (shape === 'squircle' ? '16px' : '50%'));
+        .replace(/--radius-shape:\s*[^;]+/g, '--radius-shape: ' + shapeRadius(shape))
+        .replace(/--bubble-size:\s*[^;]+/g, '--bubble-size: ' + bubbleDims(size).size + 'px')
+        .replace(/--bubble-icon:\s*[^;]+/g, '--bubble-icon: ' + bubbleDims(size).icon + 'px');
       render();
     })
     .catch(function (e) { console.warn('JawebFlow sync error:', e); })
-    .finally(function () { trackProspect('visited'); });
+    .finally(function () { armAttentionTimers(); trackProspect('visited'); });
 })();

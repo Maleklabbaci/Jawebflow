@@ -31,6 +31,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       priceDzdYearly: 0,
       badge: 'Gratuit',
       isPopular: false,
+      onRequest: false,
       features: [
         'Accès complet au tableau de bord et à la configuration',
         'Installation du widget sur votre site web',
@@ -44,15 +45,17 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       id: 'basic' as PaymentPlanId,
       name: 'Basic',
       subtitle: 'Pour installer votre premier assistant et ne plus perdre une demande.',
-      priceUsdMonthly: 29,
-      priceDzdMonthly: 6850,
-      priceUsdYearly: 23,
-      priceDzdYearly: 5480,
+      priceUsdMonthly: 10,
+      priceDzdMonthly: 2700,
+      // Annuel = 2 mois offerts : le client paie 10 mois, on en sert 12.
+      priceUsdYearly: 100,
+      priceDzdYearly: 27000,
+      onRequest: false,
       badge: 'Web & Messenger',
       isPopular: false,
       features: [
         'Widget web universel (Shopify, WordPress, Webflow, site sur mesure)',
-        'Jusqu’à 1 000 conversations par mois',
+        '500 conversations par mois (1 000 messages)',
         'Réponses automatiques sur Instagram, Messenger et TikTok (inclus)',
         'Base de connaissances : FAQ, catalogue, consignes',
         'Français, darija et anglais compris automatiquement',
@@ -65,15 +68,16 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       id: 'pro' as PaymentPlanId,
       name: 'Pro / Business',
       subtitle: 'Pour vendre plus, avec les clients intéressés livrés dans votre espace.',
-      priceUsdMonthly: 79,
-      priceDzdMonthly: 18700,
-      priceUsdYearly: 63,
-      priceDzdYearly: 14960,
+      priceUsdMonthly: 20,
+      priceDzdMonthly: 5400,
+      priceUsdYearly: 200,
+      priceDzdYearly: 54000,
+      onRequest: false,
       badge: 'Le plus choisi',
       isPopular: true,
       features: [
         'Widget web illimité pour tous vos sites',
-        'Jusqu’à 5 000 conversations par mois',
+        '1 500 conversations par mois (3 000 messages)',
         'Détection automatique des clients intéressés (nom, téléphone, ville)',
         'WhatsApp inclus : 1 000 réponses par mois (puis recharge à l’unité)',
         'Tous les autres canaux inclus : Instagram, Messenger, TikTok',
@@ -86,10 +90,12 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       id: 'enterprise' as PaymentPlanId,
       name: 'Enterprise',
       subtitle: 'Pour les réseaux, franchises et architectures sur mesure.',
-      priceUsdMonthly: 199,
-      priceDzdMonthly: 47100,
-      priceUsdYearly: 159,
-      priceDzdYearly: 37680,
+      // Enterprise : pas de prix public — « à la demande », devis selon le volume.
+      priceUsdMonthly: 0,
+      priceDzdMonthly: 0,
+      priceUsdYearly: 0,
+      priceDzdYearly: 0,
+      onRequest: true,
       badge: 'Sur-mesure & API',
       isPopular: false,
       features: [
@@ -121,7 +127,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
     },
     {
       q: 'Que signifie « conversations par mois » ?',
-      a: 'Une conversation correspond à un échange suivi avec un même visiteur. Les questions répétées d’un même client dans la même discussion ne comptent pas plusieurs fois.'
+      a: 'Une conversation = 1 message de votre client + la réponse de l’assistant (2 messages). Un appel compte 10 conversations par minute, et tout ce qui est utilisé — écrit comme appels — sort du même forfait du mois.'
     },
     {
       q: 'Sur quels canaux mon assistant répond-il ?',
@@ -160,7 +166,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
         </span>
         <h1 className="lux-h1">
           Un assistant qui travaille jour et nuit <br />
-          <span className="lux-accent">pour moins de 250 DA par jour.</span>
+          <span className="lux-accent">pour moins de 100 DA par jour.</span>
         </h1>
         <p className="lux-lead mx-auto max-w-2xl">
           Commencez gratuitement, puis payez seulement quand votre assistant vous rapporte
@@ -223,21 +229,36 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
                 </div>
 
                 <div className="space-y-1.5 border-b border-white/[0.07] pb-5">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[2rem] font-extrabold tracking-[-0.04em] text-white">
-                      {priceUsd} $
-                    </span>
-                    <span className="text-[0.72rem] font-light text-neutral-500">/ mois</span>
-                  </div>
+                  {plan.onRequest ? (
+                    <>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[1.6rem] font-extrabold tracking-[-0.04em] text-white">À la demande</span>
+                      </div>
+                      <div className="text-[0.76rem] font-light text-purple-200">
+                        Devis selon votre volume et vos canaux
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[2rem] font-extrabold tracking-[-0.04em] text-white">
+                          {priceUsd} $
+                        </span>
+                        <span className="text-[0.72rem] font-light text-neutral-500">{isYearly ? '/ an' : '/ mois'}</span>
+                      </div>
 
-                  <div className="text-[0.76rem] font-light text-purple-200">
-                    {priceDzd === 0 ? 'Gratuit — pour toujours' : `≈ ${priceDzd.toLocaleString('fr-FR')} DZD / mois`}
-                  </div>
+                      <div className="text-[0.76rem] font-light text-purple-200">
+                        {priceDzd === 0
+                          ? 'Gratuit — pour toujours'
+                          : `≈ ${priceDzd.toLocaleString('fr-FR')} DZD ${isYearly ? '/ an' : '/ mois'}`}
+                      </div>
 
-                  {isYearly && priceUsd > 0 && (
-                    <span className="block text-[0.7rem] font-light text-neutral-500">
-                      Facturé annuellement (-20% de remise)
-                    </span>
+                      {isYearly && priceUsd > 0 && (
+                        <span className="block text-[0.7rem] font-light text-neutral-500">
+                          2 mois offerts — 10 mois payés ({(priceUsd / 12).toFixed(2).replace('.', ',')} $/mois)
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
 

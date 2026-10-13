@@ -36,8 +36,8 @@ const QUICK_PROMPTS = [
 const DEFAULT_ANSWERS: Record<string, string> = {
   tarifs: `Voici nos formules, en dinars comme en dollars :
 • Découverte — 0 DA : configuration complète et installation du widget, pour tester sans risque.
-• Basic — 6 850 DA/mois (~29 $) : jusqu'à 1 000 conversations/mois, 1 site, import de vos documents.
-• Pro — 18 700 DA/mois (~79 $) : jusqu'à 5 000 conversations/mois, plusieurs sites, clients intéressés (nom, téléphone, ville) détectés automatiquement.
+• Basic — 2 700 DA/mois (~10 $) : 500 conversations/mois (1 000 messages ou 50 min d'appels), 1 site, import de vos documents.
+• Pro — 5 400 DA/mois (~20 $) : 1 500 conversations/mois (3 000 messages ou 150 min d'appels), plusieurs sites, WhatsApp inclus, clients intéressés (nom, téléphone, ville) détectés automatiquement.
 • Enterprise — sur mesure : volume élevé, intégrations dédiées et accompagnement.
 Sans engagement : vous changez de formule ou vous arrêtez quand vous voulez, et la facture d'entreprise conforme (NIF, NIS, RC) est disponible.`,
   installer: `L'installation prend moins de 5 minutes, sans développeur.

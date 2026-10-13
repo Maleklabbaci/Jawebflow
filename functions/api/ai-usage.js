@@ -11,7 +11,7 @@ const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/
 const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: cors });
 
 const PRICE_IN = 0.25, PRICE_OUT = 1.5; // $ / 1M tokens — flash-lite
-const CONV_DIVIDER = 8; // 1 conversation commerciale = 8 unités (photo=4, recherche=+2, msg=1)
+const CONV_DIVIDER = 1; // 1 conversation commerciale = 1 message du client + sa réponse (photo = 4, recherche = +2, politesse = 0)
 
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' } });

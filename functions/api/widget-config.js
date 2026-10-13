@@ -42,7 +42,8 @@ export async function onRequestGet(context) {
 
   const out = {
     businessName: config.businessName || '',
-    brandingEnabled: config.brandingEnabled !== false,
+    // Le marchand masque la marque depuis son personnalisateur (widgetConfig.showBranding).
+    brandingEnabled: config.brandingEnabled !== false && config?.widgetConfig?.showBranding !== false,
     whatsappEscalation: config.whatsappEscalation || '',
     widgetConfig: config.widgetConfig || {},
   };

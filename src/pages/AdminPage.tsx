@@ -34,6 +34,7 @@ import {
   Target,
   Gauge,
   CheckCircle2,
+  Globe,
 } from 'lucide-react';
 import {
   isUserAdmin,
@@ -43,9 +44,10 @@ import {
   deleteProspectRecord,
   supabase,
 } from '../lib/supabase';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 import { useAuth } from '../context/AuthContext';
 
-export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'plans' | 'leads' | 'invoices' | 'system';
+export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'sites' | 'plans' | 'leads' | 'invoices' | 'system';
 
 // ---------------------------------------------------------------------------
 // Quotas des plans (alignés sur la page Tarifs). Éditables dans l'onglet Plans
@@ -73,8 +75,8 @@ const PLAN_CHIPS: Record<string, string> = {
 };
 
 const PLAN_PRICES: Record<string, { dzd: number; usd: number }> = {
-  basic: { dzd: 6850, usd: 29 },
-  pro: { dzd: 18700, usd: 79 },
+  basic: { dzd: 2700, usd: 10 },
+  pro: { dzd: 5400, usd: 20 },
   enterprise: { dzd: 47100, usd: 199 },
 };
 
@@ -329,6 +331,12 @@ export function AdminPage() {
   const [prospectsList, setProspectsList] = useState<NormLead[]>([]);
   const [invoicesList, setInvoicesList] = useState<AdminInvoice[]>([]);
   const [usageByAssistant, setUsageByAssistant] = useState<Record<string, number>>({});
+  // 🌐 « Sites connectés » : quels sites chaque client a branchés, et avec quels
+  // réseaux. Chargé à la demande depuis /api/admin/sites (lecture serveur,
+  // réservée à l'admin) pour ne pas alourdir l'accueil de la console.
+  const [sitesOverview, setSitesOverview] = useState<any>(null);
+  const [loadingSites, setLoadingSites] = useState(false);
+  const [sitesQuery, setSitesQuery] = useState('');
   const [planLimits, setPlanLimits] = useState<Record<string, number | null>>({ ...DEFAULT_PLAN_LIMITS });
   const [limitsDraft, setLimitsDraft] = useState<Record<string, string>>({
     free: '0', basic: '1000', pro: '5000', enterprise: '',
@@ -361,7 +369,7 @@ export function AdminPage() {
   const [newInvEmail, setNewInvEmail] = useState('');
   const [newInvName, setNewInvName] = useState('');
   const [newInvPlan, setNewInvPlan] = useState<'basic' | 'pro' | 'enterprise'>('pro');
-  const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(18700);
+  const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(5400);
   const [newInvMethod, setNewInvMethod] = useState('baridimob_ccp');
   const [newInvStatus, setNewInvStatus] = useState('paid');
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
@@ -569,6 +577,46 @@ export function AdminPage() {
       setLoadingData(false);
     }
   };
+
+  // 🌐 Qui est branché sur quoi : un appel, une réponse prête à lire.
+  const loadSites = async () => {
+    setLoadingSites(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/admin/sites', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Lecture impossible');
+      setSitesOverview(data);
+    } catch (err: any) {
+      notify('Sites connectés : ' + (err?.message || 'lecture impossible'), 'error');
+    } finally {
+      setLoadingSites(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdminAuthenticated && activeTab === 'sites' && !sitesOverview && !loadingSites) loadSites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminAuthenticated, activeTab]);
+
+  /**
+   * Les clients qui ont quelque chose à montrer : au moins un site branché, ou
+   * une demande d'activation en attente. La recherche tape dans le client, le
+   * site et les domaines de la bulle.
+   */
+  const sitesQueryClean = sitesQuery.trim().toLowerCase();
+  const visibleSiteClients = ((sitesOverview?.clients || []) as any[])
+    .filter((c) => c.sitesCount > 0 || c.socialRequestedAt)
+    .filter((c) => {
+      if (!sitesQueryClean) return true;
+      const haystack = [
+        c.email, c.name, c.company, c.phone,
+        ...(c.sites || []).flatMap((site: any) => [site.websiteUrl, site.businessName, ...(site.allowedDomains || [])]),
+      ];
+      return haystack.filter(Boolean).some((v: any) => String(v).toLowerCase().includes(sitesQueryClean));
+    });
 
   const handleAdminPasswordUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1092,6 +1140,7 @@ export function AdminPage() {
       items: [
         { id: 'users', label: 'Clients', icon: Users, badge: `${managedUsers.length}` },
         { id: 'assistants', label: 'Tous les Assistants', icon: Bot, badge: `${assistantsList.length}` },
+        { id: 'sites', label: 'Sites connectés', icon: Globe, badge: sitesOverview ? `${sitesOverview.counts.sites}` : null },
         { id: 'plans', label: 'Plans & Quotas', icon: Gauge, badge: `${totalConversationsThisMonth}` },
         { id: 'leads', label: 'Registre Central Leads', icon: MessageSquare, badge: `${prospectsList.length}` },
         { id: 'invoices', label: 'Factures & Paiements', icon: Receipt, badge: `${invoicesList.length}` },
@@ -1103,9 +1152,16 @@ export function AdminPage() {
     },
   ];
 
-  // widget.js lit l'attribut data-assistant-id (PAS data-widget-id).
+  // widget.js lit l'attribut data-assistant-id (PAS data-widget-id) et reçoit
+  // ici les réglages du client (couleurs, taille, voix…).
   const widgetSnippet = (a: NormAssistant) =>
-    `<script src="${window.location.origin}/cdn/widget.js" data-assistant-id="${a.id}" async></script>`;
+    buildWidgetSnippet({
+      scriptUrl: `${window.location.origin}/widget.js`,
+      assistantId: a.id,
+      businessName: a.businessName,
+      config: a._cfg?.widgetConfig,
+      whatsappEscalation: a.whatsappEscalation,
+    });
 
   const StatCard = ({ icon: Icon, label, value, sub, color }: any) => (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
@@ -1608,7 +1664,7 @@ export function AdminPage() {
                       placeholder={p.id === 'enterprise' ? 'Illimité' : '0'}
                       className="w-full text-2xl font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:bg-white disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                     />
-                    <div className="text-xs text-slate-400 mt-2">{p.id === 'free' ? p.desc : `${p.desc} · ${p.id === 'basic' ? '6850 DA' : p.id === 'pro' ? '18 700 DA' : '47 100 DA'}`}</div>
+                    <div className="text-xs text-slate-400 mt-2">{p.id === 'free' ? p.desc : `${p.desc} · ${p.id === 'basic' ? '4 500 DA' : p.id === 'pro' ? '14 000 DA' : 'sur devis'}`}</div>
                   </div>
                 ))}
               </div>
@@ -1838,6 +1894,176 @@ export function AdminPage() {
           )}
 
           {/* ============================================ SYSTÈME */}
+          {activeTab === 'sites' && (
+            <div className="space-y-5" data-testid="admin-sites">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                    <Globe className="h-5 w-5 text-blue-600" />
+                    Sites connectés
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                    Quels sites chaque client a branchés, sur quel assistant, et avec quels réseaux.
+                    La bulle ne répond que sur les domaines listés ici — un domaine absent, et le
+                    widget se fait refuser.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={sitesQuery}
+                      onChange={(e) => setSitesQuery(e.target.value)}
+                      placeholder="Chercher un client, un domaine…"
+                      className="w-56 rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadSites}
+                    disabled={loadingSites}
+                    data-testid="sites-refresh"
+                    className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {loadingSites ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Actualiser
+                  </button>
+                </div>
+              </div>
+
+              {loadingSites && !sitesOverview && (
+                <div className="py-16 text-center text-slate-400">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </div>
+              )}
+
+              {sitesOverview && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <StatCard icon={Globe} label="Sites branchés" value={sitesOverview.counts.sites} sub={`${sitesOverview.counts.clients} comptes clients`} color="bg-blue-50 text-blue-600" />
+                    <StatCard icon={Zap} label="Réseaux branchés" value={sitesOverview.counts.channels} sub="Instagram, Messenger, WhatsApp…" color="bg-purple-50 text-purple-600" />
+                    <StatCard icon={Lock} label="Réseaux verrouillés" value={sitesOverview.counts.locked} sub="à ouvrir client par client" color="bg-amber-50 text-amber-600" />
+                    <StatCard icon={MessageSquare} label="Demandes en attente" value={sitesOverview.counts.requested} sub="« Demander l'activation »" color="bg-emerald-50 text-emerald-600" />
+                  </div>
+
+                  {!visibleSiteClients.length && (
+                    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-400 shadow-sm">
+                      {sitesQueryClean
+                        ? 'Aucun client ne correspond à cette recherche.'
+                        : 'Aucun site branché pour le moment. Dès qu’un client installe la bulle, il apparaît ici avec son adresse.'}
+                    </div>
+                  )}
+
+                  {visibleSiteClients.map((client: any) => (
+                    <div
+                      key={client.uid}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                      data-testid={`sites-client-${client.uid}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                        <div>
+                          <p className="flex items-center gap-2 font-semibold text-slate-900">
+                            <Building2 className="h-4 w-4 text-slate-400" />
+                            {client.company || client.name || client.email}
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+                            <Mail className="h-3 w-3" />
+                            {client.email}
+                            {client.phone ? <> · <Phone className="h-3 w-3" />{client.phone}</> : null}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-lg px-2 py-1 text-[11px] font-semibold ${PLAN_CHIPS[client.plan] || PLAN_CHIPS.free}`}>
+                            {PLAN_LABELS[client.plan] || client.plan}
+                          </span>
+                          <span className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${client.socialEnabled ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                            {client.socialEnabled ? '🔓 Réseaux ouverts' : '🔒 Réseaux verrouillés'}
+                          </span>
+                          {client.socialRequestedAt && (
+                            <span className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                              ⏳ Demande du {fmtDate(client.socialRequestedAt)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {client.sites.map((site: any) => (
+                        <div key={site.assistantId} className="space-y-2.5 border-b border-slate-100 px-5 py-4 last:border-b-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Globe className="h-4 w-4 shrink-0 text-slate-400" />
+                            {site.websiteUrl ? (
+                              <a
+                                href={site.websiteUrl.startsWith('http') ? site.websiteUrl : `https://${site.websiteUrl}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="break-all font-medium text-blue-600 hover:underline"
+                              >
+                                {site.websiteUrl}
+                              </a>
+                            ) : (
+                              <span className="text-sm font-medium text-amber-600">Adresse du site non renseignée</span>
+                            )}
+                            <span className="text-xs text-slate-400">· {site.businessName}</span>
+                            {site.voiceEnabled && (
+                              <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-600">🎙️ Appels vocaux</span>
+                            )}
+                            {site.widgetKeySet && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">🔑 Clé de widget</span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="font-semibold uppercase tracking-wider text-slate-400">Domaines de la bulle</span>
+                            {site.allowedDomains.length ? (
+                              site.allowedDomains.map((d: string) => (
+                                <span key={d} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{d}</span>
+                              ))
+                            ) : (
+                              <span className="rounded bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">
+                                aucun domaine déclaré : la bulle répond partout — pense à le lui faire préciser
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Réseaux</span>
+                            {site.channels.length ? (
+                              site.channels.map((ch: any) => (
+                                <span
+                                  key={`${ch.channel}-${ch.accountId}`}
+                                  title={[ch.displayName, ch.phoneNumber, ch.lastError].filter(Boolean).join(' · ') || ch.label}
+                                  className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${ch.connected ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}
+                                >
+                                  {ch.connected ? '✅' : '⚠️'} {ch.label}
+                                  {ch.displayName ? ` · ${ch.displayName}` : ''}
+                                  {ch.phoneNumber ? ` · ${ch.phoneNumber}` : ''}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[11px] text-slate-400">aucun réseau branché sur ce site</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {!client.sites.length && (
+                        <p className="px-5 py-4 text-sm text-slate-400">
+                          Aucun assistant créé pour ce client — il a seulement demandé l’activation du module.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+
+                  {sitesOverview.generatedAt && (
+                    <p className="text-center text-[11px] text-slate-400">
+                      Dernière lecture : {fmtDate(sitesOverview.generatedAt)} · depuis la console, tu peux ouvrir ou refermer le module dans l’onglet « Clients ».
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {activeTab === 'system' && (
             <div className="space-y-6 max-w-4xl">
               <div>
@@ -2072,8 +2298,8 @@ export function AdminPage() {
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Plan (verrou IA)</label>
                   <select value={local.plan} onChange={(e) => setLocal({ ...local, plan: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
                     <option value="free">Gratuit — IA bloquée</option>
-                    <option value="basic">Basic — 1 000 conv/mois</option>
-                    <option value="pro">Pro — 5 000 conv/mois</option>
+                    <option value="basic">Basic — 500 conv/mois</option>
+                    <option value="pro">Pro — 1 500 conv/mois</option>
                     <option value="enterprise">Enterprise — illimité</option>
                   </select>
                 </div>

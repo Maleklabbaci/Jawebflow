@@ -96,6 +96,26 @@ export interface WidgetCustomization {
     greeting: string;
     maxMinutes: number;
   };
+  /**
+   * 🎯 Mode du widget (décision du 14/10/2026) : 'both' = écrit + appels,
+   * 'voice' = **le bot qui appelle** seulement (aucun chat), 'chat' = écrit
+   * seulement (le micro disparaît même si la voix est allumée).
+   */
+  mode?: 'both' | 'voice' | 'chat';
+  /**
+   * Capter l'attention du visiteur : bulle qui pulse, accroche retardée,
+   * ouverture automatique du chat, message du bot qui parle le premier, et le
+   * libellé du bouton d'appel.
+   */
+  attention?: {
+    pulse: boolean;
+    teaserDelaySeconds: number;
+    autoOpenSeconds: number;
+    proactiveText: string;
+    callCtaText: string;
+  };
+  /** CSS libre du marchand — injecté dans le shadow DOM, donc sans risque. */
+  customCss?: string;
 }
 
 export interface AssistantConfig {

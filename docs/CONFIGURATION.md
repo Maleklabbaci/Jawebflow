@@ -140,14 +140,18 @@ le site du marchand. C'est le marchand qui l'allume : **Tableau de bord → Appa
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `GEMINI_LIVE_MODEL` | `gemini-2.0-flash-live-001` | modèle temps réel |
-| `GEMINI_LIVE_API_VERSION` | `v1alpha` | version d'API des jetons éphémères |
+| `GEMINI_LIVE_MODEL` | `gemini-3.8-live` | modèle temps réel (repli automatique sur `gemini-2.0-flash-live-001` si Google refuse) |
+| `GEMINI_LIVE_API_VERSION` | `v1beta` | version d'API des jetons éphémères (le repli repasse en `v1alpha` avec l'ancien modèle) |
 
 ⚠️ La clé doit avoir accès à l'**API Live** (Google AI Studio → projet → activer l'API Gemini
 Live). Sinon la réponse est claire : « L'appel vocal n'est pas encore activé », et rien n'est
-facturé. 💸 La voix consomme plus vite que le texte : le plafond mensuel de la formule
-(Basic 3 $ · Pro 9 $ · Enterprise 30 $) s'applique aux appels comme au chat. Tout le détail :
-`docs/AGENT_VOCAL.md`.
+facturé. 💸 La voix consomme plus vite que le texte : **la minute d'appel compte 10 conversations**
+(10 unités) dans le quota du marchand — Basic 50 min, Pro 150 min. C'est **le quota** qui arrête
+tout, pas un montant en dollars : Basic et Pro n'ont aucun plafond de coût, Enterprise garde un
+fusible de 30 $. Tout le détail : `docs/AGENT_VOCAL.md`.
+
+🎨 Les réglages d'apparence et de comportement du widget (couleurs, taille, textes, voix,
+règles) : `docs/WIDGET_PERSONNALISATION.md`.
 
 ## Étape 4 — Vérifier ce qui marche
 

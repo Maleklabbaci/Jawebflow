@@ -3,7 +3,7 @@
  * Trilingue : Derja Arabizi + Arabe (حروف عربية) + Français
  *
  * IMPORTANT : cet endpoint renvoie du JSON classique ({ text }), PAS du streaming SSE.
- * Les 3 appelants (public/cdn/widget.js, JawebChatWidget.tsx, FloatingLiveWidget.tsx)
+ * Les 3 appelants (public/widget.js, JawebChatWidget.tsx, FloatingLiveWidget.tsx)
  * font tous un `response.json()` — un ancien retour en `text/event-stream` faisait
  * échouer silencieusement le parsing à chaque appel, d'où le bot qui ne répondait
  * jamais via l'IA (message fixe de secours affiché à la place).
@@ -157,7 +157,7 @@ export async function onRequestPost(context) {
     }
 
     // 1.5 QUOTAS PAR PLAN — application réelle des forfaits de la page Tarifs :
-    //     Gratuit = 0 crédit IA, Basic = 1 000 conv/mois, Pro = 5 000, Enterprise ∞.
+    //     Gratuit = 0 crédit IA, Basic = 500 conv/mois, Pro = 1 500, Enterprise ∞.
     //     Une fois la limite atteinte, l'IA ne répond plus (blocage côté serveur,
     //     le widget désactive alors la saisie). Les assistants de démo publique
     //     (identifiants demo_*) restent illimités pour la vitrine du site.
@@ -403,8 +403,9 @@ export async function onRequestPost(context) {
       diagnostics.push('politesse en pleine conversation -> l’IA répond avec l’historique');
     }
 
-    // 🧮 POIDS DE QUOTA : message simple = 1 · photo = 4 · recherche produits = +2.
-    // 1 conversation = 8 unités (ex : une photo + 4 messages = 1 conversation).
+    // 🧮 POIDS DE QUOTA : 1 message du client = 1 conversation (1 unité,
+    // la réponse au client fait partie du même échange) · photo = 4 · recherche
+    // produits = +2 (ces deux-là déclenchent des appels Gemini supplémentaires).
     let shoppingRan = false;
     let quotaWeight = 1 + (image && image.data ? 3 : 0);
 

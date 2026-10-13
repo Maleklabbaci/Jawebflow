@@ -31,18 +31,45 @@ export const SCAN_LIMITS_PER_MONTH: Record<string, number> = {
   enterprise: 12,
 };
 
-// 💸 PLAFOND DE COÛT RÉEL (décision du propriétaire) : quand le coût Gemini
-// du mois — calculé sur les VRAIS tokens renvoyés par l'API (tokens × tarif
-// officiel), pas une estimation — atteint le plafond du plan, l'IA se met en
-// pause proprement (même UX que le quota conversations).
+// 💸 PLAFOND DE COÛT RÉEL — DÉCISION DU 13/10/2026 : plus de plafond en
+// dollars sur Basic et Pro. C'est le QUOTA DE CONVERSATIONS qui arrête tout
+// (Basic : 500 conversations = 50 minutes d'appel OU 1 000 messages ;
+// Pro : 1 500 conversations = 150 minutes OU 3 000 messages). Le client a
+// donc TOUT son forfait, et jamais une pause au milieu à cause d'un montant.
+// 0 = aucun plafond. Enterprise, qui n'a pas encore de quota chiffré (vendu
+// « sur devis »), garde un fusible en attendant sa limite négociée.
 export const COST_CAP_USD_PER_PLAN: Record<string, number> = {
-  free: 0,      // 0 crédit IA
-  basic: 3,     // 3 $ / mois max
-  pro: 9,       // 9 $ / mois max
-  enterprise: 30, // 30 $ / mois max
+  free: 0,        // bloqué par le quota à 0, pas par un montant
+  basic: 0,       // aucun plafond : le quota décide
+  pro: 0,         // aucun plafond : le quota décide
+  enterprise: 30, // fusible temporaire, en attendant un quota « sur devis »
 };
 export const GEMINI_PRICE_IN_PER_MTOK = 0.25;  // $ / million tokens entrée
 export const GEMINI_PRICE_OUT_PER_MTOK = 1.5;  // $ / million tokens sortie
+
+/** La voix (Gemini Live) se facture à l'AUDIO : 3 $/M entrée, 12 $/M sortie. */
+export const LIVE_PRICE_IN_PER_MTOK = 3;
+export const LIVE_PRICE_OUT_PER_MTOK = 12;
+
+/**
+ * Coût d'un relevé, au bon tarif selon le modèle. Un appel vocal coûte ~10× le
+ * tarif texte : sans cette distinction, le coût affiché au marchand (et le
+ * fusible Enterprise) passait à côté des appels.
+ */
+export function costUsdFromTokensForModel(
+  tokensIn: number,
+  tokensOut: number,
+  model?: string | null,
+): number {
+  const m = String(model || '').toLowerCase();
+  if (m.includes('live')) {
+    return (
+      (Number(tokensIn || 0) * LIVE_PRICE_IN_PER_MTOK + Number(tokensOut || 0) * LIVE_PRICE_OUT_PER_MTOK) /
+      1_000_000
+    );
+  }
+  return costUsdFromTokens(tokensIn, tokensOut);
+}
 
 export function costUsdFromTokens(tokensIn: number, tokensOut: number): number {
   return (Number(tokensIn || 0) * GEMINI_PRICE_IN_PER_MTOK + Number(tokensOut || 0) * GEMINI_PRICE_OUT_PER_MTOK) / 1_000_000;
@@ -54,10 +81,24 @@ export function costCapReachedMsg(plan: string, cost: number, cap: number) {
   return `Cet assistant a terminé son forfait pour ce mois-ci. 😊 Il reprend automatiquement le 1er du mois prochain — le propriétaire peut aussi l'activer davantage à tout moment depuis son tableau de bord JawebFlow.`;
 }
 
+/**
+ * 🧮 TAILLE D'UNE CONVERSATION (décision du 14/10/2026) : **1 message du client
+ * + sa réponse = 1 conversation** (2 messages). C'est la définition commerciale
+ * retenue : le client compte ses échanges, pas nos appels à Gemini.
+ *
+ * Conséquence sur les compteurs : un message du client = 1 unité = 1
+ * conversation (la réponse appartient au même échange).
+ *
+ * La voix garde son barème : 1 minute d'appel = 10 conversations = 10 unités.
+ * Les deux canaux pèsent alors le même ordre de grandeur en argent — 10
+ * conversations écrites coûtent 3,60 DA, la même minute d'appel 6,18 DA.
+ */
+export const UNITS_PER_CONVERSATION = 1;
+
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 0,        // Plan Gratuit = zéro crédit IA (page Tarifs)
-  basic: 1000,    // « Jusqu’à 1 000 conversations par mois »
-  pro: 5000,      // « Jusqu’à 5 000 conversations par mois »
+  basic: 500,     // « 500 conversations par mois » (1 000 messages)
+  pro: 1500,      // « 1 500 conversations par mois » (3 000 messages)
   enterprise: null, // illimité
 };
 
@@ -114,8 +155,9 @@ export function monthStartIso(): string {
 /** Nombre de conversations IA déjà consommées ce mois-ci par un assistant. */
 export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assistantId: string): Promise<number> {
   try {
-    // 🧮 COMPTEUR PONDÉRÉ : 1 conversation commerciale = 8 unités, avec
-    // poids par message (photo = 4, recherche produits = +2, message = 1).
+    // 🧮 COMPTEUR PONDÉRÉ : 1 conversation commerciale = UNITS_PER_CONVERSATION
+    // unité (1) = un message du client + sa réponse, avec des poids par message
+    // (photo = 4, recherche produits = +2, message = 1, politesse = 0).
     // Les unités du mois sont agrégées en base par la vue SQL
     // assistant_monthly_usage (voir supabase/migration_ai_usage.sql).
     const vRes = await supabaseRequest(
@@ -125,7 +167,7 @@ export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assist
     if (vRes.ok) {
       const vRows = (await vRes.json().catch(() => [])) as any[];
       const units = Number(vRows?.[0]?.units || 0);
-      return Math.ceil(units / 8);
+      return Math.ceil(units / UNITS_PER_CONVERSATION);
     }
     // Repli si la vue n'existe pas encore : ancien comptage (1 ligne = 1 unité).
     const res = await supabaseRequest(
@@ -136,9 +178,9 @@ export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assist
     if (!res.ok) return 0; // en cas de pépin on ne bloque PAS le client (fail-open)
     const range = res.headers.get('content-range') || '';
     const total = parseInt(range.split('/')[1] || '', 10);
-    if (!isNaN(total)) return Math.ceil(total / 8);
+    if (!isNaN(total)) return Math.ceil(total / UNITS_PER_CONVERSATION);
     const rows = (await res.json()) as any[];
-    return Math.ceil((Array.isArray(rows) ? rows.length : 0) / 8);
+    return Math.ceil((Array.isArray(rows) ? rows.length : 0) / UNITS_PER_CONVERSATION);
   } catch {
     return 0;
   }

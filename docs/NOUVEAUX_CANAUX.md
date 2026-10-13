@@ -1,5 +1,11 @@
 # Ajouter des canaux (réseaux sociaux) — ce qui est possible et ce que ça coûte
 
+> ⚠️ **Chiffres révisés le 14/10/2026** — Basic **10 $ (2 700 DA)** = **500 conversations**,
+> Pro **20 $ (5 400 DA)** = **1 500 conversations**, Enterprise sur devis, annuel = 2 mois offerts,
+> et **1 conversation = 1 message du client + sa réponse**. Le document à jour :
+> `docs/PLAN_OFFRE.md`. Les montants ci-dessous datent de l'ancien barème et servent
+> d'historique de calcul.
+
 > État au **7 octobre 2026** · Branche `arena/ec76ae56-jawebflow`
 > Les tarifs Meta ont changé le **1er octobre 2026** (voir §3) : les chiffres ci-dessous
 > sont ceux du barème en vigueur aujourd'hui, pas ceux des guides plus anciens.
@@ -181,7 +187,7 @@ marketing. (Détail complet : `docs/COUTS_WHATSAPP.md`.)
 | Gros client | 800 | 4 800 | 3 800 | **3 253 DA** (47,5 % du pack Basic) |
 | Très gros client | 2 500 | 15 000 | 14 000 | **11 484 DA** |
 
-**⚠️ Alerte marge :** vos plans actuels sont **Basic 6 850 DA** et **Pro 18 700 DA** par mois.
+**⚠️ Alerte marge :** vos plans actuels sont **Basic 4 500 DA (19 $)** et **Pro 14 000 DA (59 $)** par mois (Enterprise désormais sur devis).
 À **800 conversations WhatsApp/mois**, le coût du canal absorbe déjà **47,5 %** du pack Basic
 et **17 %** du pack Pro ; à **2 500 conversations**, il dépasse le prix du pack Basic
 (**167 %**). Trois façons de s'en sortir :

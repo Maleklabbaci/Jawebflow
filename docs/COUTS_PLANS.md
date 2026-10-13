@@ -29,13 +29,13 @@
 | Pack | Prix | Quota annoncé | Coût IA **pire cas** | Marge | Coût réel d'un client typique |
 |---|---|---|---|---|---|
 | **Découverte** | 0 DA | 0 conversation | 0 DA | — | 0 DA (IA coupée) |
-| **Basic** | 6 850 DA | 1 000 conv. | **405 DA** (5,9 %) | **94 %** | 74 à 372 DA (50–250 conv.) |
-| **Pro / Business** | 18 700 DA | 5 000 conv. | **1 215 DA** (6,5 %) | **93 %** | 74 à 372 DA |
+| **Basic** | 4 500 DA | 1 000 conv. | **405 DA** (9,0) | **91 %** | 74 à 372 DA (50–250 conv.) |
+| **Pro / Business** | 14 000 DA | 5 000 conv. | **1 215 DA** (8,7) | **91 %** | 74 à 372 DA |
 | **Enterprise** | 47 100 DA | illimité | **4 050 DA** (8,6 %) | **91 %** | 372 à 1 486 DA |
 
 **En clair : les packs sont très rentables.** Le coût IA d'une conversation complète
 (≈ 8 messages) est de **1,49 DA**. Un client Basic qui fait 250 conversations par mois
-te coûte **372 DA** sur un abonnement à 6 850 DA.
+te coûte **372 DA** sur un abonnement à 4 500 DA.
 
 ⚠️ Mais il y a un piège dans le code — voir §4 : **le plafond de coût coupe l'IA
 bien avant le quota vendu.**
@@ -56,8 +56,9 @@ Le quota n'est pas compté en messages mais en **unités pondérées**
 | Photo (vision) | **4** | Oui |
 | Recherche dans le catalogue | **+2** | Oui |
 
-Et : **1 conversation commerciale = 8 unités**. Donc « 1 000 conversations » = jusqu'à
-8 000 messages. Le calcul de coût ci-dessous suppose **8 messages IA par conversation**,
+Et : **1 conversation commerciale = 5 unités** (décision du 13/10/2026). Donc
+« 1 000 conversations » = jusqu'à **5 000 messages**. Le calcul ci-dessous suppose
+**5 messages IA par conversation**,
 ce qui est **prudent** (les politesses, elles, ne coûtent rien).
 
 ### 2.2 Le prompt, mesuré (pas estimé)
@@ -172,7 +173,7 @@ Trois réserves avant de bouger ces valeurs :
   soit tu baisses son quota annoncé.**
 - **Le plafond ne se relève pas « pour tous » sans risque** : c'est lui qui borne ton
   exposition. À 11 $ au lieu de 3 $, ton pire cas sur un client Basic passe de 405 DA à
-  1 485 DA. Tant que le client paie 6 850 DA, ça reste très rentable — mais ces deux
+  1 485 DA. Tant que le client paie 4 500 DA, ça reste très rentable — mais ces deux
   valeurs (plafond, prix) doivent bouger ensemble.
 - **Les prix annuels sont plus serrés** : Basic annuel 5 480 DA/mois, Pro 14 960 DA/mois,
   Enterprise 37 680 DA/mois (source : `PricingPage.tsx`). À plafonds relevés, ces
@@ -268,10 +269,95 @@ node scripts/couts-plans.mjs --marge-cible=70   # autre objectif de marge
 | Plafonds de coût | `functions/_shared/limits.ts` → `COST_CAP_USD_PER_PLAN` |
 | Tarifs Gemini | `functions/_shared/limits.ts` → `GEMINI_PRICE_*` |
 | Prix des packs (DZD/USD) | `functions/api/slickpay.js` → `PLAN_AMOUNTS_*`, `src/pages/PricingPage.tsx` |
-| Pondération du quota (8 unités) | `supabase/migration_ai_usage.sql` |
+| Pondération du quota (5 unités = 1 conversation) | `functions/_shared/limits.ts` (`UNITS_PER_CONVERSATION`) |
 | Taille du prompt | `functions/_shared/prompt.ts` (mesurée) |
 | Cache de contexte | `functions/_shared/gemini-cache.ts` |
 | Où l'IA est coupée | `functions/api/chat.js` (lignes ~226-260) |
 
 **Tarif Gemini vérifié le 7 octobre 2026** : `gemini-3.1-flash-lite` = 0,25 $/M entrée,
 1,50 $/M sortie, 0,025 $/M entrée en cache, stockage 1,00 $/M tokens/heure.
+
+---
+
+## Le chatbot web : le message ET l'appel
+
+Un seul assistant, deux façons de parler au visiteur : il **écrit** (petit modèle
+texte, quasi gratuit) ou il **appelle** (Gemini Live, audio bidirectionnel — 40×
+plus cher à la seconde). Les deux dépensent le **même plafond** du pack.
+
+| | Coût réel | À 270 DA | À 260 DA |
+|---|---|---|---|
+| 1 échange écrit (question + réponse) | 0,00138 $ | **0,37 DA** | **0,36 DA** |
+| 1 conversation commerciale (5 échanges) | 0,0069 $ | **1,86 DA** | **1,79 DA** |
+| 1 conversation, contexte en cache | 0,0047 $ | 1,27 DA | 1,22 DA |
+| 1 minute d'appel — pire cas | 0,02376 $ | **6,42 DA** | **6,18 DA** |
+| 1 minute d'appel — réaliste (l'agent parle ~40 %) | 0,01296 $ | **3,50 DA** | **3,37 DA** |
+
+*Pire cas = le client parle toute la minute (1 920 tokens × 3 $/M) **et** l'agent
+répond toute la minute (1 500 tokens × 12 $/M). Réaliste = l'agent parle 40 % du
+temps, ce qui est le cas normal puisqu'il se tait pendant que le client parle.*
+
+Repères : **1 minute d'appel (pire cas) = 17 échanges écrits**, 1 minute réaliste
+= 9 échanges. Le barème « 1 min = 10 conversations » facture donc 10 unités de
+quota pour un coût réel de ~2,2 conversations : il est **généreux côté client**,
+mais c'est un choix commercial, pas un problème.
+
+```bash
+node scripts/couts-vocal.mjs --change=260
+```
+
+### ⚠️ Le barème vocal ne tient pas dans le plafond, pour Pro et Enterprise
+
+Le barème et les plafonds ont été décidés séparément — en pire cas (6,42 DA/min
+à 270 DA), voilà ce que chaque plafond finance réellement :
+
+| Pack | Quota vendu | Minutes promises | Coût des minutes | Plafond | Verdict |
+|---|---|---|---|---|---|
+| Basic | 1 000 conv. | 100 min | 618 DA | 810 DA | ✅ tient |
+| Pro | 5 000 conv. | 500 min | 3 210 DA | 2 430 DA | ❌ coupé à **378 min** |
+| Enterprise | illimité | 2 000 min (proposé) | 12 840 DA | 8 100 DA | ❌ coupé à **1 262 min** |
+
+Deux sorties possibles :
+
+1. **baisser les minutes vendues** — Pro 380 min, Enterprise 1 200 min (le
+   plafond actuel suffit alors tel quel) ; ou
+2. **monter les plafonds** — Pro 12 $, Enterprise 48 $ (et donc les coûts max du
+   tableau plus haut).
+
+Le pire cas est une borne haute : en usage réaliste (3,50 DA/min), 500 minutes
+coûtent 1 750 DA et tiennent dans les 9 $ de Pro. Mais un client qui laisse
+l'assistant parler beaucoup peut atteindre la borne — c'est elle qui décide.
+
+---
+
+## Décision du 13/10/2026 : le quota arrête tout, plus le plafond
+
+**Ce qui change.** Les plafonds en dollars (Basic 3 $, Pro 9 $) sont **supprimés** :
+un client qui paie son forfait doit avoir **tout** son forfait. Le **quota de
+conversations** devient le seul arrêt.
+
+| Pack | Conversations | = en appels | = en messages écrits | = en mixte |
+|---|---|---|---|---|
+| **Basic** | 1 000 | **100 min** | **5 000 messages** | 1 min d'appel = 50 messages (ex. 40 min + 3 000 messages) |
+| **Pro** | 5 000 | **500 min** | **25 000 messages** | 1 min d'appel = 50 messages (ex. 200 min + 15 000 messages) |
+| **Enterprise** | à négocier | — | — | fusible de 30 $ en attendant |
+
+**Ce que ça coûte, au maximum** (1 $ = 260 DA) — un client qui épuise tout son
+forfait :
+
+| Pack | Prix | Tout en appels | Tout en messages | Tout en messages (avec cache) |
+|---|---|---|---|---|
+| Basic | 4 940 DA | 618 DA → marge **87 %** | **1 794 DA** → marge **64 %** | 763 DA → marge **85 %** |
+| Pro | 15 340 DA | 3 090 DA → marge **80 %** | **8 970 DA** → marge **42 %** | 3 813 DA → marge **75 %** |
+
+**Lecture.** Les appels sont **2,9× moins chers** que l'écrit à quota égal
+(1 conversation d'appel = 0,62 DA, 1 conversation écrite = 1,79 DA — mais une
+minute d'appel reste 17× plus chère qu'un message écrit). Le risque
+n'est donc pas la voix : c'est un client Pro qui écrirait vraiment 25 000
+messages dans le mois — et le cache de contexte (déjà actif) divise ce coût par
+2,35 quand la conversation s'enchaîne. Un client réel fait 100 à 300
+conversations par mois : personne n'approche ces montants.
+
+*Calculs : `node scripts/couts-vocal.mjs --change=260` et
+`node scripts/couts-plans.mjs --change=260`.*
+

@@ -1,28 +1,7 @@
 import React, { useState } from 'react';
-import {
-  Sparkles,
-  Bot,
-  MessageSquare,
-  Zap,
-  Headphones,
-  Brain,
-  Shield,
-  Image as ImageIcon,
-  Palette,
-  Eye,
-  Check,
-  Copy,
-  ArrowRight,
-  Sun,
-  Moon,
-  CheckCircle2,
-  HelpCircle,
-  Upload,
-  Layers,
-  Send,
-  X
-} from 'lucide-react';
+import { Sparkles, Mic, Bot, MessageSquare, Zap, Headphones, Brain, Shield, Image as ImageIcon, Palette, Eye, Check, Copy, ArrowRight, Sun, Moon, CheckCircle2, HelpCircle, Upload, Layers, Send, X } from 'lucide-react';
 import { WidgetCustomization } from '../lib/supabase';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 
 interface WidgetCustomizerProps {
   businessName: string;
@@ -32,6 +11,8 @@ interface WidgetCustomizerProps {
   onChange: (updated: Partial<WidgetCustomization>) => void;
   onSave?: () => void;
   onGoToIntegration?: () => void;
+  /** URL du script, la même que celle du tableau de bord. */
+  scriptUrl?: string;
   isSaving?: boolean;
 }
 
@@ -57,6 +38,16 @@ const COLOR_PRESETS = [
   { name: 'Doré Ambre', primary: '#d97706', secondary: '#fbbf24' },
 ];
 
+/** Voix proposées par l'agent vocal (noms Google, décrits simplement). */
+const VOICE_CHOICES = [
+  { id: 'Puck', label: 'Puck', desc: 'Enjouée' },
+  { id: 'Kore', label: 'Kore', desc: 'Posée' },
+  { id: 'Aoede', label: 'Aoede', desc: 'Chaleureuse' },
+  { id: 'Zephyr', label: 'Zephyr', desc: 'Claire' },
+  { id: 'Charon', label: 'Charon', desc: 'Sérieuse' },
+  { id: 'Fenrir', label: 'Fenrir', desc: 'Grave' },
+];
+
 export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   businessName,
   onBusinessNameChange,
@@ -65,12 +56,27 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   onChange,
   onSave,
   onGoToIntegration,
+  scriptUrl,
   isSaving = false
 }) => {
-  const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content'>('icon');
+  const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content' | 'voice' | 'attention'>('icon');
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   const [previewTestMessage, setPreviewTestMessage] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  // Réglages de voix : valeurs par défaut tant que le marchand n'a rien réglé.
+  const voice = config.voice || { enabled: false, voice: 'Puck', greeting: '', maxMinutes: 5 };
+  // 🎯 Mode + accroche : valeurs par défaut tant que le marchand n'a rien réglé.
+  const mode = config.mode || 'both';
+  const attention = config.attention || {
+    pulse: true,
+    teaserDelaySeconds: 0,
+    autoOpenSeconds: 0,
+    proactiveText: '',
+    callCtaText: '',
+  };
+  const setAttention = (patch: Partial<NonNullable<WidgetCustomization['attention']>>) =>
+    onChange({ attention: { ...attention, ...patch } });
+
   const [previewMessages, setPreviewMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string }>>([
     { sender: 'bot', text: config.welcomeMessage || `Bonjour ! 👋 Comment puis-je vous aider aujourd'hui ?` }
   ]);
@@ -128,18 +134,15 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
     compact: 'rounded-xl'
   }[config.shape || 'circle'];
 
-  const scriptPreview = `<!-- Bulle de discussion JawebFlow pour ${businessName || 'votre site'} -->
-<script 
-  src="https://cdn.jawebflow.com/widget.js" 
-  data-assistant-id="${widgetId || 'asst_live'}" 
-  data-position="${config.position}" 
-  data-theme="${config.themeMode}" 
-  data-primary-color="${config.primaryColor}"
-  data-shape="${config.shape}"
-  data-icon="${config.iconType}"
-  ${config.iconType === 'custom_logo' && config.customLogoUrl ? `data-avatar-url="${config.customLogoUrl}"\n  ` : ''}data-teaser="${config.showTeaser ? config.teaserText : ''}"
-  defer>
-</script>`;
+  // Même fabrique que le tableau de bord : l'aperçu et le code collé ne
+  // peuvent plus diverger (avant, la taille, le badge « en ligne » et la
+  // mention JawebFlow s'affichaient ici mais jamais sur le vrai widget).
+  const scriptPreview = buildWidgetSnippet({
+    scriptUrl: scriptUrl || 'https://cdn.jawebflow.com/widget.js',
+    assistantId: widgetId,
+    businessName,
+    config,
+  });
 
   const handleCopyScript = () => {
     navigator.clipboard.writeText(scriptPreview);
@@ -188,7 +191,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
         <div className="lg:col-span-7 space-y-4">
           
           {/* Sub-tabs for customization categories */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
             <button
               type="button"
               onClick={() => setActiveTab('icon')}
@@ -239,6 +242,34 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
             >
               <MessageSquare className="w-3.5 h-3.5" />
               <span className="truncate">4. Textes & Accroche</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('voice')}
+              data-testid="tab-voice"
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'voice'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span className="truncate">5. Voix</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('attention')}
+              data-testid="tab-attention"
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'attention'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="truncate">6. Accroche</span>
             </button>
           </div>
 
@@ -671,6 +702,264 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                   onChange={(e) => onChange({ showBranding: e.target.checked })}
                   className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ── 5. VOIX : l'agent vocal dans la bulle ───────────────────── */}
+          {activeTab === 'voice' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-4">
+                <div>
+                  <span className="block text-xs font-bold text-slate-900">Agent vocal — l'appel en direct</span>
+                  <span className="block text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    Vos visiteurs appuient sur le micro et parlent à voix haute. L'assistant répond,
+                    comme au téléphone, sans quitter votre site.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="voice-enabled"
+                  aria-label="Activer l'agent vocal"
+                  checked={voice.enabled}
+                  onChange={(e) => onChange({ voice: { ...voice, enabled: e.target.checked } })}
+                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 shrink-0 mt-0.5"
+                />
+              </div>
+
+              {voice.enabled ? (
+                <>
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="block text-[11px] font-bold text-amber-900">
+                      💸 La voix consomme plus de crédit IA qu'un message écrit
+                    </span>
+                    <span className="block text-[10px] text-amber-800 mt-1 leading-relaxed">
+                      C'est une conversation en direct : chaque minute compte. Le plafond mensuel de votre
+                      formule s'applique comme pour le chat — quand il est atteint, l'assistant se met en
+                      pause et votre forfait n'est jamais dépassé sans que vous le sachiez.
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Voix de l'assistant</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {VOICE_CHOICES.map((choice) => (
+                        <button
+                          key={choice.id}
+                          type="button"
+                          onClick={() => onChange({ voice: { ...voice, voice: choice.id } })}
+                          data-testid={`voice-choice-${choice.id}`}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            voice.voice === choice.id
+                              ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-600'
+                              : 'border-slate-200 bg-white hover:border-purple-300'
+                          }`}
+                        >
+                          <span className="block text-xs font-bold text-slate-900">{choice.label}</span>
+                          <span className="block text-[10px] text-slate-500">{choice.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Phrase d'ouverture <span className="normal-case font-normal">(l'assistant parle en premier)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={voice.greeting}
+                      onChange={(e) => onChange({ voice: { ...voice, greeting: e.target.value } })}
+                      placeholder="Bonjour, vous êtes bien chez … ! Que puis-je faire pour vous ?"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Durée maximale d'un appel
+                    </span>
+                    <div className="flex gap-2">
+                      {[2, 5, 10, 15].map((minutes) => (
+                        <button
+                          key={minutes}
+                          type="button"
+                          onClick={() => onChange({ voice: { ...voice, maxMinutes: minutes } })}
+                          data-testid={`voice-minutes-${minutes}`}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            (voice.maxMinutes || 5) === minutes
+                              ? 'border-purple-600 bg-purple-50 text-purple-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {minutes} min
+                        </button>
+                      ))}
+                    </div>
+                    <span className="block text-[10px] text-slate-500 mt-1.5">
+                      L'appel se termine tout seul à la fin du temps : c'est votre protection.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Cochez « Agent vocal » pour l'activer. Vos visiteurs verront alors un micro dans
+                  l'en-tête du chat. Le chat écrit continue de fonctionner exactement comme avant.
+                </p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'attention' && (
+            <div className="space-y-4">
+              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600" /> Mode du widget
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Vous décidez ce que vos visiteurs voient : le chat, l'appel, ou les deux.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+                    {[
+                      { id: 'both', titre: 'Écrit + appels', desc: 'Le chat, avec un bouton d\'appel' },
+                      { id: 'voice', titre: 'Le bot qui appelle', desc: 'Aucun chat : un seul bouton d\'appel' },
+                      { id: 'chat', titre: 'Écrit seulement', desc: 'Aucun appel, même si la voix est prête' },
+                    ].map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        data-testid={`mode-${option.id}`}
+                        onClick={() => onChange({ mode: option.id as 'both' | 'voice' | 'chat' })}
+                        className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                          mode === option.id
+                            ? 'border-purple-600 bg-purple-50'
+                            : 'border-slate-200 bg-white hover:border-purple-300'
+                        }`}
+                      >
+                        <span className="block text-xs font-bold text-slate-900">{option.titre}</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5">{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-900">Attirer l'attention</h4>
+
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      data-testid="attention-pulse"
+                      checked={attention.pulse !== false}
+                      onChange={(e) => setAttention({ pulse: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-purple-600 cursor-pointer"
+                    />
+                    <span>
+                      <span className="block text-xs font-semibold text-slate-800">Bulle qui pulse</span>
+                      <span className="block text-[10px] text-slate-500">
+                        Une onde continue autour de la bulle : impossible de la rater.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Afficher l'accroche après…
+                    </span>
+                    <div className="flex gap-2">
+                      {[0, 3, 5, 10].map((seconds) => (
+                        <button
+                          key={seconds}
+                          type="button"
+                          data-testid={`teaser-delay-${seconds}`}
+                          onClick={() => setAttention({ teaserDelaySeconds: seconds })}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            (attention.teaserDelaySeconds || 0) === seconds
+                              ? 'border-purple-600 bg-purple-50 text-purple-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {seconds === 0 ? 'Tout de suite' : `${seconds} s`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Ouvrir le chat automatiquement après…
+                    </span>
+                    <div className="flex gap-2">
+                      {[0, 5, 10, 20].map((seconds) => (
+                        <button
+                          key={seconds}
+                          type="button"
+                          data-testid={`auto-open-${seconds}`}
+                          onClick={() => setAttention({ autoOpenSeconds: seconds })}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            (attention.autoOpenSeconds || 0) === seconds
+                              ? 'border-purple-600 bg-purple-50 text-purple-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {seconds === 0 ? 'Jamais' : `${seconds} s`}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="block text-[10px] text-slate-500 mt-1.5">
+                      Sans ouverture automatique, le visiteur ouvre lui-même le chat.
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Message du bot qui parle le premier
+                    </span>
+                    <input
+                      type="text"
+                      data-testid="proactive-text"
+                      value={attention.proactiveText || ''}
+                      onChange={(e) => setAttention({ proactiveText: e.target.value })}
+                      placeholder="Vous cherchez un prix ? Je peux vous appeler tout de suite."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                    />
+                    <span className="block text-[10px] text-slate-500 mt-1.5">
+                      Il s'affiche quand le chat s'ouvre — c'est ce qui fait répondre le visiteur.
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Libellé de votre bouton d'appel
+                    </span>
+                    <input
+                      type="text"
+                      data-testid="call-cta"
+                      value={attention.callCtaText || ''}
+                      onChange={(e) => setAttention({ callCtaText: e.target.value })}
+                      placeholder="📞 Appelez-moi maintenant"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-900">CSS libre</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Pour aller au-delà des réglages : votre CSS est appliqué au widget, sans toucher
+                    au reste de votre site.
+                  </p>
+                  <textarea
+                    data-testid="custom-css"
+                    value={config.customCss || ''}
+                    onChange={(e) => onChange({ customCss: e.target.value })}
+                    rows={5}
+                    spellCheck={false}
+                    placeholder={'.jw-bubble-btn{box-shadow:0 0 0 4px rgba(147,51,234,.25);}'}
+                    className="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-mono focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                  />
+                </div>
               </div>
             </div>
           )}

@@ -62,6 +62,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
 import { SocialModuleLocked } from './SocialModuleLocked';
 import { resolveTeamRole, roleCan, type TeamRole } from '../lib/roles';
+import { CLIENT_CHANNELS, channelIdentity, channelLabel, clientChannel } from '../lib/channels';
 import { buildCoachPlan, coachHeadline } from '../../functions/_shared/bot-coach';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
@@ -77,6 +78,7 @@ import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 import { DEAL_KIND_LABELS, DEAL_NEXT_ACTIONS, DEAL_STEPS, SALES_INTENT_LABELS, buildDealRecap, dealKindOf, dealStatusLabel, type DealKind } from '../../functions/_shared/sales-intent';
 
@@ -454,10 +456,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // 🔒 MODULE RÉSEAUX SOCIAUX : produit à part, ouvert client par client par
   // l'équipe (console admin → Clients → bouton « Réseaux sociaux »).
-  // Tolérance voulue quand `socialEnabled` est absent : colonne pas encore
-  // créée en base ou profil pas encore chargé → on n'affiche pas un faux
-  // cadenas. Le serveur reste la référence (403 + message explicite).
-  const socialLocked = !isUserAdmin(profile) && profile?.socialEnabled === false;
+  // FERMÉ PAR DÉFAUT : tout ce qui n'est pas explicitement ouvert reste fermé
+  // (profil non chargé, colonne absente, compte ordinaire sans activation).
+  // Seuls les comptes admin/superadmin passent, pour pouvoir dépanner.
+  const socialLocked = !isUserAdmin(profile) && profile?.socialEnabled !== true;
   const refreshAccount = () => {
     try { window.location.reload(); } catch { /* environnement de test */ }
   };
@@ -507,14 +509,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const finalizeManualPayment = () => {
     setIsProcessingPayment(true);
     setTimeout(() => {
-      let amountUsd = selectedCheckoutPlan === 'free' ? 0 : selectedCheckoutPlan === 'basic' ? 29 : selectedCheckoutPlan === 'pro' ? 79 : 199;
+      let amountUsd = selectedCheckoutPlan === 'free' ? 0 : selectedCheckoutPlan === 'basic' ? 10 : selectedCheckoutPlan === 'pro' ? 20 : 199;
       if (billingCycle === 'yearly') {
-        amountUsd = Math.round(amountUsd * 0.8 * 12);
+        // Annuel = 2 mois offerts : le client paie 10 mois.
+        amountUsd = Math.round(amountUsd * 10);
       }
       let amountDzd = selectedCheckoutPlan === 'free' ? 0 : selectedCheckoutPlan === 'basic' 
-        ? (billingCycle === 'monthly' ? 6850 : 65760) 
+        ? (billingCycle === 'monthly' ? 2700 : 27000) 
         : selectedCheckoutPlan === 'pro' 
-          ? (billingCycle === 'monthly' ? 18700 : 179500) 
+          ? (billingCycle === 'monthly' ? 5400 : 54000) 
           : (billingCycle === 'monthly' ? 47100 : 452160);
 
       const planNameStr = selectedCheckoutPlan === 'free' ? 'Découverte' : selectedCheckoutPlan === 'basic' ? 'Basic' : selectedCheckoutPlan === 'pro' ? 'Pro' : 'Entreprise';
@@ -725,6 +728,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'nouveau' | 'qualifie'>('all');
   const [hasContactFilter, setHasContactFilter] = useState<boolean>(false);
+  // « all » ou la clé d'un canal : le marchand voit d'un coup d'œil qui vient
+  // du site, d'Instagram, de WhatsApp…
+  const [channelFilter, setChannelFilter] = useState<string>('all');
   const [showExportDetails, setShowExportDetails] = useState<boolean>(false);
 
   // Real leads captured by the assistant
@@ -1215,12 +1221,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   };
 
   const handleExportCSV = () => {
-    const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];
+    const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Canal', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];
     const rows = leadsList.map(lead => [
       lead.id,
       lead.name,
       lead.email,
       lead.phone,
+      channelLabel(lead.channel, lead.source || ''),
       lead.need.replace(/"/g, '""'),
       lead.status,
       lead.date,
@@ -1537,22 +1544,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const currentWidgetId = assistantId || widgetId || 'asst_live';
   const liveScriptCdnUrl = typeof window !== 'undefined' ? `${window.location.origin}/widget.js` : 'https://cdn.jawebflow.com/widget.js';
   
-  // Universal Embed Script HTML
-  const widgetScriptHtml = `<!-- Bulle de discussion JawebFlow pour ${businessName || 'votre site'} -->
-<script 
-  src="${liveScriptCdnUrl}" 
-  data-assistant-id="${currentWidgetId}" 
-  data-business-name="${(businessName || 'Mon Entreprise').replace(/"/g, '&quot;')}"
-  data-position="${widgetConfig.position}" 
-  data-theme="${widgetConfig.themeMode}" 
-  data-primary-color="${widgetConfig.primaryColor}"
-  data-secondary-color="${widgetConfig.gradientSecondary || '#6366f1'}"
-  data-shape="${widgetConfig.shape}"
-  data-icon="${widgetConfig.iconType}"
-  data-teaser="${(widgetConfig.teaserText || 'Une question ? Discutons en direct 👋').replace(/"/g, '&quot;')}"
-  data-welcome="${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '&quot;')}"${whatsappEscalation ? `\n  data-whatsapp="${whatsappEscalation}"` : ''}${widgetConfig.iconType === 'custom_logo' && widgetConfig.customLogoUrl ? `\n  data-avatar-url="${widgetConfig.customLogoUrl}"` : ''}
-  defer>
-</script>`;
+  // Le code à coller : fabriqué par src/lib/widget-snippet.ts, comme l'aperçu
+  // du personnalisateur — un seul endroit décide, donc plus de réglage qui
+  // s'affiche à l'écran sans jamais partir sur le vrai widget.
+  const widgetScriptHtml = buildWidgetSnippet({
+    scriptUrl: liveScriptCdnUrl,
+    assistantId: currentWidgetId,
+    businessName,
+    config: widgetConfig,
+    whatsappEscalation,
+  });
 
   // Completion calculation
   const hasIdentity = Boolean(businessName.trim());
@@ -2532,6 +2533,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 onChange={handleUpdateWidgetConfig}
                 onSave={handleSaveToDatabase}
                 onGoToIntegration={() => handleSectionChange('integration')}
+                scriptUrl={liveScriptCdnUrl}
                 isSaving={isSavingDb}
               />
             </div>
@@ -2688,7 +2690,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               SECTION: LE CADENAS DES RÉSEAUX SOCIAUX (module vendu à part)
               ================================================================= */}
           {socialLocked && SOCIAL_SECTIONS.includes(currentSection) && (
-            <SocialModuleLocked channel={currentSection} onUnlocked={refreshAccount} />
+            <SocialModuleLocked channel={currentSection} />
           )}
 
           {!socialLocked && MESSAGING_SECTIONS.includes(currentSection) && (
@@ -2830,6 +2832,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               }
               if (statusFilter !== 'all') {
                 if (lead.status !== statusFilter) return false;
+              }
+              if (channelFilter !== 'all') {
+                if (clientChannel(lead.channel, lead.source).key !== channelFilter) return false;
               }
               if (searchTerm.trim() !== '') {
                 const term = searchTerm.toLowerCase();
@@ -2986,7 +2991,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       
                       {/* Search Bar */}
-                      <div className="relative md:col-span-6">
+                      <div className="relative md:col-span-5">
                         <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                         <input
                           type="text"
@@ -3013,11 +3018,28 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </div>
                       </div>
 
+                      {/* Channel Filter */}
+                      <div className="md:col-span-2">
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
+                          <select
+                            value={channelFilter}
+                            onChange={(e) => setChannelFilter(e.target.value)}
+                            aria-label="Filtrer par canal"
+                            className="w-full bg-transparent border-0 py-2 px-1 text-xs text-slate-700 focus:outline-none focus:ring-0 cursor-pointer font-semibold"
+                          >
+                            <option value="all">Tous les canaux</option>
+                            {CLIENT_CHANNELS.map((canal) => (
+                              <option key={canal.key} value={canal.key}>{canal.emoji} {canal.short}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
                       {/* Contact Toggle Filter */}
                       <button
                         type="button"
                         onClick={() => setHasContactFilter(!hasContactFilter)}
-                        className={`md:col-span-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                        className={`md:col-span-2 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
                           hasContactFilter 
                             ? 'bg-purple-50 border-purple-200 text-purple-700' 
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -3035,6 +3057,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px]">
                           <tr>
                             <th className="p-3.5">Prospect</th>
+                            <th className="p-3.5">Canal</th>
                             <th className="p-3.5">Téléphone / WhatsApp</th>
                             <th className="p-3.5">Besoin / Canal UTM</th>
                             <th className="p-3.5">Statut</th>
@@ -3046,6 +3069,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           {filteredLeads.length > 0 ? (
                             filteredLeads.map((lead) => {
                               const hasContact = (lead.email && lead.email !== 'Non fourni') || (lead.phone && lead.phone !== 'Non fourni');
+                              // D'où vient ce client : le canal prime, l'origine sert de repli.
+                              const canal = clientChannel(lead.channel, lead.source);
                               const utmSource = (lead as any).utm_source;
                               const utmCampaign = (lead as any).utm_campaign;
                               const followUpDate = lead.followUpAt && Number.isFinite(Date.parse(lead.followUpAt))
@@ -3070,6 +3095,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                     <div className="text-[10px] text-slate-400 font-normal truncate max-w-[150px]">{lead.email}</div>
                                   </td>
                                   
+                                  <td className="p-3.5">
+                                    <span
+                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${canal.badgeClass}`}
+                                    >
+                                      <span aria-hidden="true">{canal.emoji}</span>
+                                      {canal.short}
+                                    </span>
+                                  </td>
+
                                   <td className="p-3.5 font-mono text-purple-700 font-bold whitespace-nowrap">
                                     {lead.phone}
                                   </td>
@@ -3184,7 +3218,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </div>
                             <div>
                               <h3 className="font-bold text-slate-900 text-base">{lead.name}</h3>
-                              <span className="text-[10px] font-mono text-slate-400">{lead.id}</span>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${clientChannel(lead.channel, lead.source).badgeClass}`}
+                                >
+                                  <span aria-hidden="true">{clientChannel(lead.channel, lead.source).emoji}</span>
+                                  {clientChannel(lead.channel, lead.source).short}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400">{lead.id}</span>
+                              </div>
                             </div>
                           </div>
                           <button
@@ -3277,7 +3319,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                               <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
                                 <Clock className="h-3.5 w-3.5 text-amber-500" /> Suivi commercial
                               </h4>
-                              <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-slate-500">{lead.channel === 'instagram' ? 'Instagram' : lead.channel ? 'Mon site' : lead.source || 'Canal inconnu'}</span>
+                              <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-slate-500">{channelLabel(lead.channel, lead.source || 'Canal inconnu')}</span>
                             </div>
                             {lead.followUpReason && <p className="text-xs font-semibold text-slate-800">{lead.followUpReason}</p>}
                             {lead.nextAction && <p className="text-xs leading-relaxed text-slate-600"><span className="font-semibold">Prochaine action :</span> {lead.nextAction}</p>}
@@ -3833,8 +3875,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       <div className="flex items-baseline gap-2">
                         <span className="text-3xl font-semibold tracking-tight">
                           {activePlan === 'free' ? '$0' : ''}
-                          {activePlan === 'basic' ? (billingCycle === 'monthly' ? '$29' : '$23') : ''}
-                          {activePlan === 'pro' ? (billingCycle === 'monthly' ? '$79' : '$63') : ''}
+                          {activePlan === 'basic' ? (billingCycle === 'monthly' ? '$10' : '$8,33') : ''}
+                          {activePlan === 'pro' ? (billingCycle === 'monthly' ? '$20' : '$16,67') : ''}
                           {activePlan === 'enterprise' ? (billingCycle === 'monthly' ? '$199' : '$159') : ''}
                         </span>
                         <span className="text-sm text-purple-200">/ mois</span>
@@ -3843,9 +3885,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         ~{activePlan === 'free' 
                           ? '0 DZD'
                           : activePlan === 'basic' 
-                          ? (billingCycle === 'monthly' ? '6 850 DZD' : '5 480 DZD') 
+                          ? (billingCycle === 'monthly' ? '2 700 DZD' : '2 250 DZD') 
                           : activePlan === 'pro' 
-                            ? (billingCycle === 'monthly' ? '18 700 DZD' : '14 960 DZD') 
+                            ? (billingCycle === 'monthly' ? '5 400 DZD' : '4 500 DZD') 
                             : (billingCycle === 'monthly' ? '47 100 DZD' : '37 680 DZD')} / mois
                       </div>
                       <p className="text-xs text-slate-400 mt-2">
@@ -4040,7 +4082,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
                         <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
-                          ~{billingCycle === 'monthly' ? '6 850' : '5 480'} DZD / mois
+                          ~{billingCycle === 'monthly' ? '2 700' : '2 250'} DZD / mois
                         </span>
                       </div>
 
@@ -4107,7 +4149,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
                         <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
-                          ~{billingCycle === 'monthly' ? '18 700' : '14 960'} DZD / mois
+                          ~{billingCycle === 'monthly' ? '5 400' : '4 500'} DZD / mois
                         </span>
                       </div>
 
@@ -4429,6 +4471,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             summary={{ online: isReadyToDeploy, leads: leadsList.length, notes: knowledgeNotes.filter((n) => n.enabled).length }}
             todo={homeTodo}
             notice={homeNotice}
+            spaces={{
+              socialLocked,
+              onEnter: (space) => handleSectionChange(space === 'web' ? 'knowledge' : 'instagram'),
+            }}
             open={copilotOpen}
             onClose={() => setCopilotOpen(false)}
             userId={user.uid}

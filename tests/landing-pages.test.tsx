@@ -136,16 +136,22 @@ describe('site vitrine — pages', () => {
     const nav = vi.fn();
     render(<PricingPage onOpenAssistantModal={open} onNavigate={nav} />);
 
-    expect(screen.getByText(/moins de 250 DA par jour/)).toBeTruthy();
+    expect(screen.getByText(/moins de 100 DA par jour/)).toBeTruthy();
     // Prix en dinars affiché avec l'espace insécable produit par toLocaleString('fr-FR').
     const dzd = (value: string) => screen.getAllByText((_, el) => {
       const text = el?.textContent || '';
-      return el?.tagName === 'DIV' && /DZD \/ mois/.test(text) && new RegExp(value).test(text);
+      return el?.tagName === 'DIV' && /DZD \/ (mois|an)/.test(text) && new RegExp(value).test(text);
     });
-    expect(dzd('6\\s*850')[0].textContent).toContain('mois');
+    expect(dzd('2\\s*700')[0].textContent).toContain('mois');
 
+    // Enterprise n'affiche plus aucun prix : la formule est « à la demande ».
+    expect(screen.getByText('À la demande')).toBeTruthy();
+    expect(screen.queryByText(/47\s*100/)).toBeNull();
+
+    // Annuel = 2 mois offerts : on affiche le total de l'année (10 mois payés).
     fireEvent.click(screen.getByRole('button', { name: /Annuel/ }));
-    expect(dzd('5\\s*480').length).toBeGreaterThan(0);
+    expect(dzd('27\\s*000').length).toBeGreaterThan(0);
+    expect(dzd('54\\s*000').length).toBeGreaterThan(0);
 
     // Le plan gratuit mène à la création de compte, Enterprise au contact :
     // plus aucun bouton n'envoie vers une caisse impossible.
@@ -220,6 +226,38 @@ describe('site vitrine — pages', () => {
     noErrors();
   });
 
+  it('Confidentialité : la règle du comptage est écrite noir sur blanc', () => {
+    render(<PrivacyPage type="privacy" onNavigate={vi.fn()} />);
+
+    // La phrase exacte, celle qui doit être citée partout.
+    expect(screen.getAllByText('1 conversation = 1 message du client + sa réponse').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10 conversations par minute/).length).toBeGreaterThan(0);
+    // Les cas particuliers et les forfaits sont publics.
+    expect(screen.getAllByText(/photo demande 4 analyses/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/jusqu’à 1 000 messages/).length).toBeGreaterThan(0);
+
+    // La page est complète : sommaire + sections clés.
+    expect(screen.getAllByText('Sommaire').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Nos partenaires techniques/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Vos droits/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Tout supprimer/).length).toBeGreaterThan(0);
+    noErrors();
+  });
+
+  it('Conditions & suppression : le comptage, les prix et les étapes sont rappelés', () => {
+    render(<PrivacyPage type="terms" onNavigate={vi.fn()} />);
+    expect(screen.getAllByText(/1 conversation = 1 message du client \+ la réponse de l’assistant/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10 conversations par minute/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2 mois offerts/).length).toBeGreaterThan(0);
+    noErrors();
+
+    cleanup();
+    render(<PrivacyPage type="deletion" onNavigate={vi.fn()} />);
+    expect(screen.getAllByText(/Applications et sites web/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/48 heures/).length).toBeGreaterThan(0);
+    noErrors();
+  });
+
   it('Pages légales : titres lisibles, retour à l’accueil et contact', () => {
     const nav = vi.fn();
     render(<PrivacyPage type="privacy" onNavigate={nav} />);
@@ -257,8 +295,8 @@ describe('site vitrine — navigation et widget flottant', () => {
     expect(screen.getByText(/Assistant JawebFlow/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Combien ça coûte/ }));
-    const answer = await screen.findByText(/6\s*850 DA\/mois/, {}, { timeout: 3000 });
-    expect(answer.textContent).toMatch(/18\s*700 DA\/mois/);
+    const answer = await screen.findByText(/2\s*700 DA\/mois/, {}, { timeout: 3000 });
+    expect(answer.textContent).toMatch(/5\s*400 DA\/mois/);
     expect(answer.textContent).not.toContain('2 900');
 
     fireEvent.click(screen.getByRole('button', { name: /Créer mon assistant gratuitement/ }));
