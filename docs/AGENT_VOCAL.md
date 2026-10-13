@@ -94,7 +94,7 @@ suffisent (onglet **Voix** du personnalisateur) :
 |---|---|
 | **Ce qu'il doit obtenir** (le CTA) | La mission de l'appel : laisser ses coordonnées, **prendre rendez-vous**, passer une commande, être rappelé pour un problème, ou juste renseigner. Le vocabulaire du marchand est repris **mot pour mot** dans le prompt : « Prendre rendez-vous », « Avoir un devis »… |
 | **Ce qu'il note** | Nom, téléphone, e-mail, ville, besoin, jour/heure. L'agent demande **une seule chose à la fois**, jamais comme un formulaire. |
-| **🗣️ Langues** | Darija, arabe, français, anglais (au choix, plusieurs possibles). C'est **toujours la langue du client qui gagne** : s'il parle darija, l'agent répond en darija. |
+| **🗣️ Langues** | Darija, arabe, français, anglais (au choix, plusieurs possibles). C'est **toujours la langue du client qui gagne** — mais **uniquement parmi celles cochées** : une autre langue (espagnol, hindi…), l'agent le dit en une phrase et l'invite à continuer dans une des siennes. La **darija est algérienne d'Alger** (« wach rak », « sahit », « dork »), jamais marocaine (« daba », « wakha ») ni tunisienne. |
 | **Interrupteur de mission** | Coupé : l'agent répond mais ne note rien (aucun outil n'est même envoyé à Google). |
 
 **Ce qui se passe pendant l'appel :** l'agent répond aux questions (toujours avec

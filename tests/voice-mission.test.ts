@@ -88,6 +88,28 @@ describe('les langues de l’agent', () => {
     expect(line).not.toContain(LANGUAGE_LABELS.en);
   });
 
+  it('l’agent refuse les langues NON choisies (espagnol, hindi, turc…)', () => {
+    const line = languageInstruction(['darija', 'fr']);
+    expect(line).toMatch(/espagnol/i);
+    expect(line).toMatch(/hindi/i);
+    expect(line).toMatch(/JAMAIS/);
+    expect(line).toMatch(/ne comprends PAS les autres langues/i);
+  });
+
+  it('quand la darija est choisie, c’est celle d’Alger — jamais du marocain', () => {
+    const line = languageInstruction(['darija']);
+    expect(line).toMatch(/algérienne/i);
+    expect(line).toMatch(/daba/); // cité comme mot à ne JAMAIS dire
+    expect(line).toMatch(/marocain/i);
+    expect(line).toContain('sahit');
+  });
+
+  it('le chat écrit a sa propre formulation (le visiteur, pas « l’appel »)', () => {
+    const chat = languageInstruction(['fr'], { surface: 'chat' });
+    expect(chat).toMatch(/le visiteur écrit/i);
+    expect(languageInstruction(['fr'])).toMatch(/le client parle/i);
+  });
+
   it('les langues cochées arrivent dans le prompt de l’agent (et rien d’autre)', () => {
     const prompt = buildVoiceSystemPrompt(
       { businessName: 'Boutique Nour' },

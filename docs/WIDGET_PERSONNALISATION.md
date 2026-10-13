@@ -105,3 +105,52 @@ propose de prendre le numéro du client. Voir `docs/AGENT_VOCAL.md` §2 bis.
   qui la rend lisible partout.
 - Un seul widget par assistant ; plusieurs emplacements = plusieurs fois la même
   ligne de code, les statistiques restent celles de l'assistant.
+
+
+---
+
+## 🃏 Les réponses en cartes (et les langues verrouillées)
+
+Depuis le 13/10/2026, l'assistant ne répond plus par gros pavés de texte :
+
+- **Dès qu'une réponse contient plusieurs informations** (prix, formules, horaires,
+  étapes, options), elle s'affiche en **carte** : un titre court, puis 3 à 5 lignes
+  très courtes (une information par ligne). Un lien utile devient un **bouton**
+  dans la carte.
+- **Sinon, rien ne change** : un « bonjour » reste une bulle normale. Le rendu
+  s'adapte tout seul — si la réponse ne ressemble à rien de structuré, elle
+  s'affiche en texte simple, jamais en charabia.
+- C'est le **widget** qui met en forme (pas le modèle) : aucun risque de JSON
+  cassé, et le texte reste lisible partout (copier/coller, e-mails, logs).
+
+### 📏 Tailles
+
+| Réglage (console → Apparence → Taille) | Bulle | Fenêtre |
+|---|---|---|
+| **Compact** | 48 px | 300 × 430 |
+| **Standard** (défaut) | 56 px | 344 × 500 |
+| **Large** | 64 px | 400 × 580 |
+
+Le défaut est **volontairement discret** : sur téléphone la fenêtre prend la
+largeur disponible, avec une hauteur plafonnée (72 % de l'écran) — la bulle doit
+se faire oublier quand on ne l'utilise pas.
+
+### 🌞 Mode clair
+
+Le mode clair est soigné jusqu'aux détails : couleurs de texte, bulles, champs
+(placeholder et focus), barres de défilement et cartes ont leur palette propre
+(`color-scheme` déclaré pour que le navigateur n'impose pas ses couleurs
+sombres). Aucun élément sombre ne traîne dans un widget clair.
+
+### 🗣️ Les langues sont un choix, pas une suggestion
+
+Le propriétaire coche les langues parlées par l'assistant (darija, arabe,
+français, anglais). L'assistant :
+
+- répond **dans la langue du client**, mais **uniquement parmi celles cochées** ;
+- si le client écrit ou parle une autre langue (espagnol, hindi, turc…), il le
+  dit **en une phrase** dans une de ses langues et l'invite à continuer — il ne
+  répond jamais dans cette langue et ne la traduit pas, même si on insiste ;
+- quand la **darija** est choisie, c'est de la **darija algérienne d'Alger**
+  (« wach rak », « sahit », « dork », « chwiya »), jamais du marocain
+  (« daba », « wakha », « zwin ») ni du tunisien.

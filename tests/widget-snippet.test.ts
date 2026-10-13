@@ -185,3 +185,31 @@ describe('le widget servi lit ce que le code lui donne', () => {
     expect(redirects).toContain('/cdn/widget.js  /widget.js  200');
   });
 });
+
+describe('le widget : cartes, tailles et mode clair', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'public/widget.js'), 'utf8');
+
+  it('transforme les réponses en listes en cartes (et garde le texte normal)', () => {
+    expect(src).toContain('function buildCardEl');
+    expect(src).toContain('function appendBotMessage');
+    expect(src).toContain('appendBotMessage(body, m.text)');
+    expect(src).toContain('jw-card-head');
+    expect(src).toContain('jw-card-row');
+  });
+
+  it('la fenêtre est discrète par défaut et suit le réglage du client', () => {
+    expect(src).toMatch(/value === 'compact'\) return \{ w: 300, h: 430 \}/);
+    expect(src).toMatch(/return \{ w: 340, h: 500 \}/);
+    expect(src).toMatch(/value === 'large'\) return \{ w: 400, h: 600 \}/);
+    expect(src).toContain('--window-w:');
+    expect(src).toContain('@media (max-width:520px)');
+  });
+
+  it('le mode clair est soigné : thème, champs et barres de défilement', () => {
+    expect(src).toContain('color-scheme:');
+    expect(src).toContain('.jw-input::placeholder');
+    expect(src).toContain('.jw-input:focus');
+    expect(src).toContain('-webkit-scrollbar');
+    expect(src).toContain('.jw-card-btn');
+  });
+});

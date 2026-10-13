@@ -183,29 +183,41 @@ export const LANGUAGE_LABELS: Record<VoiceLanguage, string> = {
 
 /** Ce que chaque langue veut dire pour le modèle (comment il doit la parler). */
 const LANGUAGE_HOW: Record<VoiceLanguage, string> = {
-  darija: 'la darija algérienne (écrite en lettres latines si besoin : « wach n9der n3awnek »)',
+  darija: "la darija **algérienne** (celle d'Alger : « wach rak », « labas », « sahit », « dork », « chwiya »), en lettres latines si le client écrit comme ça",
   ar: "l'arabe simple, compris par tout le monde",
   fr: 'le français simple',
   en: 'un anglais simple',
 };
+
+/** Le client a TOUJOURS le dernier mot — mais uniquement dans ces langues. */
+const DEFAULT_LANGUAGES: VoiceLanguage[] = ['darija', 'ar', 'fr'];
+
+/** Les mots qui trahissent le marocain : l'agent algérien ne les dit jamais. */
+export const NOT_ALGERIAN_WORDS = ['daba', 'wakha', 'zwin', 'mzyan', '3ndi blassa'] as const;
+/** Ce qui sonne vraiment algérien (l'agent les emploie naturellement). */
+export const ALGERIAN_WORDS = ['dork', 'sahit', 'saha', 'labas', 'wach rak', 'kima', 'chwiya', 'mlah', 'gaya', 'bessahtek', 'nchoufek'] as const;
 
 /**
  * La consigne de langue : le client a TOUJOURS le dernier mot — l'agent répond
  * dans la langue où on lui parle, choisie parmi celles que le marchand a
  * cochées. Une langue non cochée : l'agent propose poliment la plus proche.
  */
-export function languageInstruction(languages: VoiceLanguage[]): string {
-  const wanted = languages.length ? languages : (['darija', 'ar', 'fr'] as VoiceLanguage[]);
+export function languageInstruction(
+  languages: VoiceLanguage[],
+  opts: { surface?: 'voice' | 'chat' } = {},
+): string {
+  const chat = opts.surface === 'chat';
+  const wanted = languages.length ? languages : DEFAULT_LANGUAGES;
   const how = wanted.map((l) => LANGUAGE_HOW[l] || l).join(', ');
   const first = wanted[0];
+  const names = wanted.map((l) => LANGUAGE_LABELS[l] || l).join(' · ');
   return [
-    `### 🗣️ LANGUES (${wanted.map((l) => LANGUAGE_LABELS[l] || l).join(' · ')})`,
-    `Tu parles ${how} — et tu réponds TOUJOURS dans la langue que le client a utilisée en dernier, jamais dans une autre.`,
-    'Si le client mélange les langues, tu fais pareil. S\'il hésite, tu reprends la même langue que lui.',
-    first
-      ? `C'est le client qui choisit : si tu dois vraiment décider (il ne parle pas encore), commence en ${LANGUAGE_LABELS[first] || first}.`
-      : '',
-    'Tu ne dis jamais que tu ne comprends pas une langue du client : s\'il parle une langue que tu ne parles pas, tu réponds dans la plus proche de sa liste, poliment, et tu continues l\'appel.',
+    `### 🗣️ TES LANGUES : ${names} — ET RIEN D'AUTRE`,
+    `Tu réponds ${how === '' ? '' : `en ${how}`} — et tu réponds TOUJOURS dans la langue que le client a utilisée en dernier, **parmi ces langues-là**.`,
+    'Si le client mélange deux de tes langues, tu fais pareil. S\'il hésite, reprends la même langue que lui.'
+      + (first ? ` Si tu dois vraiment choisir (il n\'a pas encore parlé), commence en ${LANGUAGE_LABELS[first] || first}.` : ''),
+    `🗣️ **Tu ne comprends PAS les autres langues.** Si ${chat ? 'le visiteur écrit' : 'le client parle'} espagnol, hindi, anglais (quand il n'est pas dans ta liste), turc, ou n'importe quelle langue non listée : tu ne fais pas semblant et tu ne traduis rien. Tu ${chat ? 'réponds par' : 'dis'} UNE phrase, dans ta première langue, du genre « désolé, je parle arabe, français et darija » (ou « سمحلي، ما نتكلمش هذي اللغة »), puis tu l'invites gentiment à continuer dans une de tes langues. Tu ne passes JAMAIS dans cette langue, même s'il insiste, même s'il te le demande — ${chat ? 'et tu ne recopies jamais son texte' : "et tu ne l'utilises jamais à l'oral"}.`,
+    `La darija, c'est de la **darija algérienne d'Alger** : ${ALGERIAN_WORDS.slice(0, 6).map((w) => `« ${w} »`).join(', ')}… Jamais du marocain (${NOT_ALGERIAN_WORDS.slice(0, 4).map((w) => `« ${w} »`).join(', ')}) ni du tunisien, même si le client parle comme ça.`,
   ]
     .filter(Boolean)
     .join('\n');

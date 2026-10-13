@@ -421,6 +421,19 @@ describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', 
   });
 });
 
+describe('les règles écrites du chatbot du site', () => {
+  it('impose les langues du propriétaire et interdit les autres', async () => {
+    const { STRICT_LANGUAGES_RULE, CARD_STYLE_RULE } = await import('../functions/_shared/site-chat');
+    const { buildSiteChatPrompt, DEFAULT_SITE_CHAT } = await import('../functions/_shared/site-chat');
+    const prompt = buildSiteChatPrompt(DEFAULT_SITE_CHAT);
+    expect(prompt).toContain(STRICT_LANGUAGES_RULE);
+    expect(prompt).toContain(CARD_STYLE_RULE);
+    expect(STRICT_LANGUAGES_RULE).toMatch(/espagnol/i);
+    expect(CARD_STYLE_RULE).toMatch(/CARTE/);
+    expect(CARD_STYLE_RULE).toMatch(/3 à 5 puces/);
+  });
+});
+
 describe('les demandes notées pendant les appels du site (console)', () => {
   const postLead = (body: unknown) =>
     leadApi.onRequestPost({

@@ -16,6 +16,8 @@ export const SALES_SYSTEM_PROMPT = `Tu es le conseiller commercial humain et nat
 - Garde le fil des détails déjà donnés (produit, taille, couleur, quantité, ville, budget, délai). Ne redemande jamais une information déjà présente.
 - Parle dans la langue et le registre du client : français naturel, darija algérienne en alphabet latin, arabe algérien en alphabet arabe, ou mélange spontané. Ne force pas un mot de darija dans chaque phrase et ne répète pas toujours le même emoji.
 - Fais des réponses courtes, chaleureuses et précises. Évite les formules copiées-collées, les longues listes et les questions de relance automatiques.
+- ORGANISATION : dès que ta réponse contient plusieurs informations (prix, formules, horaires, étapes, options), écris une CARTE — un titre court en **gras** sur sa propre ligne, puis 3 à 5 puces très courtes (une information par puce). Un lien utile s'écrit en markdown ([Voir les tarifs](https://…)) : il s'affichera en bouton. Une ligne vide entre deux cartes. Jamais de pavé de plus de 3 phrases.
+- LANGUES AUTORISÉES : tu ne parles QUE les langues autorisées du compte. Si le client écrit dans une autre langue (espagnol, hindi…), tu le dis en UNE phrase dans la langue autorisée et tu l'invites à continuer dans celle-ci : tu ne réponds jamais dans cette langue, tu ne la traduis pas, même s'il insiste.
 
 ### Vendre avec tact
 - Suis le rythme du client : écoute → réponds à son besoin → recommande au maximum les options vraiment pertinentes → propose une prochaine étape simple. Ne déroule pas ce parcours mécaniquement si le client a déjà décidé.
@@ -160,7 +162,7 @@ export function behaviorBlock(behavior: any): string {
   if (lang === "fr") {
     parts.push("LANGUE : réponds UNIQUEMENT en français simple et correct, quelle que soit la langue du client.");
   } else if (lang === "darija_dz") {
-    parts.push("LANGUE : parle 100% ALGÉRIEN — darija algérienne en alphabet latin (saha, wach, hna, bkda, chwiya, nchoufek, zouina...), style jeune et naturel mêlé de français comme on parle à Alger. Même si le client écrit en français pur, réponds en darija.");
+    parts.push("LANGUE : parle 100% ALGÉRIEN — darija algérienne d'Alger en alphabet latin (saha, wach rak, hna, chwiya, nchoufek, dork, mlah...), style jeune et naturel mêlé de français. JAMAIS du marocain (daba, wakha, zwin, mzyan) ni du tunisien. Même si le client écrit en français pur, réponds en darija.");
   } else if (lang === "darija_tn") {
     parts.push("LANGUE : parle 100% TUNISIEN — darija tunisienne en alphabet latin (ahla, bahi, chnowa, barcha, tawa, yezzi...), style jeune et naturel mêlé de français comme on parle à Tunis. Même si le client écrit en français pur, réponds en darija.");
   }
@@ -400,7 +402,8 @@ function searchTerms(message: string): string[] {
   return Array.from(terms);
 }
 
-function scoreRelevantText(message: string, title: string, content: string): number {
+/** Score d'un texte face à la question (exporté pour le module `rag.ts`). */
+export function scoreRelevantText(message: string, title: string, content: string): number {
   const terms = searchTerms(message);
   if (!terms.length) return 0;
   const titleText = normalizeSearchText(title);
@@ -422,8 +425,8 @@ function noteIsCore(note: any): boolean {
  * puis seulement les fiches qui correspondent à la question. Une question
  * vague ne déclenche plus l'envoi de tout le catalogue.
  */
-export function compactKnowledgeNotes(notes: any[], message: string): string {
-  const valid = (notes || []).filter((n) => {
+export function usableKnowledgeNotes(notes: any[]): any[] {
+  return (notes || []).filter((n) => {
     if (!n || n.enabled === false || !String(n.content || '').trim()) return false;
     const status = String(n.approvalStatus || n.status || '').toLowerCase();
     if (status === 'pending_review' || status === 'rejected') return false;
@@ -431,6 +434,16 @@ export function compactKnowledgeNotes(notes: any[], message: string): string {
     const learned = /learn|appris|conversation|auto/.test(source) || String(n.category || '').toLowerCase() === 'learned';
     return !learned || status === 'approved' || status === 'active';
   });
+}
+
+/** Fiches « vitales » d'abord (horaires, contact, livraison, prix), puis le reste. */
+export function coreFirstKnowledgeNotes(notes: any[]): any[] {
+  const valid = usableKnowledgeNotes(notes);
+  return [...valid.filter((n) => noteIsCore(n)), ...valid.filter((n) => !noteIsCore(n))];
+}
+
+export function compactKnowledgeNotes(notes: any[], message: string): string {
+  const valid = usableKnowledgeNotes(notes);
   if (!valid.length) return '';
 
   const scored = valid.map((n, index) => ({
@@ -459,6 +472,31 @@ export function compactKnowledgeNotes(notes: any[], message: string): string {
     used += row.length;
   }
   return block;
+}
+
+/**
+ * 🧠 Version « cache » de la base de connaissance : TOUTE la base (bornée par
+ * `budgetChars`), fiches vitales d'abord. Elle est destinée à la partie stable
+ * du prompt — celle que Gemini met en cache et relit à 10 % du prix.
+ *
+ * À n'utiliser que si le bloc total dépasse le plancher de cache de Google
+ * (`cacheableChars`) : sinon on garde la sélection RAG par tour, moins chère.
+ */
+export function buildCacheKnowledgeBlock(notes: any[], budgetChars = 20_000): string {
+  const ordered = coreFirstKnowledgeNotes(notes);
+  if (!ordered.length) return '';
+  let block = '\n\n### BASE DE CONNAISSANCE COMPLÈTE (source de vérité du compte) :\n';
+  let used = 0;
+  for (const n of ordered) {
+    const title = String(n.title || n.category || 'Information').slice(0, 120);
+    const content = String(n.content || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (!content) continue;
+    const row = `- [${n.category || 'général'}] ${title} : ${content}\n`;
+    if (used + row.length > budgetChars) break;
+    block += row;
+    used += row.length;
+  }
+  return used ? block : '';
 }
 
 /** Sélectionne uniquement les documents du site qui recoupent la question. */

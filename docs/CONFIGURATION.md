@@ -85,6 +85,16 @@ reconstruire** le site (juste après un redéploiement des Functions).
 
 Facultatif mais recommandé : `GEMINI_MODEL` (défaut : `gemini-3.1-flash-lite`).
 
+**Économies** (détail : `docs/ECONOMIES_CACHE_RAG.md`) :
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `GEMINI_CONTEXT_CACHE_ENABLED` | `true` | mise en cache de la partie stable du prompt (consignes + base de connaissance d'un gros compte), relue à **10 %** du prix |
+| `GEMINI_CONTEXT_CACHE_TTL_SECONDS` | `600` | durée de vie du cache. Le stockage est facturé **par heure** : court = moins de frais, long = plus de relectures à 10 % |
+
+Le **RAG** (ne jamais envoyer à Gemini les sections de la base qui ne servent pas) est actif
+automatiquement, sans variable : voir `functions/_shared/rag.ts`.
+
 ### Canaux — un canal sans ses variables reste muet
 
 Chaque webhook **échoue fermé** : sans secret configuré, il refuse tout message. C'est volontaire —

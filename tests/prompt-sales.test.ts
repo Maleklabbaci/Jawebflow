@@ -76,3 +76,14 @@ describe('petites politesses : jamais de re-salutation en pleine conversation', 
     expect(localPoliteReply('agreement', config, { conversationStarted: false })).toContain('Bienvenue');
   });
 });
+
+
+describe('les règles d’affichage du chatbot client', () => {
+  it('organise les réponses en cartes et verrouille les langues', async () => {
+    const { SALES_SYSTEM_PROMPT } = await import('../functions/_shared/prompt');
+    expect(SALES_SYSTEM_PROMPT).toMatch(/ORGANISATION : dès que ta réponse contient plusieurs informations/);
+    expect(SALES_SYSTEM_PROMPT).toMatch(/3 à 5 puces/);
+    expect(SALES_SYSTEM_PROMPT).toMatch(/LANGUES AUTORISÉES/);
+    expect(SALES_SYSTEM_PROMPT).toMatch(/espagnol, hindi/);
+  });
+});

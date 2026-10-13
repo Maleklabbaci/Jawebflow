@@ -295,9 +295,13 @@ describe('site vitrine — navigation et widget flottant', () => {
     expect(screen.getByText(/Assistant JawebFlow/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Combien ça coûte/ }));
-    const answer = await screen.findByText(/2\s*700 DA\/mois/, {}, { timeout: 3000 });
-    expect(answer.textContent).toMatch(/5\s*400 DA\/mois/);
-    expect(answer.textContent).not.toContain('2 900');
+    // 🃏 Depuis les cartes, la réponse est découpée en lignes lisibles : chaque
+    // formule a SA ligne (c'est le but), et les chiffres restent les vrais.
+    const basic = await screen.findByText(/2\s*700 DA\/mois/, {}, { timeout: 3000 });
+    expect(basic.textContent).toMatch(/Basic/);
+    const pro = screen.getByText(/5\s*400 DA\/mois/);
+    expect(pro.textContent).toMatch(/Pro/);
+    expect(screen.queryByText(/2\s*900 DA/)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Créer mon assistant gratuitement/ }));
     expect(open).toHaveBeenCalled();

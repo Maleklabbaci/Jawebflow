@@ -16,12 +16,13 @@ import { rateLimited } from '../_shared/rate-limit.ts';
 import { extractLeadFacts } from '../_shared/lead-facts.ts';
 import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from '../_shared/sales-intent.ts';
 import { processOrderChangeMessage } from '../_shared/order-changes.ts';
-import { getGeminiContextCache } from '../_shared/gemini-cache.ts';
+import { getGeminiContextCache, geminiCacheDiagnostic } from '../_shared/gemini-cache.ts';
+import { fitPieces, cacheableText, estimateTokens, KB_CACHE_BUDGET_CHARS } from '../_shared/rag.ts';
 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
 const geminiVisionUrl = (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/${'gemini-3.1-flash-lite'}:generateContent?key=${apiKey}`;
 import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached, monthlyCostBlock } from '../_shared/limits.ts';
-import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from '../_shared/prompt.ts';
+import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localPoliteReply, compactKnowledgeNotes, buildCacheKnowledgeBlock, selectKnowledgeDocuments, selectRelevantText } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite } from '../_shared/site-search.ts';
 import { notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from '../_shared/merchant-notify.ts';
@@ -308,9 +309,42 @@ export async function onRequestPost(context) {
       const knowledge = await supabaseListKnowledgeEntries(env, assistantId);
       if (knowledge.available && knowledge.entries.length > 0) knowledgeNotes = knowledge.entries;
     }
-    if (knowledgeNotes.length > 0) {
+    // 🧠🧮 CACHE DU CONTEXTE STABLE : consignes + base COMPLÈTE + FAQ + tarifs.
+    // Si ce bloc dépasse le plancher de Google (4 096 jetons), il est mis en
+    // cache une fois puis relu à 10 % du prix (cache read 0,025 $/M contre
+    // 0,25 $/M en entrée). En dessous du plancher, on reste en RAG par tour :
+    // c'est moins cher, et Google refuserait de toute façon le cache.
+    const waitUntil = typeof context.waitUntil === 'function' ? context.waitUntil.bind(context) : undefined;
+    const stableKnowledge = fitPieces(
+      [
+        { name: 'fiches', text: buildCacheKnowledgeBlock(knowledgeNotes, KB_CACHE_BUDGET_CHARS) },
+        { name: 'faq', text: config.faqText },
+        { name: 'tarifs', text: config.pricingServicesText },
+      ],
+      KB_CACHE_BUDGET_CHARS,
+    );
+    const cacheInstruction = stableKnowledge.chars > 0 && cacheableText(systemPrompt, stableKnowledge.text)
+      ? `${systemPrompt}\n\n${stableKnowledge.text}`
+      : '';
+    const cachedContent = cacheInstruction ? getGeminiContextCache(env, chatModel, cacheInstruction, waitUntil) : null;
+    if (cacheInstruction) {
+      diagnostics.push(geminiCacheDiagnostic(cacheInstruction, cachedContent));
+    } else if (stableKnowledge.chars > 0) {
+      diagnostics.push(`RAG par tour (base trop petite pour le cache : ${estimateTokens(systemPrompt.length + stableKnowledge.chars)} jetons < 4096)`);
+    }
+    // Ce qui est déjà dans le cache n'est JAMAIS renvoyé en plus dans le tour.
+    const cachedPieces = new Set(cachedContent ? stableKnowledge.kept : []);
+
+    if (knowledgeNotes.length > 0 && !cachedPieces.has('fiches')) {
       const relevantNotes = compactKnowledgeNotes(knowledgeNotes, message);
-      if (relevantNotes) businessContext.knowledge = relevantNotes.slice(0, 7_000);
+      if (relevantNotes) {
+        businessContext.knowledge = relevantNotes.slice(0, 7_000);
+        // Diagnostic court : ce qui est parti vs ce que le compte contient.
+        const fullChars = knowledgeNotes.reduce((total, note) => total + String(note?.content || '').length, 0);
+        diagnostics.push(
+          `RAG fiches : ${knowledgeNotes.length} fiches → ${estimateTokens(businessContext.knowledge.length)} jetons sur ~${estimateTokens(fullChars)}`,
+        );
+      }
     }
 
     if (supabaseConfigured(env)) {
@@ -323,11 +357,11 @@ export async function onRequestPost(context) {
         }));
       }
     }
-    if (config.faqText) {
+    if (config.faqText && !cachedPieces.has('faq')) {
       const relevantFaq = selectRelevantText(config.faqText, message, 900);
       if (relevantFaq) businessContext.faq = relevantFaq;
     }
-    if (config.pricingServicesText) {
+    if (config.pricingServicesText && !cachedPieces.has('tarifs')) {
       const relevantPricing = selectRelevantText(config.pricingServicesText, message, 1_200);
       if (relevantPricing) businessContext.pricingAndServices = relevantPricing;
     }
@@ -677,11 +711,6 @@ export async function onRequestPost(context) {
 
     // 4. Appel Gemini — réponse complète (pas de streaming, le front ne le consomme pas)
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent?key=${apiKey}`;
-    const cachedContent = getGeminiContextCache(
-      env, chatModel, systemPrompt,
-      typeof context.waitUntil === 'function' ? context.waitUntil.bind(context) : undefined,
-    );
-    if (cachedContent) diagnostics.push('cache du prompt Gemini réutilisé');
     const geminiPayload = {
       ...(cachedContent
         ? { cachedContent }
@@ -714,6 +743,9 @@ export async function onRequestPost(context) {
     const usage = {
       model: chatModel,
       promptTokens: Number(usageMeta.promptTokenCount || 0),
+      // 🧮 Jetons facturés 10 % du prix : c'est la part « base de connaissance »
+      // servie depuis le cache. Visible dans la réponse du widget (onglet Réseau).
+      cachedTokens: Number(usageMeta.cachedContentTokenCount || 0),
       outputTokens: Number(usageMeta.candidatesTokenCount || 0),
       weight: quotaWeight,
     };

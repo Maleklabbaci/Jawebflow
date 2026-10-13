@@ -174,10 +174,19 @@
   wrapper.id = 'jw-widget-wrapper';
   shadow.appendChild(wrapper);
 
+  // La fenêtre suit la taille choisie : compact = discret, large = confortable.
+  // Le défaut (« standard ») est volontairement petit : une bulle de chat n'est
+  // pas une application, elle doit se faire oublier quand on ne l'utilise pas.
+  function windowDims(value) {
+    if (value === 'compact') return { w: 300, h: 430 };
+    if (value === 'large') return { w: 400, h: 600 };
+    return { w: 340, h: 500 };
+  }
+
   var styleEl = document.createElement('style');
   styleEl.id = 'jawebflow-widget-styles';
   styleEl.textContent =
-    ':host{--primary:' + primaryColor + ';--secondary:' + secondaryColor + ';--radius-shape:' + shapeRadius(shape) + ';--bubble-size:' + bubbleDims(size).size + 'px;--bubble-icon:' + bubbleDims(size).icon + 'px;--window-radius:20px;--font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
+    ':host{--primary:' + primaryColor + ';--secondary:' + secondaryColor + ';--radius-shape:' + shapeRadius(shape) + ';--bubble-size:' + bubbleDims(size).size + 'px;--bubble-icon:' + bubbleDims(size).icon + 'px;--window-radius:20px;--window-w:' + windowDims(size).w + 'px;--window-h:' + windowDims(size).h + 'px;--font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color-scheme:' + (isDark ? 'dark' : 'light') + ';-webkit-tap-highlight-color:transparent;}' +
     '#jw-widget-wrapper{position:fixed;bottom:24px;' + (isLeft ? 'left:24px;' : 'right:24px;') + 'z-index:2147483647;font-family:var(--font-family);display:flex;flex-direction:column;align-items:' + (isLeft ? 'flex-start' : 'flex-end') + ';pointer-events:none;}' +
     '#jw-widget-wrapper *{box-sizing:border-box;pointer-events:auto;}' +
     '.jw-bubble-btn{width:var(--bubble-size);height:var(--bubble-size);border-radius:var(--radius-shape);background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 8px 24px -4px var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;border:none;outline:none;transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s;padding:0;overflow:hidden;}' +
@@ -185,7 +194,7 @@
     '.jw-bubble-btn svg{width:var(--bubble-icon);height:var(--bubble-icon);}' +
     '.jw-teaser{margin-bottom:12px;padding:10px 16px;border-radius:16px;font-size:13px;font-weight:500;background:' + (isDark ? '#111524' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#1e293b') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';box-shadow:0 8px 24px -4px rgba(0,0,0,.15);cursor:pointer;display:flex;align-items:center;gap:10px;max-width:320px;}' +
     '.jw-teaser-close{opacity:.5;font-size:11px;padding:2px 4px;cursor:pointer;margin-left:auto;}' +
-    '.jw-chat-window{width:380px;max-width:calc(100vw - 48px);height:540px;max-height:80vh;border-radius:var(--window-radius);overflow:hidden;display:flex;flex-direction:column;margin-bottom:16px;box-shadow:0 16px 40px -10px rgba(0,0,0,' + (isDark ? '.6' : '.18') + ');background:' + (isDark ? '#0c0f1d' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#0f172a') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';}' +
+    '.jw-chat-window{width:var(--window-w);max-width:calc(100vw - 32px);height:var(--window-h);max-height:calc(100vh - 130px);border-radius:var(--window-radius);overflow:hidden;display:flex;flex-direction:column;margin-bottom:16px;box-shadow:0 16px 40px -10px rgba(0,0,0,' + (isDark ? '.6' : '.18') + ');background:' + (isDark ? '#0c0f1d' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#0f172a') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';}' +
     '.jw-header{padding:16px 20px;background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;display:flex;align-items:center;justify-content:space-between;}' +
     '.jw-header-info{display:flex;align-items:center;gap:12px;overflow:hidden;}' +
     '.jw-header-avatar{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:#fff;overflow:hidden;flex-shrink:0;}' +
@@ -241,7 +250,26 @@
     '@keyframes jwBubblePulse{0%{transform:scale(1);opacity:.45;}70%{transform:scale(1.6);opacity:0;}100%{transform:scale(1.6);opacity:0;}}' +
     '.jw-cta{margin:10px 12px 0;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:13.5px;color:#fff;background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 6px 18px -6px var(--primary);}' +
     '.jw-cta svg{width:16px;height:16px;}' +
-    '.jw-cta:hover{transform:translateY(-1px);}';
+    '.jw-cta:hover{transform:translateY(-1px);}' +
+    // ── 🃏 LES CARTES : une info par ligne, jamais un pavé ────────────────────
+    '.jw-card{align-self:flex-start;max-width:92%;min-width:190px;border-radius:16px;overflow:hidden;background:' + (isDark ? '#141829' : '#fff') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.09)' : 'rgba(15,23,42,.09)') + ';box-shadow:0 4px 14px -6px rgba(15,23,42,' + (isDark ? '.55' : '.18') + ');}' +
+    '.jw-card-head{padding:10px 14px;font-size:12.5px;font-weight:700;line-height:1.3;color:#fff;background:linear-gradient(135deg,var(--primary),var(--secondary));}' +
+    '.jw-card-body{padding:4px 0;}' +
+    '.jw-card-row{display:flex;gap:9px;align-items:flex-start;padding:8px 14px;font-size:13px;line-height:1.45;color:' + (isDark ? '#e9edf5' : '#1f2937') + ';}' +
+    '.jw-card-row + .jw-card-row{border-top:1px dashed ' + (isDark ? 'rgba(255,255,255,.07)' : 'rgba(15,23,42,.07)') + ';}' +
+    '.jw-card-dot{flex-shrink:0;width:6px;height:6px;margin-top:6px;border-radius:50%;background:var(--primary);}' +
+    '.jw-card-actions{display:flex;flex-wrap:wrap;gap:8px;padding:11px 14px;border-top:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(15,23,42,.07)') + ';background:' + (isDark ? 'rgba(255,255,255,.02)' : 'rgba(15,23,42,.02)') + ';}' +
+    '.jw-card-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:10px;font-size:12.5px;font-weight:600;text-decoration:none;color:#fff;background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 5px 14px -6px var(--primary);}' +
+    '.jw-card-btn:hover{transform:translateY(-1px);}' +
+    // ── Mode clair : les petits détails qui font « 0 défaut » ─────────────────
+    '.jw-input::placeholder{color:' + (isDark ? '#7b8397' : '#94a3b8') + ';}' +
+    '.jw-input:focus{border-color:var(--primary);background:' + (isDark ? '#141829' : '#fff') + ';box-shadow:0 0 0 3px ' + (isDark ? 'rgba(148,163,184,.14)' : 'rgba(99,102,241,.12)') + ';}' +
+    '.jw-body::-webkit-scrollbar,.jw-call-lines::-webkit-scrollbar{width:8px;}' +
+    '.jw-body::-webkit-scrollbar-thumb,.jw-call-lines::-webkit-scrollbar-thumb{background:' + (isDark ? 'rgba(255,255,255,.14)' : 'rgba(15,23,42,.16)') + ';border-radius:999px;}' +
+    '.jw-body::-webkit-scrollbar-track{background:transparent;}' +
+    '.jw-msg-bot a{color:inherit;text-decoration:underline;}' +
+    '@media (max-width:520px){.jw-chat-window{width:calc(100vw - 28px);height:min(74vh,var(--window-h));max-height:calc(100vh - 150px);}.jw-msg{max-width:88%;}.jw-card{max-width:94%;}}' +
+    '@media (max-height:600px){.jw-chat-window{height:calc(100vh - 150px);}}';
   shadow.appendChild(styleEl);
 
   // --- Suivi prospect (Supabase via /api/track, best-effort, ne bloque jamais l'IA) ---
@@ -624,6 +652,176 @@
     }
   }
 
+  // ── 🃏 LES CARTES ──────────────────────────────────────────────────────────
+  // L'assistant écrit du markdown simple (un titre en gras + des puces) : c'est
+  // ICI qu'on décide de l'affichage. Aucune demande de JSON au modèle (il se
+  // trompe), et si la réponse ne ressemble à rien, on affiche du texte normal.
+  var CARD_LINK = /\[([^\]]{1,60})\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g;
+  var CARD_BULLET = /^\s*(?:[-*•·‣]|\d+[.)])\s+(.*)$/;
+  var CARD_TITLE = /^\s*(?:\*\*(.+?)\*\*|__(.+?)__|#{1,4}\s*(.+?))\s*[:：]?\s*$/;
+
+  function cardClean(value) {
+    return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  }
+
+  function extractCardLinks(line) {
+    var actions = [];
+    var text = String(line).replace(CARD_LINK, function (all, label, href) {
+      actions.push({ label: cardClean(label), href: String(href).trim() });
+      return cardClean(label);
+    });
+    return { text: text, actions: actions };
+  }
+
+  function cardTitle(line) {
+    var m = CARD_TITLE.exec(line);
+    if (!m) return '';
+    return cardClean(m[1] || m[2] || m[3] || '');
+  }
+
+  // Une ligne de titre APRÈS des puces ouvre une nouvelle carte.
+  function splitCardSections(section) {
+    var lines = String(section).split('\n');
+    var out = [];
+    var current = [];
+    var seenBullet = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var isBullet = CARD_BULLET.test(line);
+      if (seenBullet && !isBullet && cardTitle(line)) {
+        if (current.length) out.push(current.join('\n'));
+        current = [];
+        seenBullet = false;
+      }
+      if (isBullet) seenBullet = true;
+      current.push(line);
+    }
+    if (current.length) out.push(current.join('\n'));
+    return out.map(function (chunk) { return chunk.trim(); }).filter(function (chunk) { return !!chunk; });
+  }
+
+  function parseBlocks(raw) {
+    var source = String(raw == null ? '' : raw).replace(/\r\n?/g, '\n').trim();
+    if (!source) return [];
+    var sections = [];
+    source.split(/\n{2,}/).forEach(function (part) {
+      splitCardSections(part).forEach(function (chunk) { sections.push(chunk); });
+    });
+
+    var blocks = [];
+    sections.forEach(function (section) {
+      var lines = section.split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).filter(function (l) { return l.trim(); });
+      if (!lines.length) return;
+      var actions = [];
+      var bullets = [];
+      var texts = [];
+      var title = '';
+
+      lines.forEach(function (line) {
+        var bullet = CARD_BULLET.exec(line);
+        var found = extractCardLinks(bullet ? bullet[1] : line);
+        actions = actions.concat(found.actions);
+        var content = cardClean(found.text);
+        if (!content) return;
+        if (bullet) { bullets.push(content); return; }
+        if (!bullets.length && !title) {
+          var asTitle = cardTitle(line) || (content.length <= 48 ? content : '');
+          if (asTitle) { title = asTitle; return; }
+        }
+        texts.push(content);
+      });
+
+      if (bullets.length >= 2 || (bullets.length === 1 && title)) {
+        if (texts.length) blocks.push({ kind: 'text', text: texts.join(' ') });
+        blocks.push({ kind: 'card', title: title, items: bullets.slice(0, 6), actions: actions });
+        return;
+      }
+      var remaining = texts.concat(bullets);
+      if (remaining.length) {
+        var block = { kind: 'text', text: remaining.join('\n') };
+        if (actions.length) block.actions = actions;
+        blocks.push(block);
+      } else if (actions.length) {
+        blocks.push({ kind: 'card', title: title, items: [], actions: actions });
+      } else if (title) {
+        blocks.push({ kind: 'text', text: title });
+      }
+    });
+    return blocks;
+  }
+
+  function hasCards(blocks) {
+    return blocks.some(function (b) {
+      return b.kind === 'card' && (b.items.length > 0 || b.actions.length > 0);
+    });
+  }
+
+  /** Une carte : titre coloré, une info par ligne, boutons en bas. */
+  function buildCardEl(card) {
+    var el = document.createElement('div');
+    el.className = 'jw-card';
+    if (card.title) {
+      var head = document.createElement('div');
+      head.className = 'jw-card-head';
+      head.textContent = card.title;
+      el.appendChild(head);
+    }
+    if (card.items.length) {
+      var body = document.createElement('div');
+      body.className = 'jw-card-body';
+      card.items.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'jw-card-row';
+        var dot = document.createElement('span');
+        dot.className = 'jw-card-dot';
+        row.appendChild(dot);
+        var text = document.createElement('span');
+        text.textContent = item;
+        row.appendChild(text);
+        body.appendChild(row);
+      });
+      el.appendChild(body);
+    }
+    if (card.actions && card.actions.length) {
+      var actions = document.createElement('div');
+      actions.className = 'jw-card-actions';
+      card.actions.forEach(function (action) {
+        var link = document.createElement('a');
+        link.className = 'jw-card-btn';
+        link.href = action.href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = action.label;
+        actions.appendChild(link);
+      });
+      el.appendChild(actions);
+    }
+    return el;
+  }
+
+  /** Ajoute un message de l'assistant : cartes si possible, texte sinon. */
+  function appendBotMessage(container, text) {
+    var blocks = parseBlocks(text);
+    if (!hasCards(blocks)) {
+      var plain = document.createElement('div');
+      plain.className = 'jw-msg jw-msg-bot';
+      plain.textContent = text;
+      container.appendChild(plain);
+      return;
+    }
+    blocks.forEach(function (block) {
+      if (block.kind === 'card') {
+        container.appendChild(buildCardEl(block));
+        if (block.actions && block.actions.length) return;
+        return;
+      }
+      var el = document.createElement('div');
+      el.className = 'jw-msg jw-msg-bot';
+      el.textContent = block.text;
+      container.appendChild(el);
+    });
+  }
+
   function render() {
     wrapper.innerHTML = '';
 
@@ -704,10 +902,14 @@
       var body = document.createElement('div');
       body.className = 'jw-body';
       messages.forEach(function (m, i) {
-        var msg = document.createElement('div');
-        msg.className = 'jw-msg ' + (m.sender === 'user' ? 'jw-msg-user' : 'jw-msg-bot');
-        msg.textContent = m.text;
-        body.appendChild(msg);
+        if (m.sender === 'bot') {
+          appendBotMessage(body, m.text);
+        } else {
+          var msg = document.createElement('div');
+          msg.className = 'jw-msg jw-msg-user';
+          msg.textContent = m.text;
+          body.appendChild(msg);
+        }
 
         // Boutons 👍/👎 sous chaque réponse de l'IA (pas le message d'accueil).
         if (m.sender === 'bot' && i > 0) {

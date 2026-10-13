@@ -16,6 +16,7 @@
  *   • laisser un robot vider le quota : 20 messages / 10 minutes / visiteur.
  */
 import { readSiteChatConfig, publicSiteChat, buildSiteChatPrompt } from '../_shared/site-chat.ts';
+import { selectKnowledgeSections, ragReport, SITE_KB_TURN_BUDGET_CHARS } from '../_shared/rag.ts';
 import { rateLimited } from '../_shared/rate-limit.ts';
 
 const cors = {
@@ -101,12 +102,22 @@ export async function onRequestPost(context: any) {
     { role: 'user', parts: [{ text: message }] },
   ];
 
+  // 🧠 RAG : on n'envoie que les sections de la base qui parlent de la question.
+  // Une base courte (le cas normal) part entière : aucun risque de perte.
+  // ⚠️ Pas de cache explicite ici : le prompt du site fait ~1 300 jetons, très
+  // au-dessous du plancher de Google (4 096) — le RAG est le bon levier.
+  const knowledge = selectKnowledgeSections(config.ai.knowledge, message, {
+    budgetChars: SITE_KB_TURN_BUDGET_CHARS,
+  });
+  if (knowledge.omittedChars > 0) console.info(`[site-chat] ${ragReport(knowledge, 'base du site')}`);
+  const systemPrompt = buildSiteChatPrompt(config, knowledge.text);
+
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: buildSiteChatPrompt(config) }] },
+        systemInstruction: { parts: [{ text: systemPrompt }] },
         contents,
         generationConfig: {
           temperature: 0.5,

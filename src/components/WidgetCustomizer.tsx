@@ -594,12 +594,16 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
 
               {/* Size Choice */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Taille du bouton</label>
+                <label className="text-xs font-semibold text-slate-700">Taille du widget</label>
+                <p className="text-[10px] text-slate-500">
+                  La bulle <span className="font-semibold">et</span> la fenêtre du chat. Le défaut reste discret :
+                  une bulle de chat n'est pas une application.
+                </p>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { id: 'compact', title: 'Discret (48px)' },
-                    { id: 'standard', title: 'Standard (56px)' },
-                    { id: 'large', title: 'Confort (64px)' },
+                    { id: 'compact', title: 'Discret', hint: 'bulle 48 px · fenêtre 300×430' },
+                    { id: 'standard', title: 'Standard', hint: 'bulle 56 px · fenêtre 340×500' },
+                    { id: 'large', title: 'Confort', hint: 'bulle 64 px · fenêtre 400×600' },
                   ].map((sz) => (
                     <button
                       key={sz.id}
@@ -612,6 +616,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                       }`}
                     >
                       <span className="block text-xs font-bold">{sz.title}</span>
+                      <span className="block text-[9px] text-slate-500 leading-tight mt-0.5">{sz.hint}</span>
                     </button>
                   ))}
                 </div>

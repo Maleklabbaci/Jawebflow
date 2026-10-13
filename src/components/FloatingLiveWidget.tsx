@@ -21,6 +21,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { renderMessageContent } from '../utils/renderMessageContent';
+import ChatCards, { chatCardsFor } from './ChatCards';
 
 interface FloatingLiveWidgetProps {
   onOpenCreateAssistant: () => void;
@@ -500,8 +501,20 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     teaser: light ? 'border-black/10 bg-white/97 text-neutral-700' : 'border-purple-400/35 bg-[#0b0912]/96 text-neutral-200',
     footer: light ? 'bg-neutral-100 text-neutral-500' : 'bg-black/30 text-neutral-500',
     bar: light ? 'bg-neutral-100/90 border-black/[0.07]' : 'bg-neutral-900/90 border-white/10',
-    input: light ? 'bg-white border border-black/10 text-neutral-900' : 'bg-neutral-900 border border-white/10 text-white',
+    input: light
+      ? 'bg-white border border-black/10 text-neutral-900 placeholder:text-neutral-400'
+      : 'bg-neutral-900 border border-white/10 text-white placeholder:text-neutral-500',
   };
+
+  // 📏 La taille du panneau suit le réglage du propriétaire : une bulle de chat
+  // n'est pas une application — par défaut elle reste discrète, et le client
+  // choisit « compact », « standard » ou « large » (console → Apparence).
+  const panelSize =
+    widget?.size === 'large'
+      ? 'sm:h-[580px] sm:w-[400px]'
+      : widget?.size === 'compact'
+        ? 'sm:h-[440px] sm:w-[320px]'
+        : 'sm:h-[500px] sm:w-[344px]';
 
   const contactLine = config?.contact?.email ? (
     <a
@@ -526,7 +539,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       {isOpen && (
         <div
           id="live-widget-modal"
-          className={`animate-in slide-in-from-bottom-5 pointer-events-auto mb-2.5 flex h-[520px] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col overflow-hidden rounded-[22px] border shadow-[0_36px_70px_-40px_rgba(0,0,0,0.95)] backdrop-blur-2xl duration-200 sm:h-[540px] sm:max-h-[82vh] sm:w-[380px] ${skin.panel}`}
+          className={`animate-in slide-in-from-bottom-5 pointer-events-auto mb-2.5 flex h-[min(72dvh,520px)] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col overflow-hidden rounded-[22px] border shadow-[0_36px_70px_-40px_rgba(0,0,0,0.95)] backdrop-blur-2xl duration-200 sm:max-h-[82vh] ${panelSize} ${skin.panel}`}
         >
           {/* Header */}
           <div className={`flex shrink-0 items-center justify-between gap-2 p-3.5 sm:p-4 ${skin.header}`}>
@@ -691,6 +704,30 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           >
             {messages.map((m) => {
               const isAssistant = m.sender === 'assistant';
+              // 🃏 Une réponse en liste (titre + puces) devient une carte propre ;
+              // tout le reste garde la bulle habituelle.
+              const cards = isAssistant ? chatCardsFor(m.text) : null;
+              if (cards) {
+                return (
+                  <div key={m.id} className="flex flex-col items-start">
+                    <ChatCards blocks={cards} light={light} accent={primary} />
+                    {m.actionLabel && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsOpen(false);
+                          onOpenCreateAssistant();
+                        }}
+                        className="btn btn-sm btn-primary mt-2"
+                      >
+                        <span>{m.actionLabel}</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <span className="mt-1 px-1 text-[9px] text-neutral-400">{m.timestamp}</span>
+                  </div>
+                );
+              }
               return (
                 <div key={m.id} className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}>
                   <div

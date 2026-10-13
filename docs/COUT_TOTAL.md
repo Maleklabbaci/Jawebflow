@@ -312,3 +312,12 @@ node scripts/couts-totaux.mjs --slickpay=1.4   # versement mensuel SlickPay
 tarifs Gemini 3.1 Flash-Lite · **slick-pay.com/pricing** (1,4–2 % par transaction) ·
 **Banque d'Algérie** (134,43 DA/USD au 06/10/2026) · **relevés du Square Port-Saïd**
 (~240–270 DA/USD, octobre 2026 — taux retenu : **270**, fourni par le propriétaire du projet).
+
+---
+
+## 🧠 Économies à la source (13/10/2026)
+
+Les jetons envoyés à Gemini sont maintenant bornés des deux côtés : **RAG** (seules les sections
+utiles de la base de connaissance partent, avec un plafond dur) et **cache de contexte** (la partie
+stable est relue à **10 %** du prix quand elle dépasse le plancher de Google, 4 096 jetons).
+Mesures, tarifs et réglages : **`docs/ECONOMIES_CACHE_RAG.md`**.

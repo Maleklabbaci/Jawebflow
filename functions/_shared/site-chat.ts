@@ -611,11 +611,23 @@ const TONES: Record<string, string> = {
 };
 
 const LANGUAGES: Record<string, string> = {
-  auto: "Réponds dans la langue du visiteur (français, arabe, darija en lettres latines ou en caractères arabes, anglais).",
-  fr: 'Réponds toujours en français simple, même si le visiteur écrit en arabe.',
+  auto: "Réponds dans la langue du visiteur — français, arabe / arabe algérien, darija algérienne en lettres latines ou en caractères arabes, anglais. C'est le visiteur qui choisit.",
+  fr: 'Réponds toujours en français simple, même si le visiteur écrit en arabe ou en darija.',
   ar: 'Réponds toujours en arabe simple et clair.',
-  darija: 'Réponds toujours en darija algérienne écrite en lettres latines (Arabizi), avec quelques mots français si c’est naturel.',
+  darija:
+    'Réponds toujours en darija **algérienne** en lettres latines (Arabizi), celle d’Alger : « wach rak », « sahit », « dork », « chwiya », « kima »… Jamais du marocain (« daba », « wakha », « zwin ») ni du tunisien, avec quelques mots français si c’est naturel.',
 };
+
+/**
+ * 🗣️ Les langues sont un CHOIX du propriétaire : le visiteur ne peut pas en
+ * imposer une autre. On le dit au modèle en une ligne, sans gonfler le prompt.
+ */
+export const STRICT_LANGUAGES_RULE =
+  "🗣️ Tu ne parles QUE les langues autorisées ci-dessus. Si le visiteur écrit dans une autre langue (espagnol, hindi, anglais s'il n'est pas autorisé, turc…), tu le dis en UNE phrase dans ta première langue autorisée et tu l'invites gentiment à continuer dans une de ces langues : tu ne réponds jamais dans cette autre langue, tu ne la traduis pas, même s'il insiste.";
+
+/** 🃏 Comment organiser une réponse : des cartes courtes, jamais un pavé. */
+export const CARD_STYLE_RULE =
+  "🃏 ORGANISATION : dès que ta réponse contient plusieurs informations (tarifs, formules, étapes, horaires, options, avantages), écris une CARTE : un titre court en **gras** sur sa propre ligne, puis 3 à 5 puces très courtes (une info par puce, jamais une phrase entière). Un lien utile s'écrit en markdown — [Voir les tarifs](https://…) — il s'affichera en bouton. Entre deux cartes, laisse une ligne vide. Pas de pavé de plus de 3 phrases ni de liste de plus de 6 lignes."
 
 /**
  * Le prompt système de l'APPEL du site vitrine (le visiteur appuie sur le
@@ -652,16 +664,22 @@ export function siteVoiceMaxSeconds(config: SiteChatConfig): number {
  * Le prompt système du chatbot du site : court, et la connaissance vient de la
  * base rédigée par Jimmy (jamais de culture générale, jamais d'invention).
  */
-export function buildSiteChatPrompt(config: SiteChatConfig): string {
+export function buildSiteChatPrompt(config: SiteChatConfig, knowledgeText?: string): string {
   const t = config.ai.tone;
   const lang = config.ai.language;
+  // 🧠 La base peut être remplacée par la SÉLECTION RAG du tour (les sections
+  // utiles à la question) : le prompt garde ainsi la même taille au fil des
+  // messages au lieu d'embarquer toute la base à chaque fois.
+  const knowledge = String(knowledgeText ?? config.ai.knowledge ?? '');
   const parts = [
     "Tu es l'assistant officiel de JawebFlow (jawebflow.dz), la plateforme algérienne qui installe des assistants IA sur les sites web des commerçants.",
     "Tu parles à un visiteur du site : tu réponds à ses questions, puis tu l'invites naturellement à créer son assistant gratuitement (bouton « Créer mon assistant »).",
     TONES[t] || TONES.pro,
     lang === 'auto' && config.widget.voice?.languages?.length
-      ? languageInstruction(config.widget.voice.languages)
+      ? languageInstruction(config.widget.voice.languages, { surface: 'chat' })
       : LANGUAGES[lang] || LANGUAGES.auto,
+    STRICT_LANGUAGES_RULE,
+    CARD_STYLE_RULE,
     'RÈGLES ABSOLUES :',
     "1. Tu réponds UNIQUEMENT avec les informations de la BASE DE CONNAISSANCE ci-dessous. Si une information n'y est pas, tu le dis honnêtement et tu proposes de contacter l'équipe (e-mail ou WhatsApp selon la base). Tu n'inventes jamais un prix, un délai ni une fonctionnalité.",
     '2. Réponses courtes : 2 à 5 phrases, ou une petite liste. Pas de tableau, pas de titre markdown, pas de lien inventé.',
@@ -671,7 +689,7 @@ export function buildSiteChatPrompt(config: SiteChatConfig): string {
     config.contact.email ? `Contact de l'équipe : ${config.contact.email}.` : '',
     config.contact.whatsapp ? `WhatsApp de l'équipe : ${config.contact.whatsapp}.` : '',
     'BASE DE CONNAISSANCE (la seule source autorisée) :',
-    config.ai.knowledge,
+    knowledge,
   ];
   return parts.filter(Boolean).join('\n');
 }
