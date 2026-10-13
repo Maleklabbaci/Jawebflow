@@ -30,7 +30,7 @@ Pas réservé à Enterprise.
 
 | | Coût pour toi | Ce que ça change |
 |---|---|---|
-| **Inclure 1 000 messages dans Pro** | **373 DA** = **2 % du prix du pack** | La raison de passer de Basic (6 850 DA) à Pro (18 700 DA) : **+11 850 DA** |
+| **Inclure 1 000 messages dans Pro** | **373 DA** = **2 % du prix du pack** | La raison de passer de Basic (4 500 DA) à Pro (14 000 DA) : **+9 500 DA** |
 | **1 client qui monte en gamme** | — | finance **~32 forfaits WhatsApp** (11 850 ÷ 373) |
 
 **Pourquoi Pro est le bon endroit, pour TOI :**
@@ -43,10 +43,10 @@ Pas réservé à Enterprise.
    tarif public.)
 3. **Le travail humain suit l'argent.** Chaque client WhatsApp demande un numéro dédié, un
    onboarding Meta, et surtout **l'approbation de ses templates** par Meta — c'est du travail
-   non automatisable, à refaire par client. Tu veux le faire pour des clients à 18 700 DA,
-   pas pour la masse des clients Basic à 6 850 DA.
+   non automatisable, à refaire par client. Tu veux le faire pour des clients à 14 000 DA,
+   pas pour la masse des clients Basic à 4 500 DA.
 4. **Pas réservé à Enterprise** : WhatsApp est le canal grand public en Algérie, pas un besoin
-   de grand compte. L'enfermer dans le pack à 47 100 DA prive 90 % de tes clients du canal —
+   de grand compte. L'enfermer dans un pack Enterprise sur devis prive 90 % de tes clients du canal —
    et toi de la montée de gamme Pro.
 
 **Pourquoi Pro est le bon endroit, pour TES CLIENTS :**
@@ -69,9 +69,9 @@ Pas réservé à Enterprise.
 | Plan | WhatsApp | Inclus | Coût réel pour toi | Effet sur la marge |
 |---|---|---|---|---|
 | **Découverte** (0 DA) | ❌ | — | — | — (0 crédit IA de toute façon) |
-| **Basic** (6 850 DA) | ❌ **pas inclus, pas en option** | — | 0 DA | — |
-| **Pro / Business** (18 700 DA) | ✅ **inclus** | **1 000 messages/mois** | **186 DA** | **1,0 % du prix** |
-| **Enterprise** (47 100 DA) | ✅ **inclus** | **5 000 messages/mois** | **3 414 DA** | **7,2 % du prix** |
+| **Basic** (4 500 DA) | ❌ **pas inclus, pas en option** | — | 0 DA | — |
+| **Pro / Business** (14 000 DA) | ✅ **inclus** | **1 000 messages/mois** | **186 DA** | **1,3 % du prix** |
+| **Enterprise** (sur devis) | ✅ **inclus** | **5 000 messages/mois** | **3 414 DA** | **7,2 % de l'ancien repère** |
 
 **Au-delà du forfait inclus** : **1,61 DA par message** (coût réel 0,81 DA → marge 50 %),
 ou un pack de rechargement. **Les campagnes marketing ne sont jamais incluses** (voir §3).

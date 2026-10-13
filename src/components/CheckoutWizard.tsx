@@ -93,9 +93,9 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
   const getDzdAmountStr = () => {
     if (selectedCheckoutPlan === 'free') return '0';
     if (selectedCheckoutPlan === 'basic') {
-      return billingCycle === 'monthly' ? '6 850' : '65 760';
+      return billingCycle === 'monthly' ? '4 500' : '43 200';
     } else if (selectedCheckoutPlan === 'pro') {
-      return billingCycle === 'monthly' ? '18 700' : '179 500';
+      return billingCycle === 'monthly' ? '14 000' : '134 400';
     } else {
       return billingCycle === 'monthly' ? '47 100' : '452 160';
     }
@@ -351,7 +351,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                     <span className="text-xs text-slate-500 font-semibold">/mois</span>
                   </div>
                   <p className="text-[11px] text-purple-700 font-bold mt-1">
-                    ~{billingCycle === 'monthly' ? '6 850' : '5 480'} DZD /mois
+                    ~{billingCycle === 'monthly' ? '4 500' : '3 600'} DZD /mois
                   </p>
                 </div>
 
@@ -391,7 +391,7 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                     <span className="text-xs text-slate-500 font-semibold">/mois</span>
                   </div>
                   <p className="text-[11px] text-purple-700 font-bold mt-1">
-                    ~{billingCycle === 'monthly' ? '18 700' : '14 960'} DZD /mois
+                    ~{billingCycle === 'monthly' ? '14 000' : '11 200'} DZD /mois
                   </p>
                 </div>
 
@@ -805,9 +805,9 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                     <span className="text-slate-400">Équivalent DZD :</span>
                     <span className="font-extrabold text-purple-300 font-mono">
                       ~{selectedCheckoutPlan === 'basic'
-                        ? (billingCycle === 'monthly' ? '6 850' : '65 760')
+                        ? (billingCycle === 'monthly' ? '4 500' : '43 200')
                         : selectedCheckoutPlan === 'pro'
-                        ? (billingCycle === 'monthly' ? '18 700' : '179 500')
+                        ? (billingCycle === 'monthly' ? '14 000' : '134 400')
                         : (billingCycle === 'monthly' ? '47 100' : '452 160')} DZD
                     </span>
                   </div>

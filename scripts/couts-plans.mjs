@@ -45,8 +45,8 @@ const HYPOTHESES = {
   /** Packs vendus : quota en conversations, plafond de coût IA, prix. */
   packs: [
     { id: 'free',       libelle: 'Découverte',    prixDzd: 0,     quotaConversations: 0,    capUsd: 0 },
-    { id: 'basic',      libelle: 'Basic',         prixDzd: 6850,  quotaConversations: 1000, capUsd: 3 },
-    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 18700, quotaConversations: 5000, capUsd: 9 },
+    { id: 'basic',      libelle: 'Basic',         prixDzd: 4500,  quotaConversations: 1000, capUsd: 3 },
+    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 14000, quotaConversations: 5000, capUsd: 9 },
     { id: 'enterprise', libelle: 'Enterprise',    prixDzd: 47100, quotaConversations: null, capUsd: 30 },
   ],
 
@@ -344,8 +344,8 @@ for (const messages of [200, 1000, 2000, 5000, 25000]) {
 }
 console.log(`
 👉 WhatsApp s'ajoute PAR-DESSUS le coût IA, et il est proportionnel au trafic.
-   Un pack Basic (${dzd(6850)}) avec 5 000 messages WhatsApp/mois :
-   ${dzd(wa.rateServiceDzdParMessage * 4000)} de frais Meta = ${pct((wa.rateServiceDzdParMessage * 4000) / 6850 * 100)} du prix du pack.
+   Un pack Basic (${dzd(4500)}) avec 5 000 messages WhatsApp/mois :
+   ${dzd(wa.rateServiceDzdParMessage * 4000)} de frais Meta = ${pct((wa.rateServiceDzdParMessage * 4000) / 4500 * 100)} du prix du pack.
    → À refacturer (pass-through ou option payante), jamais à absorber en silence.`);
 
 // --- 4.9 Conclusion ------------------------------------------------------

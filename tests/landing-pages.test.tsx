@@ -142,10 +142,14 @@ describe('site vitrine — pages', () => {
       const text = el?.textContent || '';
       return el?.tagName === 'DIV' && /DZD \/ mois/.test(text) && new RegExp(value).test(text);
     });
-    expect(dzd('6\\s*850')[0].textContent).toContain('mois');
+    expect(dzd('4\\s*500')[0].textContent).toContain('mois');
+
+    // Enterprise n'affiche plus aucun prix : la formule est « à la demande ».
+    expect(screen.getByText('À la demande')).toBeTruthy();
+    expect(screen.queryByText(/47\s*100/)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Annuel/ }));
-    expect(dzd('5\\s*480').length).toBeGreaterThan(0);
+    expect(dzd('3\\s*600').length).toBeGreaterThan(0);
 
     // Le plan gratuit mène à la création de compte, Enterprise au contact :
     // plus aucun bouton n'envoie vers une caisse impossible.
@@ -257,8 +261,8 @@ describe('site vitrine — navigation et widget flottant', () => {
     expect(screen.getByText(/Assistant JawebFlow/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Combien ça coûte/ }));
-    const answer = await screen.findByText(/6\s*850 DA\/mois/, {}, { timeout: 3000 });
-    expect(answer.textContent).toMatch(/18\s*700 DA\/mois/);
+    const answer = await screen.findByText(/4\s*500 DA\/mois/, {}, { timeout: 3000 });
+    expect(answer.textContent).toMatch(/14\s*000 DA\/mois/);
     expect(answer.textContent).not.toContain('2 900');
 
     fireEvent.click(screen.getByRole('button', { name: /Créer mon assistant gratuitement/ }));

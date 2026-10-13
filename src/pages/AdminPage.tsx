@@ -73,8 +73,8 @@ const PLAN_CHIPS: Record<string, string> = {
 };
 
 const PLAN_PRICES: Record<string, { dzd: number; usd: number }> = {
-  basic: { dzd: 6850, usd: 29 },
-  pro: { dzd: 18700, usd: 79 },
+  basic: { dzd: 4500, usd: 19 },
+  pro: { dzd: 14000, usd: 59 },
   enterprise: { dzd: 47100, usd: 199 },
 };
 
@@ -361,7 +361,7 @@ export function AdminPage() {
   const [newInvEmail, setNewInvEmail] = useState('');
   const [newInvName, setNewInvName] = useState('');
   const [newInvPlan, setNewInvPlan] = useState<'basic' | 'pro' | 'enterprise'>('pro');
-  const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(18700);
+  const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(14000);
   const [newInvMethod, setNewInvMethod] = useState('baridimob_ccp');
   const [newInvStatus, setNewInvStatus] = useState('paid');
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
@@ -1608,7 +1608,7 @@ export function AdminPage() {
                       placeholder={p.id === 'enterprise' ? 'Illimité' : '0'}
                       className="w-full text-2xl font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:bg-white disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                     />
-                    <div className="text-xs text-slate-400 mt-2">{p.id === 'free' ? p.desc : `${p.desc} · ${p.id === 'basic' ? '6850 DA' : p.id === 'pro' ? '18 700 DA' : '47 100 DA'}`}</div>
+                    <div className="text-xs text-slate-400 mt-2">{p.id === 'free' ? p.desc : `${p.desc} · ${p.id === 'basic' ? '4 500 DA' : p.id === 'pro' ? '14 000 DA' : 'sur devis'}`}</div>
                   </div>
                 ))}
               </div>

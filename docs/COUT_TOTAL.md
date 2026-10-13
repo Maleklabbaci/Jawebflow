@@ -12,8 +12,8 @@
 | Pack | Prix | Inclus | WhatsApp | **Coût réel** | Marge | **Marge %** |
 |---|---|---|---|---|---|---|
 | **Découverte** | 0 DA | IA coupée | — | 0 DA | — | — |
-| **Basic** | 6 850 DA | 1 000 conv. web | ❌ **non inclus** | **852 DA** | 5 998 DA | **87,6 %** |
-| **Pro / Business** | 18 700 DA | 5 000 conv. web | ✅ **1 000 msg/mois** | **1 266 DA** | 17 434 DA | **93,2 %** |
+| **Basic** | 4 500 DA | 1 000 conv. web | ❌ **non inclus** | **852 DA** | 3 648 DA | **81,1 %** |
+| **Pro / Business** | 14 000 DA | 5 000 conv. web | ✅ **1 000 msg/mois** | **1 266 DA** | 12 734 DA | **91,0 %** |
 | **Enterprise** | 47 100 DA | illimité | ✅ **5 000 msg/mois** | **9 070 DA** | 38 030 DA | **80,7 %** |
 
 *Scénario A — usage réaliste : Basic 250 conversations web · Pro 200 conversations web + 1 000
@@ -32,8 +32,8 @@ et le pack garde **93 % de marge**.
 | Pack | Prix | IA web | IA WhatsApp | Meta | Encaissement | **COÛT TOTAL** | Marge | Marge % |
 |---|---|---|---|---|---|---|---|---|
 | Découverte | 0 DA | — | — | — | — | **0 DA** | — | — |
-| **Basic** | 6 850 DA | 743 DA | 0 DA | 0 DA | 110 DA | **852 DA** | 5 998 DA | 87,6 % |
-| **Pro** | 18 700 DA | 594 DA | 373 DA | 0 DA | 299 DA | **1 266 DA** | 17 434 DA | 93,2 % |
+| **Basic** | 4 500 DA | 743 DA | 0 DA | 0 DA | 110 DA | **852 DA** | 3 648 DA | 81,1 % |
+| **Pro** | 14 000 DA | 594 DA | 373 DA | 0 DA | 299 DA | **1 266 DA** | 12 734 DA | 91,0 % |
 | **Enterprise** | 47 100 DA | 1 485 DA | 1 863 DA | 4 968 DA | 754 DA | **9 070 DA** | 38 030 DA | 80,7 % |
 
 **Pourquoi Meta est à 0 DA sur Pro :** les **1 000 premiers messages de service de chaque
@@ -96,8 +96,8 @@ Enterprise 2 500 + 5 000 messages WhatsApp.
 
 | Pack | Prix | IA canaux | IA WhatsApp | Meta | Encaissement | **COÛT TOTAL** | **Marge %** |
 |---|---|---|---|---|---|---|---|
-| **Basic** | 6 850 DA | 1 188 DA | 0 DA | 0 DA | 110 DA | **1 298 DA** | **81,1 %** |
-| **Pro** | 18 700 DA | 2 673 DA | 373 DA | 0 DA | 299 DA | **3 345 DA** | **82,1 %** |
+| **Basic** | 4 500 DA | 1 188 DA | 0 DA | 0 DA | 110 DA | **1 298 DA** | **71,2 %** |
+| **Pro** | 14 000 DA | 2 673 DA | 373 DA | 0 DA | 299 DA | **3 345 DA** | **76,1 %** |
 | **Enterprise** | 47 100 DA | 7 425 DA | 1 863 DA | 4 968 DA | 754 DA | **15 010 DA** | **68,1 %** |
 
 **À lire attentivement :** la marge baisse **non pas à cause des nouveaux réseaux** (ils sont

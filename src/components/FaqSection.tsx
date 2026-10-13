@@ -37,7 +37,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Combien ça coûte réellement ?',
-    a: "Vous commencez gratuitement pour tester. Ensuite, la formule Basic démarre à 6 850 DA (~29 $) par mois, la Pro à 18 700 DA (~79 $) par mois pour les volumes plus élevés et l'accès anticipé aux canaux réseaux sociaux. Facture d'entreprise conforme disponible sur demande.",
+    a: "Vous commencez gratuitement pour tester. Ensuite, la formule Basic démarre à 4 500 DA (~19 $) par mois et la Pro à 14 000 DA (~59 $) par mois pour les volumes plus élevés. La formule Enterprise est à la demande, sur devis selon votre volume. Facture d'entreprise conforme disponible sur demande.",
   },
   {
     q: 'Et si je veux un devis ou une facture pour ma société ?',

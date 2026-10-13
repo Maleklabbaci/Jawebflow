@@ -31,6 +31,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       priceDzdYearly: 0,
       badge: 'Gratuit',
       isPopular: false,
+      onRequest: false,
       features: [
         'Accès complet au tableau de bord et à la configuration',
         'Installation du widget sur votre site web',
@@ -44,10 +45,11 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       id: 'basic' as PaymentPlanId,
       name: 'Basic',
       subtitle: 'Pour installer votre premier assistant et ne plus perdre une demande.',
-      priceUsdMonthly: 29,
-      priceDzdMonthly: 6850,
-      priceUsdYearly: 23,
-      priceDzdYearly: 5480,
+      priceUsdMonthly: 19,
+      priceDzdMonthly: 4500,
+      priceUsdYearly: 15,
+      priceDzdYearly: 3600,
+      onRequest: false,
       badge: 'Web & Messenger',
       isPopular: false,
       features: [
@@ -65,10 +67,11 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       id: 'pro' as PaymentPlanId,
       name: 'Pro / Business',
       subtitle: 'Pour vendre plus, avec les clients intéressés livrés dans votre espace.',
-      priceUsdMonthly: 79,
-      priceDzdMonthly: 18700,
-      priceUsdYearly: 63,
-      priceDzdYearly: 14960,
+      priceUsdMonthly: 59,
+      priceDzdMonthly: 14000,
+      priceUsdYearly: 47,
+      priceDzdYearly: 11200,
+      onRequest: false,
       badge: 'Le plus choisi',
       isPopular: true,
       features: [
@@ -86,10 +89,12 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       id: 'enterprise' as PaymentPlanId,
       name: 'Enterprise',
       subtitle: 'Pour les réseaux, franchises et architectures sur mesure.',
-      priceUsdMonthly: 199,
-      priceDzdMonthly: 47100,
-      priceUsdYearly: 159,
-      priceDzdYearly: 37680,
+      // Enterprise : pas de prix public — « à la demande », devis selon le volume.
+      priceUsdMonthly: 0,
+      priceDzdMonthly: 0,
+      priceUsdYearly: 0,
+      priceDzdYearly: 0,
+      onRequest: true,
       badge: 'Sur-mesure & API',
       isPopular: false,
       features: [
@@ -223,21 +228,34 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
                 </div>
 
                 <div className="space-y-1.5 border-b border-white/[0.07] pb-5">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[2rem] font-extrabold tracking-[-0.04em] text-white">
-                      {priceUsd} $
-                    </span>
-                    <span className="text-[0.72rem] font-light text-neutral-500">/ mois</span>
-                  </div>
+                  {plan.onRequest ? (
+                    <>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[1.6rem] font-extrabold tracking-[-0.04em] text-white">À la demande</span>
+                      </div>
+                      <div className="text-[0.76rem] font-light text-purple-200">
+                        Devis selon votre volume et vos canaux
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[2rem] font-extrabold tracking-[-0.04em] text-white">
+                          {priceUsd} $
+                        </span>
+                        <span className="text-[0.72rem] font-light text-neutral-500">/ mois</span>
+                      </div>
 
-                  <div className="text-[0.76rem] font-light text-purple-200">
-                    {priceDzd === 0 ? 'Gratuit — pour toujours' : `≈ ${priceDzd.toLocaleString('fr-FR')} DZD / mois`}
-                  </div>
+                      <div className="text-[0.76rem] font-light text-purple-200">
+                        {priceDzd === 0 ? 'Gratuit — pour toujours' : `≈ ${priceDzd.toLocaleString('fr-FR')} DZD / mois`}
+                      </div>
 
-                  {isYearly && priceUsd > 0 && (
-                    <span className="block text-[0.7rem] font-light text-neutral-500">
-                      Facturé annuellement (-20% de remise)
-                    </span>
+                      {isYearly && priceUsd > 0 && (
+                        <span className="block text-[0.7rem] font-light text-neutral-500">
+                          Facturé annuellement (-20% de remise)
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
 

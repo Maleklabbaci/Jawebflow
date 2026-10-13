@@ -175,8 +175,8 @@ Coût mensuel du canal (service + IA) rapporté au prix du pack :
 
 | Pack | Prix | 40 conv. | 200 conv. | 800 conv. | 2 500 conv. |
 |---|---|---|---|---|---|
-| **Basic** | 6 850 DA | 45 DA (0,7 %) | 347 DA (5,1 %) | **3 253 DA (47,5 %)** | **11 484 DA (167 %)** ⚠️ |
-| **Pro** | 18 700 DA | 45 DA (0,2 %) | 347 DA (1,9 %) | 3 253 DA (17,4 %) | **11 484 DA (61,4 %)** |
+| **Basic** | 4 500 DA | 45 DA (1,0) | 347 DA (7,7) | **3 253 DA (72 %)** | **11 484 DA (255 %)** ⚠️ |
+| **Pro** | 14 000 DA | 45 DA (0,3) | 347 DA (2,5) | 3 253 DA (23,2) | **11 484 DA (82,0)** |
 | **Enterprise** | 47 100 DA | 45 DA (0,1 %) | 347 DA (0,7 %) | 3 253 DA (6,9 %) | 11 484 DA (24,4 %) |
 
 **Conclusion sans ambiguïté : WhatsApp ne peut pas être inclus silencieusement dans Basic.**

@@ -46,8 +46,8 @@ const H = {
   /** Les 4 packs : ce qu'ils incluent. */
   packs: [
     { id: 'free',       libelle: 'Découverte',    prixDzd: 0,     convWebInclus: 0,    waInclus: 0,    capIaUsd: 0 },
-    { id: 'basic',      libelle: 'Basic',         prixDzd: 6850,  convWebInclus: 1000, waInclus: 0,    capIaUsd: 3 },
-    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 18700, convWebInclus: 5000, waInclus: 1000, capIaUsd: 20 },
+    { id: 'basic',      libelle: 'Basic',         prixDzd: 4500,  convWebInclus: 1000, waInclus: 0,    capIaUsd: 3 },
+    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 14000, convWebInclus: 5000, waInclus: 1000, capIaUsd: 20 },
     { id: 'enterprise', libelle: 'Enterprise',    prixDzd: 47100, convWebInclus: null, waInclus: 5000, capIaUsd: 30 },
   ],
 
@@ -188,8 +188,8 @@ console.log(titre('2. LES 4 PACKS, WHATSAPP COMPRIS — CE QU\'ILS TE COÛTENT')
 console.log(`
   Ce que chaque pack inclut (décision) :
     • Découverte  : rien (l'IA est coupée)
-    • Basic       : ${dzd(6850)} · 1 000 conversations web · PAS de WhatsApp
-    • Pro         : ${dzd(18700)} · 5 000 conversations web · + WhatsApp : ${U.waFranchise.toLocaleString('fr-FR')} messages/mois
+    • Basic       : ${dzd(4500)} · 1 000 conversations web · PAS de WhatsApp
+    • Pro         : ${dzd(14000)} · 5 000 conversations web · + WhatsApp : ${U.waFranchise.toLocaleString('fr-FR')} messages/mois
     • Enterprise  : ${dzd(47100)} · conversations illimitées · + WhatsApp : 5 000 messages/mois
 
   Scénario A — usage RÉALISTE d'un client (Basic 250 conv. · Pro 200 conv. + 1 000 msg WhatsApp ·
@@ -451,7 +451,7 @@ console.log(`
       coût réel : ${dzd(cEnt.total)} → ${pct((cEnt.total / ent.prixDzd) * 100)} du pack
       pire cas  : ${dzd(wEnt.total)} → ${pct((wEnt.total / ent.prixDzd) * 100)} du pack
 
-  • Basic (sans WhatsApp) : ${dzd(coutPack(H.packs[1]).total)} → ${pct((coutPack(H.packs[1]).total / 6850) * 100)} du pack
+  • Basic (sans WhatsApp) : ${dzd(coutPack(H.packs[1]).total)} → ${pct((coutPack(H.packs[1]).total / 4500) * 100)} du pack
   • Message supplémentaire : coût ${dzd(coutMsgDepassement, 2)} → à vendre ${dzd(coutMsgDepassement / 0.5, 2)}
   • Marge globale à ${CLIENTS} clients : ${pct(((rev - totalVar - inf.total) / rev) * 100)}
 

@@ -512,9 +512,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
         amountUsd = Math.round(amountUsd * 0.8 * 12);
       }
       let amountDzd = selectedCheckoutPlan === 'free' ? 0 : selectedCheckoutPlan === 'basic' 
-        ? (billingCycle === 'monthly' ? 6850 : 65760) 
+        ? (billingCycle === 'monthly' ? 4500 : 43200) 
         : selectedCheckoutPlan === 'pro' 
-          ? (billingCycle === 'monthly' ? 18700 : 179500) 
+          ? (billingCycle === 'monthly' ? 14000 : 134400) 
           : (billingCycle === 'monthly' ? 47100 : 452160);
 
       const planNameStr = selectedCheckoutPlan === 'free' ? 'Découverte' : selectedCheckoutPlan === 'basic' ? 'Basic' : selectedCheckoutPlan === 'pro' ? 'Pro' : 'Entreprise';
@@ -3843,9 +3843,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         ~{activePlan === 'free' 
                           ? '0 DZD'
                           : activePlan === 'basic' 
-                          ? (billingCycle === 'monthly' ? '6 850 DZD' : '5 480 DZD') 
+                          ? (billingCycle === 'monthly' ? '4 500 DZD' : '3 600 DZD') 
                           : activePlan === 'pro' 
-                            ? (billingCycle === 'monthly' ? '18 700 DZD' : '14 960 DZD') 
+                            ? (billingCycle === 'monthly' ? '14 000 DZD' : '11 200 DZD') 
                             : (billingCycle === 'monthly' ? '47 100 DZD' : '37 680 DZD')} / mois
                       </div>
                       <p className="text-xs text-slate-400 mt-2">
@@ -4040,7 +4040,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
                         <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
-                          ~{billingCycle === 'monthly' ? '6 850' : '5 480'} DZD / mois
+                          ~{billingCycle === 'monthly' ? '4 500' : '3 600'} DZD / mois
                         </span>
                       </div>
 
@@ -4107,7 +4107,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           <span className="text-xs text-slate-500"> / mois</span>
                         </div>
                         <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
-                          ~{billingCycle === 'monthly' ? '18 700' : '14 960'} DZD / mois
+                          ~{billingCycle === 'monthly' ? '14 000' : '11 200'} DZD / mois
                         </span>
                       </div>
 

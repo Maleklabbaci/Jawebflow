@@ -29,13 +29,13 @@
 | Pack | Prix | Quota annoncé | Coût IA **pire cas** | Marge | Coût réel d'un client typique |
 |---|---|---|---|---|---|
 | **Découverte** | 0 DA | 0 conversation | 0 DA | — | 0 DA (IA coupée) |
-| **Basic** | 6 850 DA | 1 000 conv. | **405 DA** (5,9 %) | **94 %** | 74 à 372 DA (50–250 conv.) |
-| **Pro / Business** | 18 700 DA | 5 000 conv. | **1 215 DA** (6,5 %) | **93 %** | 74 à 372 DA |
+| **Basic** | 4 500 DA | 1 000 conv. | **405 DA** (9,0) | **91 %** | 74 à 372 DA (50–250 conv.) |
+| **Pro / Business** | 14 000 DA | 5 000 conv. | **1 215 DA** (8,7) | **91 %** | 74 à 372 DA |
 | **Enterprise** | 47 100 DA | illimité | **4 050 DA** (8,6 %) | **91 %** | 372 à 1 486 DA |
 
 **En clair : les packs sont très rentables.** Le coût IA d'une conversation complète
 (≈ 8 messages) est de **1,49 DA**. Un client Basic qui fait 250 conversations par mois
-te coûte **372 DA** sur un abonnement à 6 850 DA.
+te coûte **372 DA** sur un abonnement à 4 500 DA.
 
 ⚠️ Mais il y a un piège dans le code — voir §4 : **le plafond de coût coupe l'IA
 bien avant le quota vendu.**
@@ -172,7 +172,7 @@ Trois réserves avant de bouger ces valeurs :
   soit tu baisses son quota annoncé.**
 - **Le plafond ne se relève pas « pour tous » sans risque** : c'est lui qui borne ton
   exposition. À 11 $ au lieu de 3 $, ton pire cas sur un client Basic passe de 405 DA à
-  1 485 DA. Tant que le client paie 6 850 DA, ça reste très rentable — mais ces deux
+  1 485 DA. Tant que le client paie 4 500 DA, ça reste très rentable — mais ces deux
   valeurs (plafond, prix) doivent bouger ensemble.
 - **Les prix annuels sont plus serrés** : Basic annuel 5 480 DA/mois, Pro 14 960 DA/mois,
   Enterprise 37 680 DA/mois (source : `PricingPage.tsx`). À plafonds relevés, ces
