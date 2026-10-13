@@ -9,4 +9,6 @@
 /cdn/*
   Access-Control-Allow-Origin: *
   Access-Control-Allow-Methods: GET, OPTIONS
-  Cache-Control: public, max-age=86400
+  # Une heure suffit : les fichiers sont appelés avec `?v=` (cache-busting) et
+  # une correction doit atteindre les visiteurs sans attendre 24 h.
+  Cache-Control: public, max-age=3600

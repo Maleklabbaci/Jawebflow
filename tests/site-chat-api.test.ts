@@ -259,6 +259,7 @@ describe('la console admin règle le chatbot', () => {
     expect(write.status).toBe(502);
     expect(json.ok).toBe(false);
     expect(json.error).toContain('platform_settings');
+    expect(json.error).toContain('n’existe pas');
     // …et surtout : la console dit OÙ exécuter le SQL (le cas n°1 des « j'ai
     // pourtant exécuté le SQL » = un SQL lancé dans un autre projet Supabase).
     expect(json.diag.sql).toContain('create table if not exists public.platform_settings');
@@ -280,6 +281,26 @@ describe('l’appel après la mise à jour (réglages enregistrés AVANT que la 
     expect(json.widget.mode).toBe('both');
     expect(json.widget.voice.enabled).toBe(true);
     expect(json.widget.primaryColor).toBe('#9333ea'); // le reste est bien gardé
+  });
+
+  it('table existante mais à l’ANCIENNE forme (sans colonne « data ») : le message le dit', async () => {
+    // Cas vécu : la table existait déjà, créée par une version précédente →
+    // `create table if not exists` ne répare rien, et l'écriture échoue avec
+    // PGRST204. Dire « la table n'existe pas » enverrait sur une fausse piste.
+    fx.supabase.oldShape.add('platform_settings');
+
+    const read = await get();
+    expect(read.status).toBe(200); // le site continue de fonctionner sur les défauts
+
+    const write = await adminPost({ config: { enabled: true } }, 'BEARER_ADMIN');
+    const json = (await write.json()) as any;
+    expect(write.status).toBe(502);
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain('ancienne forme');
+    expect(json.error).toContain('colonne');
+    expect(json.detail).toContain('PGRST204');
+    // …et le SQL donné à copier RÉPARE au lieu de recréer.
+    expect(json.diag.sql).toContain('add column if not exists data');
   });
 
   it('un réglage enregistré depuis la console (avec la voix) est respecté à la lettre', async () => {
@@ -346,6 +367,26 @@ describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', 
     expect(json.assistantId).toBe('jawebflow_site');
     // La clé Gemini ne sort jamais du serveur.
     expect(JSON.stringify(json)).not.toContain('GEMINI_TEST_KEY');
+  });
+
+  it('deuxième essai du navigateur (`fallback`) : jeton sur le couple historique', async () => {
+    const seen: string[] = [];
+    fx.external.handler = (url: URL) => {
+      seen.push(String(url));
+      return new Response(JSON.stringify({ name: 'auth_tokens/TOKEN_SITE', expireTime: '2026-01-01T00:00:00Z' }), { status: 200 });
+    };
+
+    // Le widget du site a déjà été fermé une fois : il redemande un jeton en
+    // précisant `fallback`. On ne rejoue pas le couple qui vient d'échouer.
+    const res = await call({ fallback: true }, withKey, '20.0.0.6');
+    const json = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain('/v1alpha/');
+    expect(json.wsUrl).not.toContain('Constrained');
+    expect(json.setup.setup.model).toBe(`models/${json.model}`);
+    expect(json.model).not.toBe('gemini-3.8-live');
   });
 
   it('anti-abus : 6 appels par IP et par 10 minutes, pas plus', async () => {

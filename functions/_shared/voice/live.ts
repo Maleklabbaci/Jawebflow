@@ -96,11 +96,20 @@ export function tokenFromAuthTokenName(name: unknown): string {
   return String(name || '').trim().replace(/^auth_tokens\//, '');
 }
 
-/** Adresse temps réel à donner au navigateur, jeton compris. */
-export function liveWebSocketUrl(apiVersion: string, token: string): string {
+/**
+ * Adresse temps réel à donner au navigateur, jeton compris.
+ *
+ * ⚠️ Un JETON ÉPHÉMÈRE ne se branche PAS sur `BidiGenerateContent` mais sur
+ * `BidiGenerateContentConstrained` : c'est la porte réservée aux jetons (le
+ * setup y est imposé par le jeton, le navigateur ne peut rien changer).
+ * Se brancher sur la mauvaise porte ouvre la socket puis la fait fermer
+ * aussitôt — exactement « ça tourne un peu puis ça raccroche ».
+ */
+export function liveWebSocketUrl(apiVersion: string, token: string, constrained = true): string {
+  const method = constrained ? 'BidiGenerateContentConstrained' : 'BidiGenerateContent';
   return (
     `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${apiVersion}` +
-    `.GenerativeService.BidiGenerateContent?access_token=${encodeURIComponent(token)}`
+    `.GenerativeService.${method}?access_token=${encodeURIComponent(token)}`
   );
 }
 
@@ -160,6 +169,8 @@ export async function createLiveToken(
     voice?: string;
     model?: string;
     apiVersion?: string;
+    /** Le navigateur redemande un jeton APRÈS l'échec du premier : couple historique. */
+    legacy?: boolean;
     fetchImpl?: typeof fetch;
     now?: number;
   },
@@ -183,8 +194,12 @@ export async function createLiveToken(
 
   const doFetch = opts.fetchImpl || fetch;
 
-  /** Une tentative complète (modèle + version d'API). */
-  const attempt = async (modelName: string, version: string): Promise<LiveSessionResult> => {
+  /** Une tentative complète (modèle + version d'API + porte d'entrée). */
+  const attempt = async (
+    modelName: string,
+    version: string,
+    constrained: boolean,
+  ): Promise<LiveSessionResult> => {
     const url = `https://generativelanguage.googleapis.com/${version}/auth_tokens`;
     let res: Response;
     try {
@@ -230,14 +245,20 @@ export async function createLiveToken(
     return {
       ok: true,
       token,
-      wsUrl: liveWebSocketUrl(version, token),
+      wsUrl: liveWebSocketUrl(version, token, constrained),
       model: modelName,
       apiVersion: version,
       expiresAt: String(data?.expireTime || expireTime),
     };
   };
 
-  const premier = await attempt(model, apiVersion);
+  // Un navigateur qui vient de se faire fermer la session redemande un jeton en
+  // précisant `legacy: true` : inutile de lui redonner le même couple.
+  if (opts.legacy) {
+    return attempt(LEGACY_LIVE_FALLBACK.model, LEGACY_LIVE_FALLBACK.apiVersion, false);
+  }
+
+  const premier = await attempt(model, apiVersion, true);
   if (premier.ok) return premier;
 
   // Repli : seulement si le marchand n'a rien forcé lui-même.
@@ -247,7 +268,7 @@ export async function createLiveToken(
     model === LEGACY_LIVE_FALLBACK.model && apiVersion === LEGACY_LIVE_FALLBACK.apiVersion;
   if (modeleForce || versionForcee || dejaLeRepli) return premier;
 
-  const repli = await attempt(LEGACY_LIVE_FALLBACK.model, LEGACY_LIVE_FALLBACK.apiVersion);
+  const repli = await attempt(LEGACY_LIVE_FALLBACK.model, LEGACY_LIVE_FALLBACK.apiVersion, false);
   if (!repli.ok) return premier; // on montre l'erreur du modèle demandé
   return {
     ...repli,

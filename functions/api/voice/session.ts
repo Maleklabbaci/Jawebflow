@@ -133,9 +133,12 @@ export async function onRequestPost(context: any) {
       ? `### OUVERTURE DE L'APPEL\nCommence l'appel par ces mots, exactement : « ${String(voice.greeting).slice(0, 300)} »`
       : '';
     const systemInstruction = buildVoiceSystemPrompt(config, knowledgeText, opening);
+    // `fallback: true` = le navigateur vient de se faire fermer la session juste
+    // après le setup : on lui redonne un jeton sur le couple historique.
     const live = await createLiveToken(env, {
       systemInstruction,
       voice: voice.voice,
+      legacy: body.fallback === true,
     });
     if (!live.ok || !live.token) {
       if (live.detail) console.error('[voice/session] Gemini Live :', live.detail);

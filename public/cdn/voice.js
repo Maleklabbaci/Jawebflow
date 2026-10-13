@@ -106,9 +106,14 @@ export function buildOpeningTurn(greeting) {
   return { clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } };
 }
 
-/** Message audio à envoyer (16 kHz mono). */
+/**
+ * Message audio à envoyer (16 kHz mono).
+ * ⚠️ `realtimeInput.mediaChunks` est DÉPRÉCIÉ et Google ne garde que le PREMIER
+ * morceau : la forme actuelle est `realtimeInput.audio`. Avec l'ancienne, le
+ * modèle n'entendait que le tout premier paquet de micro.
+ */
 export function buildAudioMessage(base64) {
-  return { realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64 }] } };
+  return { realtimeInput: { audio: { mimeType: 'audio/pcm;rate=16000', data: base64 } } };
 }
 
 /**
@@ -133,6 +138,8 @@ export function parseLiveMessage(raw) {
   const usage = pick(msg, 'usageMetadata', 'usage_metadata');
 
   const out = {
+    // Google prévient AVANT de fermer : ce message dit exactement pourquoi.
+    error: pick(msg, 'error', 'error') || null,
     setupComplete: Boolean(pick(msg, 'setupComplete', 'setup_complete')),
     audioChunks: [],
     textChunks: [],
@@ -214,9 +221,12 @@ export function createVoiceCall(options) {
   let tokensOut = 0;
   let muted = false;
   let ended = false;
+  let setupDone = false;
   let playHead = 0;
   let activeSources = [];
   let transcript = '';
+  // Dernier mot de Google : sert à expliquer une fermeture inattendue.
+  let lastServerMessage = '';
 
   const emitState = (next) => {
     state = next;
@@ -226,6 +236,17 @@ export function createVoiceCall(options) {
     emitState(VOICE_STATES.ERROR);
     if (typeof opts.onError === 'function') opts.onError({ message, code: code || 'error' });
   };
+
+  /**
+   * Ferme l'appel anormalement : on affiche la raison, PUIS on termine
+   * proprement (micro relâché, minuteur arrêté, `onEnd` appelé) — sinon le
+   * widget resterait bloqué sur « appel en cours » sans jamais savoir pourquoi.
+   */
+  function abort(reason, message, code) {
+    if (ended) return;
+    if (message) fail(message, code);
+    stop(reason);
+  }
 
   function stopAudioPlayback() {
     for (const node of activeSources) {
@@ -266,7 +287,15 @@ export function createVoiceCall(options) {
 
   function handleMessage(raw) {
     const msg = parseLiveMessage(raw);
+    if (msg.error) {
+      // « invalid argument », « model not found », quota… — la vraie raison.
+      const detail = msg.error.message || msg.error.status || 'refus de Google';
+      lastServerMessage = String(detail).slice(0, 300);
+      abort('server', String(detail), 'server');
+      return;
+    }
     if (msg.setupComplete) {
+      setupDone = true;
       emitState(VOICE_STATES.LISTENING);
       try {
         ws.send(JSON.stringify(buildOpeningTurn(opts.greeting)));
@@ -380,9 +409,26 @@ export function createVoiceCall(options) {
         }
       };
       ws.onmessage = (event) => handleMessage(event && event.data);
-      ws.onerror = () => fail(VOICE_MESSAGES.disconnected, 'ws-error');
-      ws.onclose = () => {
-        if (!ended && state !== VOICE_STATES.ERROR) stop('closed');
+      ws.onerror = () => abort('ws-error', VOICE_MESSAGES.disconnected, 'ws-error');
+      ws.onclose = (event) => {
+        if (ended) return;
+        // Anormal seulement si la session n'a JAMAIS démarré (Google a refermé
+        // juste après l'ouverture), ou si Google avait déjà signalé une faute.
+        if (!setupDone || lastServerMessage) {
+          // Fermeture AVANT que la session soit prête : on dit ce que Google a
+          // répondu, et s'il n'a rien dit, le code de fermeture.
+          const code = event && event.code ? `code ${event.code}` : 'sans code';
+          const why = [
+            lastServerMessage,
+            (event && event.reason) || '',
+            code,
+          ]
+            .filter(Boolean)
+            .join(' — ');
+          abort('closed', `La connexion a été fermée aussitôt (${why}).`, 'ws-close');
+          return;
+        }
+        abort('closed', '', 'ws-close');
       };
       timer = setInterval(() => {
         seconds += 1;
@@ -426,7 +472,7 @@ export function createVoiceCall(options) {
   }
 
   function stop(reason) {
-    if (ended && state === VOICE_STATES.ENDED) return;
+    if (ended) return;
     ended = true;
     if (timer) {
       clearInterval(timer);
@@ -440,13 +486,20 @@ export function createVoiceCall(options) {
     }
     ws = null;
     releaseMic();
-    emitState(reason === 'max-duration' ? VOICE_STATES.ENDED : VOICE_STATES.ENDED);
+    // Un appel terminé par une erreur RESTE en erreur : le visiteur doit lire
+    // la raison (sinon l'écran d'appel retomberait sur « rappeler » sans
+    // explication, exactement le raccrochage muet d'avant).
+    if (state !== VOICE_STATES.ERROR) emitState(VOICE_STATES.ENDED);
     if (typeof opts.onEnd === 'function') {
       opts.onEnd({
         seconds,
         tokensIn,
         tokensOut,
         reason: reason || 'client',
+        // « setup » = la session n'a jamais démarré : le widget peut réessayer
+        // une fois avec le couple historique au lieu d'afficher une erreur.
+        setupDone,
+        serverMessage: lastServerMessage,
         transcript: transcript.trim().slice(0, 4000),
       });
     }

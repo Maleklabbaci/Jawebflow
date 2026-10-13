@@ -73,6 +73,14 @@
   var callSeconds = 0;
   var callMuted = false;
   var callError = '';
+  // Le moteur d'appel est mis en cache 24 h par le navigateur : on demande une
+  // adresse versionnée pour qu'une correction du moteur arrive tout de suite
+  // (incrémenter `v` à chaque changement de `public/cdn/voice.js`).
+  var VOICE_ENGINE = '/cdn/voice.js?v=9';
+  // Une seule seconde chance : si Google ferme la session avant le moindre mot
+  // (setup refuse), on redemande un jeton sur le couple historique.
+  var voiceSetupDone = false;
+  var voiceTriedFallback = false;
   var callTimerId = null;
 
   var namedColors = {
@@ -337,12 +345,13 @@
     if (callActive) return;
     callActive = true; callState = 'connecting'; callError = '';
     callLines = []; callSeconds = 0; callMuted = false; callSession = null;
+    voiceSetupDone = false;
     render();
 
     fetch((apiOrigin || '') + '/api/voice/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assistantId: assistantId, origin: window.location.origin, sessionId: visitorId })
+      body: JSON.stringify({ assistantId: assistantId, origin: window.location.origin, sessionId: visitorId, fallback: voiceTriedFallback })
     })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {
@@ -352,18 +361,29 @@
           render();
           return null;
         }
-        return import((apiOrigin || '') + '/cdn/voice.js').then(function (mod) {
+        return import((apiOrigin || '') + VOICE_ENGINE).then(function (mod) {
           callSession = mod.createVoiceCall({
             wsUrl: data.wsUrl,
             setup: data.setup,
             greeting: data.greeting || voiceGreeting,
             maxSeconds: data.maxSeconds || (voiceMaxMinutes * 60) || 300,
-            onState: function (state) { callState = state; render(); },
+            onState: function (state) {
+              if (state === 'listening' || state === 'speaking') voiceSetupDone = true;
+              callState = state; render();
+            },
             onTranscript: function (t) { addCallLine(t.speaker, t.text); render(); },
             onError: function (e) { callError = (e && e.message) || VOICE_FALLBACK_ERROR; callState = 'error'; render(); },
             onEnd: function (info) {
-              callActive = false; callState = ''; callSession = null;
+              callSession = null;
               if (callTimerId) { clearInterval(callTimerId); callTimerId = null; }
+              // Jamais demarre : une seconde chance avec le jeton de repli.
+              if (info && !info.setupDone && !voiceSetupDone && !voiceTriedFallback) {
+                voiceTriedFallback = true;
+                callActive = false; callState = ''; callError = '';
+                startVoice();
+                return;
+              }
+              callActive = false; callState = '';
               reportCall(info);
               render();
             }

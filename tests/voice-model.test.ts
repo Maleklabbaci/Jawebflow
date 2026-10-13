@@ -38,6 +38,10 @@ describe('modèle temps réel des appels', () => {
 
     expect(res.ok).toBe(true);
     expect(res.wsUrl).toContain('TOKEN_ABC');
+    // ⚠️ Un JETON ÉPHÉMÈRE n'entre que par la porte `BidiGenerateContentConstrained` :
+    // avec l'autre porte, Google ouvre la socket puis la referme aussitôt.
+    expect(res.wsUrl).toContain('BidiGenerateContentConstrained');
+    expect(res.wsUrl).toContain('v1beta');
     expect(vu.url).not.toContain('CLE_SECRETE');
     expect(vu.apiKey).toBe('CLE_SECRETE');
     expect(vu.body.bidiGenerateContentSetup.model).toContain('gemini-3.8-live');
@@ -62,6 +66,32 @@ describe('modèle temps réel des appels', () => {
     expect(urls[0]).toContain('/v1beta/auth_tokens');
     expect(urls[1]).toContain('/v1alpha/auth_tokens');
     expect(String(res.detail)).toContain('repli');
+    // Le repli passe par l'autre porte : l'ancien modèle n'accepte pas (encore)
+    // le nom de méthode « Constrained ».
+    expect(res.wsUrl).not.toContain('Constrained');
+    expect(res.wsUrl).toContain('BidiGenerateContent?');
+  });
+
+  it('`legacy: true` : on va droit au couple historique, sans brûler un essai', async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: any) => {
+      urls.push(String(url));
+      return tokenOk();
+    }) as any;
+
+    // Le navigateur a déjà été fermé une fois : inutile de lui redonner le
+    // même couple, il échouerait pareil.
+    const res = await createLiveToken(
+      { GEMINI_API_KEY: 'K' },
+      { systemInstruction: 'T', fetchImpl, legacy: true },
+    );
+
+    expect(res.ok).toBe(true);
+    expect(res.model).toBe(LEGACY_LIVE_FALLBACK.model);
+    expect(res.apiVersion).toBe(LEGACY_LIVE_FALLBACK.apiVersion);
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('/v1alpha/auth_tokens');
+    expect(res.wsUrl).not.toContain('Constrained');
   });
 
   it('modèle forcé par le marchand : aucun repli silencieux', async () => {

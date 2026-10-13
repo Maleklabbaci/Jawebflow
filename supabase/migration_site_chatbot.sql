@@ -27,6 +27,15 @@ create table if not exists public.platform_settings (
 --     base de connaissance ni les réglages internes) ;
 --   • écriture          → /api/admin/site-chat (jeton admin + rôle vérifié).
 -- Seule la clé service (côté serveur) touche donc cette table.
+-- Si la table existait DÉJÀ dans une ancienne forme (sans `data`), les deux
+-- lignes ci-dessous ajoutent ce qui manque au lieu d'échouer.
+alter table public.platform_settings
+  add column if not exists data jsonb not null default '{}'::jsonb;
+alter table public.platform_settings
+  add column if not exists updated_at timestamptz not null default now();
+
+grant all on table public.platform_settings to service_role;
+
 alter table public.platform_settings enable row level security;
 
 drop policy if exists "service role platform_settings" on public.platform_settings;

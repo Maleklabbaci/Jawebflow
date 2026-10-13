@@ -242,30 +242,40 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     }
   };
 
-  const startCall = async () => {
-    if (call.active) return;
-    setShowTeaser(false);
-    setHasUnread(false);
-    setIsOpen(true);
-    setCall({ active: true, state: 'connecting', error: '', seconds: 0, lines: [], muted: false });
+  // Une SEULE seconde chance : si Google ferme la session avant même qu'elle
+  // démarre (setup refusé, jeton coincé), on redemande un jeton en demandant le
+  // couple historique — inutile de retenter exactement ce qui vient d'échouer.
+  const attemptRef = useRef({ fallback: false, setupDone: false });
+
+  const openSession = async (fallback: boolean) => {
+    const sessionId = `site_${Date.now().toString(36)}`;
     try {
       const res = await fetch('/api/site-voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: `site_${Date.now().toString(36)}` }),
+        body: JSON.stringify({ sessionId, fallback }),
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.ok || !data.wsUrl) {
         throw new Error(data?.error || data?.message || "L'appel n'est pas disponible pour le moment.");
       }
-      const url = '/cdn/voice.js';
-      const mod: any = await import(/* @vite-ignore */ url);
+      // Variable (et non littéral) : TypeScript ne cherche pas à résoudre un
+      // module qui n'existe qu'au moment de l'exécution, dans le navigateur.
+      // `?v=` : le moteur est mis en cache 24 h, on force donc une adresse
+      // neuve après chaque correction (incrémenter à chaque changement de
+      // `public/cdn/voice.js`).
+      const voiceModuleUrl: string = '/cdn/voice.js?v=9';
+      const mod: any = await import(/* @vite-ignore */ voiceModuleUrl);
       const session = mod.createVoiceCall({
         wsUrl: data.wsUrl,
         setup: data.setup,
         greeting: data.greeting,
         maxSeconds: data.maxSeconds,
-        onState: (state: string) => setCall((c) => ({ ...c, state })),
+        onState: (state: string) => {
+          // « listening » = Google a accepté la session (setupComplete reçu).
+          if (state === 'listening' || state === 'speaking') attemptRef.current.setupDone = true;
+          setCall((c) => ({ ...c, state }));
+        },
         onTranscript: (t: any) =>
           setCall((c) => {
             const lines = [...c.lines];
@@ -276,9 +286,17 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           }),
         onError: (e: any) => setCall((c) => ({ ...c, state: 'error', error: e?.message || "L'appel a échoué." })),
         onEnd: (info: any) => {
-          setCall((c) => ({ ...c, active: false, state: '' }));
           callRef.current = null;
-          reportCall(info, data.sessionId);
+          // La session n'a JAMAIS démarré : on retente une fois sur le repli.
+          if (!attemptRef.current.setupDone && !attemptRef.current.fallback) {
+            attemptRef.current.fallback = true;
+            setCall((c) => ({ ...c, active: true, state: 'connecting', error: '', seconds: 0, lines: [] }));
+            openSession(true);
+            return;
+          }
+          // Erreur : on garde l'écran d'appel ouvert pour que la raison soit LUE.
+          setCall((c) => ({ ...c, active: Boolean(c.error), state: c.error ? 'error' : '' }));
+          reportCall(info, sessionId);
         },
       });
       callRef.current = session;
@@ -288,6 +306,16 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     }
   };
 
+  const startCall = async () => {
+    if (call.active) return;
+    setShowTeaser(false);
+    setHasUnread(false);
+    setIsOpen(true);
+    attemptRef.current = { fallback: false, setupDone: false };
+    setCall({ active: true, state: 'connecting', error: '', seconds: 0, lines: [], muted: false });
+    await openSession(false);
+  };
+
   const hangUp = () => {
     try {
       callRef.current?.stop?.('client');
@@ -295,7 +323,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       /* on raccroche quand même */
     }
     callRef.current = null;
-    setCall((c) => ({ ...c, active: false, state: '' }));
+    setCall((c) => ({ ...c, active: false, state: '', error: '' }));
   };
 
   const toggleMute = () => {
@@ -330,7 +358,9 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   };
 
   const callStatus =
-    call.state === 'connecting' ? 'Connexion…'
+    // Une erreur (avec sa raison) passe AVANT l'état : c'est l'information utile.
+    call.error ? call.error
+    : call.state === 'connecting' ? 'Connexion…'
     : call.state === 'listening' ? 'Je vous écoute…'
     : call.state === 'speaking' ? 'Je réponds…'
     : call.state === 'error' ? (call.error || "L'appel a échoué.")

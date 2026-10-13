@@ -62,9 +62,12 @@ export async function onRequestPost(context: any) {
       return blocked("L'appel n'est pas activé sur le site : écrivez-nous dans le chat, nous répondons tout de suite.");
     }
 
+    // `fallback: true` = le navigateur vient de se faire fermer la session juste
+    // après le setup : on lui redonne un jeton sur le couple historique.
     const live = await createLiveToken(env, {
       systemInstruction: buildSiteVoicePrompt(config),
       voice: voice.voice,
+      legacy: body?.fallback === true,
     });
     if (!live.ok || !live.token) {
       if (live.detail) console.error('[site-voice] Gemini Live :', live.detail);

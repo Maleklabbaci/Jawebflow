@@ -55,7 +55,8 @@ class FakeWebSocket {
   close(code?: number, reason?: string) {
     this.readyState = 3;
     this.closed.push({ code, reason });
-    this.onclose?.({});
+    // Comme un vrai navigateur : l'événement porte le code et la raison.
+    this.onclose?.({ code, reason });
   }
 }
 
@@ -208,10 +209,12 @@ describe('messages Gemini Live', () => {
   it('prépare le tour d’ouverture et la trame audio', () => {
     expect(buildOpeningTurn('Bonjour chez Nour').clientContent.turns[0].parts[0].text).toMatch(/Ouvre l.appel/);
     expect(buildOpeningTurn('').clientContent.turns[0].parts[0].text).toBe('Bonjour');
-    expect(buildAudioMessage('QUJD').realtimeInput.mediaChunks[0]).toEqual({
-      mimeType: 'audio/pcm;rate=16000',
-      data: 'QUJD',
-    });
+    // Forme ACTUELLE de l'API : `realtimeInput.audio`.
+    // Avec l'ancienne (`mediaChunks`, dépréciée) Google ne garde que le PREMIER
+    // morceau de micro : l'assistant n'entendait qu'un mot sur dix.
+    const trame = buildAudioMessage('QUJD');
+    expect(trame.realtimeInput.audio).toEqual({ mimeType: 'audio/pcm;rate=16000', data: 'QUJD' });
+    expect(trame.realtimeInput.mediaChunks).toBeUndefined();
   });
 });
 
@@ -245,7 +248,7 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     FakeAudioContext.lastProcessor.onaudioprocess({
       inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.2), sampleRate: 48000 },
     });
-    const audio = JSON.parse(ws.sent[ws.sent.length - 1]).realtimeInput.mediaChunks[0];
+    const audio = JSON.parse(ws.sent[ws.sent.length - 1]).realtimeInput.audio;
     expect(audio.mimeType).toBe('audio/pcm;rate=16000');
     expect(audio.data.length).toBeGreaterThan(0);
     // 4096 échantillons à 48 kHz → 1365 échantillons à 16 kHz → 2730 octets → 3640 caractères base64.
@@ -272,6 +275,9 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     expect(FakeAudioContext.closed).toBeGreaterThan(0);
     expect(ended()).toMatchObject({ tokensIn: 152, tokensOut: 480, reason: 'client' });
     expect(ended().seconds).toBeGreaterThanOrEqual(0);
+    // `setupDone` distingue un vrai appel d'une session morte avant le 1er mot :
+    // c'est ce que le widget lit pour décider s'il retente avec l'ancien modèle.
+    expect(ended().setupDone).toBe(true);
     expect(errors).toEqual([]);
   });
 
@@ -317,7 +323,7 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
   });
 
   it('appel interrompu par le serveur : on remonte quand même la durée', async () => {
-    const { call, ended } = makeCall();
+    const { call, ended, errors } = makeCall();
     call.start();
     await flush();
     const ws = FakeWebSocket.instances[0];
@@ -330,6 +336,47 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     expect(call.getState()).toBe(VOICE_STATES.ENDED);
     expect(ended()).toBeTruthy();
     expect(ended().reason).toBe('closed');
+    // Le vrai appel avait commencé : aucune erreur affichée, et pas de nouvel essai.
+    expect(ended().setupDone).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it('Google refuse la session : le visiteur LIT la raison, l’appel se termine', async () => {
+    const { call, ended, errors } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    // C'est exactement ce que Google envoie quand la configuration est refusée.
+    ws.emit({ error: { code: 1007, status: 'INVALID_ARGUMENT', message: 'request contains an invalid argument' } });
+    await flush();
+
+    expect(call.getState()).toBe(VOICE_STATES.ERROR);
+    expect(errors[0].message).toContain('invalid argument');
+    // L'appel est TERMINÉ (plus d'écran bloqué en « en cours »)…
+    expect(ended()).toBeTruthy();
+    expect(ended().reason).toBe('server');
+    // …et le widget sait que la session n'a jamais démarré : il peut retenter.
+    expect(ended().setupDone).toBe(false);
+    expect(ended().serverMessage).toContain('invalid argument');
+    expect(FakeAudioContext.closed).toBeGreaterThan(0);
+  });
+
+  it('coupé avant le moindre mot : plus de raccrochage silencieux', async () => {
+    const { call, ended, errors } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open(); // la socket s'ouvre… puis Google la referme aussitôt
+    ws.close(1008, 'invalid payload');
+    await flush();
+
+    expect(call.getState()).toBe(VOICE_STATES.ERROR);
+    expect(errors[0].message).toMatch(/fermée aussitôt/);
+    expect(errors[0].message).toContain('1008');
+    expect(errors[0].message).toContain('invalid payload');
+    expect(ended()).toBeTruthy();
+    expect(ended().setupDone).toBe(false);
   });
 
   it('sans adresse d’appel, on prévient au lieu de rester muet', async () => {

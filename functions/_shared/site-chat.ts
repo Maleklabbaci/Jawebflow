@@ -165,11 +165,21 @@ export const DEFAULT_SITE_CHAT: SiteChatConfig = {
  * propriétaire n'a qu'à copier-coller, sans chercher le fichier de migration).
  */
 export const SITE_CHAT_SQL = `-- Réglages du chatbot du site (table platform_settings)
+-- Sans danger : à relancer autant de fois qu'on veut. Si la table existe déjà
+-- mais vient d'une ANCIENNE version (sans la colonne « data »), ce script
+-- l'ajoute au lieu d'échouer — c'est le cas le plus fréquent.
 create table if not exists public.platform_settings (
   id          text        primary key,
   data        jsonb       not null default '{}'::jsonb,
   updated_at  timestamptz not null default now()
 );
+
+alter table public.platform_settings
+  add column if not exists data jsonb not null default '{}'::jsonb;
+alter table public.platform_settings
+  add column if not exists updated_at timestamptz not null default now();
+
+grant all on table public.platform_settings to service_role;
 
 alter table public.platform_settings enable row level security;
 
@@ -274,13 +284,24 @@ export async function saveSiteChatConfig(
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       console.warn('[site-chat] enregistrement refusé:', res.status, detail.slice(0, 200));
-      const missing = res.status === 404 || /does not exist|schema cache/i.test(detail);
+      // Deux pannes différentes, deux réponses différentes — les confondre
+      // envoie le propriétaire sur une fausse piste :
+      //   • PGRST205 / 404  → la table n'est pas là ;
+      //   • PGRST204 / 42703 → la table EST là mais dans une ANCIENNE forme
+      //     (sans la colonne `data`), donc `create table if not exists` ne
+      //     répare rien : il faut ajouter la colonne.
+      const lower = detail.toLowerCase();
+      const colonneManquante = /pgrst204|42703|column .* does not exist/.test(lower);
+      const tableManquante = !colonneManquante && (res.status === 404 || /pgrst205|does not exist|schema cache/.test(lower));
+      const host = siteChatDiag(env).host || 'inconnu';
       return {
         ok: false,
         stored: false,
-        error: missing
-          ? `La table \`platform_settings\` n’existe pas dans le projet Supabase que CE site utilise (${siteChatDiag(env).host || 'inconnu'}). Copiez le SQL ci-dessous et exécutez-le dans ce projet-là (bouton « Ouvrir le SQL Editor de ce projet »).`
-          : 'Enregistrement impossible pour le moment (Supabase a refusé l’écriture).',
+        error: colonneManquante
+          ? `La table \`platform_settings\` existe dans le projet Supabase que CE site utilise (${host}) mais dans une ancienne forme : il lui manque une colonne. Copiez le SQL ci-dessous — il AJOUTE ce qui manque, sans rien effacer — et exécutez-le dans ce projet-là.`
+          : tableManquante
+            ? `La table \`platform_settings\` n’existe pas dans le projet Supabase que CE site utilise (${host}). Copiez le SQL ci-dessous et exécutez-le dans ce projet-là (bouton « Ouvrir le SQL Editor de ce projet »).`
+            : 'Enregistrement impossible pour le moment (Supabase a refusé l’écriture).',
         detail: `HTTP ${res.status} — ${detail.slice(0, 300)}`,
       };
     }

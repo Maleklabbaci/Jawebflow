@@ -125,6 +125,20 @@ describe('ouvrir un appel vocal', () => {
     expect(geminiCalls).toEqual([]);
   });
 
+  it('deuxième essai du widget (`fallback`) : jeton sur le couple historique', async () => {
+    configure(VOICE_ON);
+    const { status, json } = await openCall({ assistantId: 'asst1', fallback: true });
+
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.model).not.toBe('gemini-test-live');
+    expect(json.apiVersion).toBe('v1alpha');
+    expect(json.wsUrl).not.toContain('Constrained');
+    // Un seul aller-retour chez Google : on ne rejoue pas ce qui vient d'échouer.
+    expect(geminiCalls).toHaveLength(1);
+    expect(json.setup.setup.model).toBe(`models/${json.model}`);
+  });
+
   it('assistant inconnu : 404, sans rien demander à Google', async () => {
     const { status } = await openCall({ assistantId: 'asst_inconnu' });
     expect(status).toBe(404);
@@ -139,6 +153,9 @@ describe('ouvrir un appel vocal', () => {
     expect(json.ok).toBe(true);
     expect(json.wsUrl).toContain('wss://generativelanguage.googleapis.com/ws/');
     expect(json.wsUrl).toContain('access_token=TOKEN_ABC');
+    // La porte des jetons éphémères. Sans « Constrained », Google accepte la
+    // socket puis la referme juste après : l'appel « tourne puis raccroche ».
+    expect(json.wsUrl).toContain('BidiGenerateContentConstrained');
     expect(json.model).toBe('gemini-test-live');
     expect(json.voice).toBe('Kore');
     expect(json.maxSeconds).toBe(600);

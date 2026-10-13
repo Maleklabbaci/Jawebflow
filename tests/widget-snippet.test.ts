@@ -166,6 +166,19 @@ describe('le widget servi lit ce que le code lui donne', () => {
     expect(widget).toContain("widgetMode === 'voice'");
   });
 
+  it('le moteur d’appel arrive TOUT DE SUITE après un correctif (adresse versionnée)', () => {
+    // Le moteur est mis en cache par le navigateur : sans `?v=`, un visiteur
+    // garderait l'ancien code pendant des heures après un correctif — donc
+    // l'ancien raccrochage, alors que le serveur est réparé.
+    expect(widget).toMatch(/\/cdn\/voice\.js\?v=\d+/);
+    const bulle = fs.readFileSync(path.join(ROOT, 'src/components/FloatingLiveWidget.tsx'), 'utf8');
+    expect(bulle).toMatch(/\/cdn\/voice\.js\?v=\d+/);
+    // Et le cache des fichiers /cdn/* reste court (une heure, pas un jour).
+    const headers = fs.readFileSync(path.join(ROOT, 'public/_headers'), 'utf8');
+    expect(headers).toContain('max-age=3600');
+    expect(headers).not.toContain('max-age=86400');
+  });
+
   it('un seul widget : la vieille copie /cdn/widget.js n’existe plus mais reste servie', () => {
     expect(fs.existsSync(path.join(ROOT, 'public/cdn/widget.js'))).toBe(false);
     const redirects = fs.readFileSync(path.join(ROOT, 'public/_redirects'), 'utf8');

@@ -2239,13 +2239,14 @@ export function AdminPage() {
                 {siteChat?.available === false && (
                   <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3" data-testid="site-chat-db-alert">
                     <p className="text-sm font-semibold text-amber-900">
-                      ⚠️ La table <code>platform_settings</code> n'existe pas encore dans le projet Supabase utilisé par le site.
+                      ⚠️ La table <code>platform_settings</code> n'est pas utilisable dans le projet Supabase que ce site utilise.
                     </p>
                     <p className="text-xs text-amber-800 leading-relaxed">
                       Le chatbot fonctionne déjà avec les réglages par défaut et l'appel marche, mais rien ne
                       s'enregistre. Le plus souvent, le SQL a été exécuté dans un <strong>autre projet</strong>
                       Supabase que celui de la production : vérifiez l'adresse ci-dessous, ouvrez le SQL Editor
-                      <strong> de ce projet-là</strong>, collez le SQL et exécutez-le.
+                      <strong> de ce projet-là</strong>, collez le SQL et exécutez-le — il crée la table
+                      <strong> ou</strong> ajoute la colonne qui manque si une ancienne version de la table est déjà en place.
                     </p>
                     <div className="text-[11px] text-amber-900 font-mono break-all bg-white/70 border border-amber-200 rounded-lg p-2">
                       <div>Projet utilisé : {siteChatDiag?.host || 'inconnu'}</div>

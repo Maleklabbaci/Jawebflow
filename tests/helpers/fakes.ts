@@ -108,6 +108,10 @@ export class FakeSupabase {
   users: Record<string, { id: string; email: string }> = {};
   calls: Array<{ method: string; path: string; body?: any }> = [];
   failTables = new Set<string>(); // renvoie une erreur 500 pour cette table
+  // Table EXISTANTE mais dans une ancienne forme : PostgREST répond PGRST204
+  // (« Could not find the 'data' column … »). C'est exactement le cas d'une
+  // table créée par une version précédente.
+  oldShape = new Set<string>();
   private seq = 0;
 
   seed(table: string, rows: Row[]) {
@@ -188,6 +192,12 @@ export class FakeSupabase {
       return j({ code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` }, 404);
     }
     if (this.failTables.has(table)) return j({ message: 'boom' }, 500);
+    if (this.oldShape.has(table)) {
+      return j(
+        { code: 'PGRST204', message: `Could not find the 'data' column of '${table}' in the schema cache` },
+        400,
+      );
+    }
 
     if (method === 'GET' || method === 'HEAD') {
       const all = this.filter(table, url.searchParams, false);
