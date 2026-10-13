@@ -267,6 +267,31 @@ describe('la console admin règle le chatbot', () => {
   });
 });
 
+describe('l’appel après la mise à jour (réglages enregistrés AVANT que la voix existe)', () => {
+  it('un ancien réglage sans clé « voice » laisse le téléphone visible', async () => {
+    // Exactement ce que la production contenait avant ce chantier : le bouton
+    // d'appel n'existait pas, donc « chat » ne pouvait pas vouloir dire
+    // « surtout pas d'appel ». Sinon le téléphone resterait invisible pour
+    // toujours après la mise à jour.
+    fx.supabase.seed('platform_settings', [
+      { id: 'site_chat', data: { enabled: true, widget: { primaryColor: '#9333ea', mode: 'chat' } } },
+    ]);
+    const json = (await (await get()).json()) as any;
+    expect(json.widget.mode).toBe('both');
+    expect(json.widget.voice.enabled).toBe(true);
+    expect(json.widget.primaryColor).toBe('#9333ea'); // le reste est bien gardé
+  });
+
+  it('un réglage enregistré depuis la console (avec la voix) est respecté à la lettre', async () => {
+    fx.supabase.seed('platform_settings', [
+      { id: 'site_chat', data: { enabled: true, widget: { mode: 'chat', voice: { enabled: false } } } },
+    ]);
+    const json = (await (await get()).json()) as any;
+    expect(json.widget.mode).toBe('chat');
+    expect(json.widget.voice.enabled).toBe(false);
+  });
+});
+
 describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', () => {
   const withKey = { ...ENV, GEMINI_API_KEY: 'GEMINI_TEST_KEY' } as any;
 

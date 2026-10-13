@@ -244,7 +244,7 @@ export async function readSiteChatConfig(env: any): Promise<SiteChatReadResult> 
     const rows = await res.json().catch(() => []);
     const row = Array.isArray(rows) ? rows[0] : null;
     if (!row?.data) return { config: fallback, stored: false, available: true, error: null };
-    return { config: normalizeSiteChat(row.data), stored: true, available: true, error: null };
+    return { config: normalizeSiteChat(upgradeLegacySiteChat(row.data)), stored: true, available: true, error: null };
   } catch (err: any) {
     console.warn('[site-chat] lecture impossible:', err?.message || err);
     return {
@@ -317,6 +317,22 @@ const boundedSeconds = (value: unknown, fallback: number) => {
 };
 
 /** Nettoie un objet arbitraire → des réglages sûrs (jamais d'exception). */
+/**
+ * Un réglage enregistré AVANT que l'appel existe (aucune clé `voice`) n'a jamais
+ * pu dire « surtout pas d'appel » : le bouton téléphone n'existait pas encore.
+ * Sans cette remise à niveau, le téléphone resterait invisible pour toujours
+ * après la mise à jour. Dès que la console enregistre (elle écrit toujours la
+ * clé `voice`), le choix du propriétaire est respecté à la lettre.
+ */
+export function upgradeLegacySiteChat(raw: any): any {
+  const widget = raw && typeof raw === 'object' ? raw.widget : null;
+  if (!widget || typeof widget !== 'object' || 'voice' in widget) return raw;
+  const { mode, voice, ...rest } = widget as any;
+  void mode;
+  void voice;
+  return { ...raw, widget: rest };
+}
+
 export function normalizeSiteChat(raw: any): SiteChatConfig {
   const input = raw && typeof raw === 'object' ? raw : {};
   const ai = input.ai && typeof input.ai === 'object' ? input.ai : {};
@@ -332,6 +348,7 @@ export function normalizeSiteChat(raw: any): SiteChatConfig {
     .slice(0, 6);
 
   const iconType = pick(widget.iconType, ['sparkles', 'bot', 'message', 'zap', 'headphone', 'brain', 'shield', 'custom_logo'] as const, d.widget.iconType);
+
   // La voix passe par le même assainisseur que les widgets clients (opt-in).
   const voice = normalizedVoiceSettings(widget.voice ?? d.widget.voice);
 
