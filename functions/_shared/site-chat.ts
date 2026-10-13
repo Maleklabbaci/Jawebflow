@@ -279,7 +279,7 @@ export async function saveSiteChatConfig(
         ok: false,
         stored: false,
         error: missing
-          ? 'La table `platform_settings` n’existe pas encore dans le projet Supabase utilisé par le site : copiez le SQL ci-dessous et exécutez-le dans CE projet.'
+          ? `La table \`platform_settings\` n’existe pas dans le projet Supabase que CE site utilise (${siteChatDiag(env).host || 'inconnu'}). Copiez le SQL ci-dessous et exécutez-le dans ce projet-là (bouton « Ouvrir le SQL Editor de ce projet »).`
           : 'Enregistrement impossible pour le moment (Supabase a refusé l’écriture).',
         detail: `HTTP ${res.status} — ${detail.slice(0, 300)}`,
       };

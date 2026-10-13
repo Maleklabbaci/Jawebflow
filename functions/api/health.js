@@ -54,6 +54,19 @@ export async function onRequestGet(context) {
   // ── Le strict nécessaire ────────────────────────────────────────────────
   const gemini = need(env, ['GEMINI_API_KEY']);
   const supabaseServer = { ok: supabaseConfigured(env), missing: supabaseConfigured(env) ? [] : ['SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY'] };
+  // QUEL projet Supabase le serveur utilise. L'hôte seul (jamais une clé) : cette
+  // adresse est déjà publique (elle est dans le JavaScript du site) et c'est LA
+  // question quand un SQL « pourtant exécuté » semble ne servir à rien — parce
+  // qu'il a été lancé dans un AUTRE projet.
+  const supabaseProject = (() => {
+    const raw = String(env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+    if (!raw) return null;
+    try {
+      return new URL(raw).host;
+    } catch {
+      return raw.replace(/^https?:\/\//, '').split('/')[0] || null;
+    }
+  })();
   // Ce que le NAVIGATEUR lit. Vite fige les VITE_* à la construction : si le
   // build a été fait ailleurs que chez Cloudflare, seul ce repli runtime peut
   // sauver la page (voir docs/DEPLOIEMENT.md).
@@ -103,6 +116,8 @@ export async function onRequestGet(context) {
   const integrations = {
     gemini: gemini.ok,
     supabase: supabaseServer.ok,
+    /** ex. « tnkcowoeyeragvyxtvas.supabase.co » — le projet que CE serveur lit. */
+    supabaseProject,
     siteFallback: siteFallback.ok,
     firebaseServiceAccount: firebase.ok,
     instagramMessaging: instagram.ok,
