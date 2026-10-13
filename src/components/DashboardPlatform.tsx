@@ -454,10 +454,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // 🔒 MODULE RÉSEAUX SOCIAUX : produit à part, ouvert client par client par
   // l'équipe (console admin → Clients → bouton « Réseaux sociaux »).
-  // Tolérance voulue quand `socialEnabled` est absent : colonne pas encore
-  // créée en base ou profil pas encore chargé → on n'affiche pas un faux
-  // cadenas. Le serveur reste la référence (403 + message explicite).
-  const socialLocked = !isUserAdmin(profile) && profile?.socialEnabled === false;
+  // FERMÉ PAR DÉFAUT : tout ce qui n'est pas explicitement ouvert reste fermé
+  // (profil non chargé, colonne absente, compte ordinaire sans activation).
+  // Seuls les comptes admin/superadmin passent, pour pouvoir dépanner.
+  const socialLocked = !isUserAdmin(profile) && profile?.socialEnabled !== true;
   const refreshAccount = () => {
     try { window.location.reload(); } catch { /* environnement de test */ }
   };
@@ -2688,7 +2688,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               SECTION: LE CADENAS DES RÉSEAUX SOCIAUX (module vendu à part)
               ================================================================= */}
           {socialLocked && SOCIAL_SECTIONS.includes(currentSection) && (
-            <SocialModuleLocked channel={currentSection} onUnlocked={refreshAccount} />
+            <SocialModuleLocked channel={currentSection} />
           )}
 
           {!socialLocked && MESSAGING_SECTIONS.includes(currentSection) && (
@@ -4429,6 +4429,10 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             summary={{ online: isReadyToDeploy, leads: leadsList.length, notes: knowledgeNotes.filter((n) => n.enabled).length }}
             todo={homeTodo}
             notice={homeNotice}
+            spaces={{
+              socialLocked,
+              onEnter: (space) => handleSectionChange(space === 'web' ? 'knowledge' : 'instagram'),
+            }}
             open={copilotOpen}
             onClose={() => setCopilotOpen(false)}
             userId={user.uid}

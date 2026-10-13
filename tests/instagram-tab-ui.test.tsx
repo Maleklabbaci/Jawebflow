@@ -9,7 +9,11 @@ vi.mock('../src/lib/supabase', () => ({
   supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'BEARER_U1' } } }) } },
 }));
 vi.mock('../src/context/AuthContext', () => ({
-  useAuth: () => ({ user: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz' } }),
+  useAuth: () => ({
+    user: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz' },
+    // Client dont le module Réseaux sociaux est ouvert (sinon : « Prochainement »).
+    profile: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz', displayName: 'Nour', role: 'user', plan: 'basic', socialEnabled: true },
+  }),
 }));
 
 import { InstagramIntegration } from '../src/components/InstagramIntegration';

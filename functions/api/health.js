@@ -81,6 +81,25 @@ export async function onRequestGet(context) {
   const cron = need(env, ['CRON_SECRET']);
   const firebase = need(env, ['FIREBASE_SERVICE_ACCOUNT']);
 
+  // ── Module « Réseaux sociaux » (verrouillé par défaut) ──────────────────
+  // La colonne `users.social_enabled` doit exister : tant qu'elle n'est pas là,
+  // les réseaux restent fermés pour TOUT LE MONDE (page « Prochainement »).
+  let socialColumn = null; // null = on n'a pas pu vérifier
+  if (supabaseServer.ok) {
+    try {
+      const base = String(env.SUPABASE_URL || '').replace(/\/$/, '');
+      const res = await fetch(`${base}/rest/v1/users?select=social_enabled&limit=1`, {
+        headers: {
+          apikey: String(env.SUPABASE_SERVICE_ROLE_KEY || ''),
+          Authorization: `Bearer ${String(env.SUPABASE_SERVICE_ROLE_KEY || '')}`,
+        },
+      });
+      socialColumn = res.ok;
+    } catch {
+      socialColumn = null;
+    }
+  }
+
   const integrations = {
     gemini: gemini.ok,
     supabase: supabaseServer.ok,
@@ -97,6 +116,8 @@ export async function onRequestGet(context) {
     email: email.ok,
     payments: { slickpay: slickpay.ok },
     cron: cron.ok,
+    // true = le module peut s'ouvrir client par client ; false = SQL à exécuter.
+    socialModule: socialColumn,
     // Stripe n'est PAS implémenté côté Pages Functions (aucun code de paiement
     // ne l'appelle : il n'apparaît que dans l'ancien serveur Express). Ne pas le
     // configurer ne casse donc rien — SlickPay est la seule voie d'encaissement.
@@ -123,6 +144,15 @@ export async function onRequestGet(context) {
   push('TikTok : les messages ne partent pas.', tiktok, 'TikTok for Business → Business Messaging (accès à demander)');
 
   push("Les e-mails (relances, notifications) ne partent pas.", email, 'brevo.com → Settings → SMTP & API');
+  // Uniquement si la base répond : sinon c'est le diagnostic Supabase qui parle.
+  if (supabaseServer.ok && socialColumn === false) {
+    toFix.push({
+      quoi: 'Le module Réseaux sociaux est fermé pour TOUT LE MONDE (les clients voient « Prochainement »).',
+      variables: ['users.social_enabled'],
+      ou: 'supabase/migration_module_social.sql → Supabase → SQL Editor (puis console admin → Clients pour ouvrir un client)',
+    });
+  }
+
   push('Encaissement SlickPay désactivé (les paiements restent manuels).', slickpay, 'slick-pay.com → votre tableau de bord → clé API');
   push('Les relances automatiques (cron) ne tournent pas.', cron, 'Une chaîne secrète que vous choisissez');
   push('Bases de connaissances historiques illisibles (facultatif).', firebase, 'Google Cloud → compte de service (JSON)');

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   user: { uid: 'user-1', email: 'user@example.test', displayName: 'Maya' },
-  profile: { uid: 'user-1', email: 'user@example.test', displayName: 'Maya', companyName: 'Atelier Initial', phoneNumber: '+33100000000' },
+  profile: { uid: 'user-1', email: 'user@example.test', displayName: 'Maya', companyName: 'Atelier Initial', phoneNumber: '+33100000000', socialEnabled: true },
   updateProfile: vi.fn(),
   updateUserAccountProfile: vi.fn().mockResolvedValue(undefined),
   changeUserPassword: vi.fn(),

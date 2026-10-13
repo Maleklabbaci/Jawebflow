@@ -30,22 +30,22 @@ import { channelLabel, getChannel } from '../../_shared/channels/registry.ts';
 
 /** Ce que le marchand lit quand le module n'est pas ouvert sur son compte. */
 const SOCIAL_LOCKED_MSG =
-  "Le module Réseaux sociaux n'est pas activé sur votre compte. Vous pouvez en faire la demande depuis votre tableau de bord (espace « Réseaux sociaux ») — nous l'activons rapidement.";
+  "Les réseaux sociaux ne sont pas encore ouverts sur votre compte. Votre tableau de bord permet d'en faire la demande.";
 
 /**
  * 🔒 Le module réseaux sociaux est-il fermé pour ce compte ?
  *
  * Trois règles, dans cet ordre :
- *   1. fiche client illisible (base pas encore migrée) → on LAISSE PASSER : il
- *      vaut mieux un module ouvert pour un client existant qu'un module cassé
- *      pour tout le monde ;
- *   2. admin/superadmin → jamais bloqués, sinon impossible de tester ou de
+ *   1. admin/superadmin → jamais bloqués, sinon impossible de tester ou de
  *      dépanner un marchand ;
- *   3. sinon, c'est `social_enabled` qui décide — et son défaut est « fermé ».
+ *   2. `social_enabled = true` → ouvert pour ce client ;
+ *   3. TOUT LE RESTE EST FERMÉ : colonne absente (migration pas encore
+ *      exécutée), fiche client illisible, base momentanément muette. On ne
+ *      devine jamais un « oui » : c'est le propriétaire qui ouvre.
  */
 async function socialModuleLocked(env: any, uid: string): Promise<boolean> {
   const flags = await supabaseGetAccountFlags(env, uid);
-  if (!flags) return false;
+  if (!flags) return true;
   if (flags.role === 'admin' || flags.role === 'superadmin') return false;
   return !flags.socialEnabled;
 }
