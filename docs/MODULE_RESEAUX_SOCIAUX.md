@@ -3,8 +3,10 @@
 > **En une phrase** : le **chatbot à intégrer dans le site web** est ouvert à tous
 > les clients ; les **réseaux sociaux** (Instagram, Messenger, WhatsApp,
 > Telegram, TikTok) forment un **module à part**, ouvert **client par client**
-> par JawebFlow. Tant qu'il est fermé, le client voit un cadenas et
-> « Prochainement » — il n'entre pas.
+> par JawebFlow. Tant qu'il est fermé, le client voit **un cadenas bien
+> visible** avec « Prochainement » — et il peut **demander l'activation en un
+> clic** : la demande part par e-mail à l'équipe et JawebFlow ouvre le module
+> client par client.
 
 ---
 
@@ -23,11 +25,14 @@ ouvre son premier onglet.
 
 ## 2. Ce que voit le client quand c'est fermé
 
-Une page avec **un cadenas et « Prochainement »** — et rien d'autre :
+Une page avec **un cadenas et « Prochainement »** qui montre ce que le module
+apporte (les 5 messageries) — mais **aucun réglage** :
 
-- pas de tour du module, pas de réglages, pas de formulaire de branchement ;
-- **aucune action possible** : pas de bouton « demander », pas de bouton
-  « vérifier » ;
+- pas de tour du module, pas de formulaire de branchement, aucun jeton ;
+- **une seule action** : le bouton **« Demander l'activation »**, avec un champ
+  facultatif (« Que voulez-vous brancher ? ») ;
+- après l'envoi : « Demande envoyée le … » et, au retour sur la page, l'état est
+  relu depuis `social_requests` — le client ne redemande pas tous les jours ;
 - tous les onglets du module sont concernés : Instagram, les 4 canaux **et**
   les Automatisations.
 
@@ -77,14 +82,44 @@ bloque que l'espace de branchement.
 
 ## 4. Les demandes d'activation
 
-**Il n'y a plus de bouton côté client** (choix retenu : « cadenas seulement »).
-L'équipe ouvre donc le module de sa propre initiative — c'est un module vendu à
-part, à proposer au bon moment.
+Le client **demande lui-même** (bouton du cadenas). La route
+`POST /api/channels/request-access` :
 
-La route `POST /api/channels/request-access` **reste en place et testée**, si on
-veut rouvrir un jour un bouton « Demander l'accès » : elle écrit la demande dans
-`social_requests`, prévient `contact@jawebflow.dz` par e-mail, et se limite à
-3 demandes par jour et par compte.
+1. écrit la demande dans `social_requests` (statut `pending`) — elle ne se perd
+   pas, même si l'e-mail n'est pas configuré ;
+2. envoie un e-mail à `contact@jawebflow.dz` (surchargeable par `CONTACT_INBOX`)
+   avec le nom, l'entreprise, l'e-mail, la **formule actuelle**, l'identifiant du
+   compte, le message du client **et** le rappel du geste à faire (console →
+   Clients → bouton 🔒, ou le `update` SQL) ;
+3. limite les envois à **3 par jour et par compte**.
+
+Ensuite, deux endroits dans la console admin :
+
+- onglet **Clients** → bouton `🔒 Réseaux sociaux verrouillés` / `🔓 … ouverts`
+  de sa ligne, plus le repère `⏳ Activation demandée le …` ;
+- onglet **Sites connectés** → la fiche du client, avec ses sites, ses domaines
+  et ses réseaux déjà branchés (voir §4 bis).
+
+⚠️ Le changement de `social_enabled` est protégé en base : il exige un compte
+**superadmin**. Un simple `admin` se fera refuser (le message le dit).
+
+## 4 bis. « Sites connectés » (onglet admin)
+
+Pour répondre à « quels sites mes clients ont connectés ? », la console appelle
+`GET /api/admin/sites` (jeton + rôle vérifiés, lecture par la clé serveur) :
+compteurs (sites branchés, réseaux branchés, clients verrouillés, demandes en
+attente) puis **une fiche par client** — entreprise, e-mail, téléphone, formule,
+état du module — et **une ligne par site** :
+
+- l'adresse du site (cliquable) et le nom de l'assistant ;
+- 🎙️ Appels vocaux · 🔑 Clé de widget ;
+- les **domaines autorisés pour la bulle** (⚠️ « aucun domaine déclaré » = la
+  bulle répondrait partout : à faire préciser) ;
+- les **réseaux branchés** avec leur état : ✅ connecté / ⚠️ erreur (le dernier
+  message d'erreur est dans l'infobulle), avec le nom du compte et le numéro
+  WhatsApp.
+
+Un champ de recherche filtre par client, société, domaine ou site.
 
 ## 5. Où c'est appliqué dans le code
 
@@ -93,14 +128,16 @@ veut rouvrir un jour un bouton « Demander l'accès » : elle écrit la demande 
 | `supabase/migration_module_social.sql` | la colonne, l'anti-contournement, la table des demandes |
 | `functions/api/channels/integrations.ts` | **refus 403** (`socialLocked: true`) si le module est fermé : appeler l'API directement n'ouvre rien |
 | `functions/_shared/supabase.ts` | `supabaseGetAccountFlags()` — lit `role` + `social_enabled` |
-| `functions/api/channels/request-access.ts` | la demande (route disponible, non branchée à un bouton) |
+| `functions/api/channels/request-access.ts` | la demande : trace + e-mail à l'équipe (bouton « Demander l'activation ») |
+| `functions/api/admin/sites.ts` | **« Sites connectés »** : qui a branché quel site, avec quels réseaux (admin only) |
 | `src/context/AuthContext.tsx` | lit `social_enabled` dans le profil — **sans ça, le cadenas ne peut pas savoir** |
-| `src/components/SocialModuleLocked.tsx` | la page fermée : cadenas + « Prochainement » |
+| `src/components/SocialModuleLocked.tsx` | la page fermée : cadenas + « Prochainement » + « Demander l'activation » |
 | `src/components/CopilotChat.tsx` | les **deux grandes cartes** de l'Accueil |
 | `src/components/DashboardPlatform.tsx` | les deux espaces du menu, les cadenas, le verrou strict |
-| `src/pages/AdminPage.tsx` | le bouton d'ouverture par client |
+| `src/pages/AdminPage.tsx` | le bouton d'ouverture par client **et l'onglet « Sites connectés »** |
 | `functions/api/health.js` | `socialModule: true/false` + la ligne `toFix` quand le SQL manque |
-| `tests/social-lock.test.tsx` | 12 tests : page fermée sans aucune action, deux cartes, refus serveur, admin jamais bloqué |
+| `tests/social-lock.test.tsx` | 13 tests : page fermée (une seule action : demander), demande tracée, refus serveur, admin jamais bloqué |
+| `tests/admin-sites-api.test.ts` | 4 tests : 401 sans jeton, 403 pour un marchand, réponse complète pour l'admin, dégradation sans la table |
 
 **Règle du verrou (stricte)** : `social_enabled = true` → ouvert ; **tout le
 reste est fermé** (colonne absente, profil non chargé, compte ordinaire non

@@ -85,23 +85,53 @@ afterEach(async () => {
 });
 
 describe('le cadenas du module Réseaux sociaux', () => {
-  it('un client non ouvert N’ENTRE PAS : cadenas + « Prochainement », aucune action', async () => {
+  it('un client non ouvert N’ENTRE PAS, mais VOIT le module et peut demander l’activation', async () => {
     render(<DashboardPlatform initialSection="messenger" />);
 
     const page = await screen.findByTestId('social-locked');
+    // Le cadenas et l'état sont visibles…
     expect(screen.getByText('Prochainement')).toBeTruthy();
+    expect(screen.getByText(/Réseaux sociaux — bientôt sur votre compte/)).toBeTruthy();
+    // …et le marchand sait ce que le module apporte (les 5 messageries).
+    for (const nom of ['Instagram', 'Messenger', 'WhatsApp', 'Telegram', 'TikTok']) {
+      expect(within(page).getAllByText(new RegExp(nom)).length, nom).toBeGreaterThan(0);
+    }
 
     // Rien du module n'est monté : ni branchement, ni carte de canal, ni jeton.
     expect(screen.queryByTestId('channels-integration')).toBeNull();
     for (const testid of ['channel-card-instagram', 'channel-card-messenger', 'channel-card-whatsapp']) {
       expect(screen.queryByTestId(testid), testid).toBeNull();
     }
-    // Aucun bouton : le client ne peut ni demander, ni forcer, ni vérifier.
-    expect(screen.queryByTestId('social-request-access')).toBeNull();
     expect(screen.queryByTestId('social-lock-check')).toBeNull();
-    // Aucun bouton DU TOUT sur la page fermée (le menu, lui, est à part).
-    expect(within(page).queryByRole('button')).toBeNull();
+
+    // Une SEULE action possible : demander l'activation (aucun réglage, aucun branchement).
+    const buttons = within(page).getAllByRole('button');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0].getAttribute('data-testid')).toBe('social-request-access');
     expect(be.api.some((a) => a.method === 'POST' && a.url === '/api/channels/request-access')).toBe(false);
+  });
+
+  it('« Demander l’activation » : la demande part au serveur, est tracée, et le marchand voit la réponse', async () => {
+    render(<DashboardPlatform initialSection="whatsapp" />);
+    await screen.findByTestId('social-locked');
+
+    fireEvent.change(screen.getByTestId('social-request-message'), {
+      target: { value: 'WhatsApp surtout, on reçoit 40 messages par jour.' },
+    });
+    fireEvent.click(screen.getByTestId('social-request-access'));
+
+    // Le marchand est rassuré — il ne reste pas devant un bouton muet.
+    expect(await screen.findByTestId('social-request-sent')).toBeTruthy();
+    expect(screen.getByTestId('social-request-sent').textContent).toContain('Demande envoyée');
+
+    // …et la demande est bien arrivée côté serveur : tracée en base pour l'équipe.
+    expect(be.api.some((a) => a.method === 'POST' && a.url === '/api/channels/request-access')).toBe(true);
+    const stored = be.supabase.rows('social_requests');
+    expect(stored.length).toBe(1);
+    expect(stored[0]).toMatchObject({ user_id: USER, status: 'pending' });
+    expect(String(stored[0].message)).toContain('WhatsApp surtout');
+    // Le bouton ne peut pas être recliqué (pas de doublon).
+    expect(screen.queryByTestId('social-request-access')).toBeNull();
   });
 
   it('DEUX GRANDES CARTES à l’entrée : le chatbot du site, et les réseaux cadenassés', async () => {
@@ -169,8 +199,8 @@ describe('le cadenas du module Réseaux sociaux', () => {
     expect(src).toContain('socialEnabled: data.social_enabled === true');
   });
 
-  // Le client n'a plus de bouton « Demander l'accès ». La route existe toujours
-  // (vérifiée ici) : si un jour on veut rouvrir la demande, elle est prête.
+  // La route de la demande (celle du bouton du cadenas) : vérifiée ici de bout
+  // en bout, y compris quand personne n'est connecté.
   it('la route de demande reste fonctionnelle et TRACÉE en base', async () => {
     const res = await fetch('/api/channels/request-access', {
       method: 'POST',

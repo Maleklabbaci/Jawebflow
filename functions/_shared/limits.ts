@@ -156,9 +156,8 @@ export function monthStartIso(): string {
 export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assistantId: string): Promise<number> {
   try {
     // 🧮 COMPTEUR PONDÉRÉ : 1 conversation commerciale = UNITS_PER_CONVERSATION
-    // unités (5), avec poids par message (photo = 4, recherche produits = +2,
-    // message = 1). Les poids ne changent pas : seule la taille de la
-    // conversation a été réduite, ce qui abaisse le coût du forfait.
+    // unité (1) = un message du client + sa réponse, avec des poids par message
+    // (photo = 4, recherche produits = +2, message = 1, politesse = 0).
     // Les unités du mois sont agrégées en base par la vue SQL
     // assistant_monthly_usage (voir supabase/migration_ai_usage.sql).
     const vRes = await supabaseRequest(
