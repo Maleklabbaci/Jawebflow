@@ -13,6 +13,9 @@
   ouverture automatique du chat, message proactif du bot, bouton d'appel.
 - Un **chat** : message d'accueil, questions rapides cliquables, réponses de
   l'IA, et un bouton « Créer mon assistant gratuitement » sous chaque réponse.
+- 📞 **L'appel** : l'agent vocal ne transporte plus la base dans son prompt — il la
+  **cherche à la question** (`chercher_information` → `/api/voice/knowledge`, 900
+  caractères maximum) et dit honnêtement quand il ne trouve rien.
 - 📞 **L'appel** : le visiteur appuie sur le téléphone (dans l'en-tête du chat,
   ou directement sur la bulle en mode « le bot qui appelle ») et il **parle** à
   l'assistant — même base de connaissance, même voix réglée dans la console.
@@ -28,7 +31,7 @@ Onglet **Chatbot du site** (groupe « MON SITE JAWEBFLOW ») :
 | --- | --- |
 | Interrupteur | `Chat ouvert` / `Chat fermé` — fermé ⇒ **aucune bulle** sur le site |
 | Ce qu'il dit | message d'accueil, nom affiché, ligne d'état, questions rapides (6 max), texte du champ |
-| Ce qu'il sait | base de connaissance (8 000 caractères), ton, langue, modèle, réponse de secours, réponses IA on/off |
+| Ce qu'il sait | base de connaissance (8 000 caractères), ton, langue, modèle, **qui mène la conversation**, réponse de secours, réponses IA on/off |
 | Parler à un humain | e-mail, WhatsApp, libellé du bouton |
 | Apparence & comportement | le **même personnalisateur que les clients** : logo/icône, couleurs, thème, forme, position, taille, badge en ligne, accroche, ouverture automatique, message proactif, CSS libre |
 | Voix (onglet *5. Voix*) | appels on/off, **une des 6 voix**, phrase d'ouverture de l'appel, durée maximale — et le **mode du widget** : écrit + appels, écrit seulement, ou **« le bot qui appelle »** (aucun chat, la bulle est un bouton d'appel) |
@@ -52,6 +55,22 @@ réglages internes. Le navigateur ne reçoit que ce que voit le visiteur.
 
 **Panne de l'IA** (clé absente, quota Google, réseau) ⇒ la **phrase de secours**
 réglée dans la console est renvoyée : le visiteur a toujours une réponse utile.
+
+## 3 bis. 🎯 « Qui mène la conversation ? » — un choix, deux comportements
+
+Dans la console (onglet *Chatbot du site* → **Le cerveau de l'assistant**), une question simple :
+
+| Choix | Ce que fait l'assistant |
+|---|---|
+| **🤝 Il propose et guide** *(défaut)* | Il répond **puis** propose une option utile et la prochaine étape (essayer gratuitement, voir les tarifs, appeler). Une seule question par réponse, et seulement si elle fait avancer les choses. |
+| **🎯 Il répond seulement** | C'est **le visiteur qui mène** : réponse précise à la question posée, puis il s'arrête. Aucune proposition non demandée, aucun argumentaire, aucune relance, aucun « voulez-vous… ? ». Il ne pose une question que si une information indispensable manque pour répondre. |
+
+C'est écrit noir sur blanc dans le prompt (« ce mode annule toutes les consignes qui te demandent
+de proposer, de recommander, de relancer ou de conclure ») : le modèle ne peut pas « dériver » vers
+la vente quand le visiteur ne l'a pas demandé. **Aucun redéploiement** : on enregistre, c'est actif.
+
+Les **assistants des clients** ont exactement le même réglage, dans leur console : *Comportement* →
+**🎯 Qui mène la conversation ?** (il s'applique au chat du site **et** à Instagram).
 
 ## 4. Mise en route (une fois)
 

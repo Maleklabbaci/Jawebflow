@@ -189,7 +189,7 @@ describe('ouvrir un appel vocal', () => {
     expect(JSON.stringify(json)).not.toContain('AU TÉLÉPHONE');
   });
 
-  it('l’agent vocal ne sait QUE la base de connaissance du compte', async () => {
+  it('la base de connaissance NE voyage plus dans le prompt : l’agent la cherche à la question', async () => {
     configure(VOICE_ON);
     fx.supabase.seed('knowledge_entries', [
       { id: 'k-livraison', assistant_id: 'asst1', title: 'Livraison', content: 'Livraison 400 DA sur Alger en 48 heures.', category: 'livraison', status: 'active', enabled: true },
@@ -198,14 +198,20 @@ describe('ouvrir un appel vocal', () => {
     const { json } = await openCall();
     expect(json.ok).toBe(true);
 
-    const instructions = geminiCalls[0].body.bidiGenerateContentSetup.systemInstruction.parts[0].text;
-    // Ses fiches voyage dans le jeton (donc côté serveur, invisible du visiteur)…
-    expect(instructions).toContain('Livraison 400 DA sur Alger en 48 heures.');
-    // …la fiche refusée ne part pas…
-    expect(instructions).not.toContain('Ne doit jamais sortir.');
-    // …et le prompt reste MINUSCULE : plus de prompt commercial complet.
-    expect(instructions.length).toBeLessThan(9_000);
-    expect(instructions).toMatch(/QU'AVEC les informations/i);
+    const setup = geminiCalls[0].body.bidiGenerateContentSetup;
+    const instructions = setup.systemInstruction.parts[0].text;
+    // 🧠 Le vieux comportement (« toute la base dans le prompt ») est terminé :
+    // les fiches ne partent plus à chaque tour de parole.
+    expect(instructions).not.toContain('Livraison 400 DA sur Alger en 48 heures.');
+    expect(instructions).not.toContain('BASE DE CONNAISSANCE DE');
+    // …le prompt garde la consigne de recherche…
+    expect(instructions).toContain('chercher_information');
+    expect(instructions).toMatch(/TU LA CHERCHES, TU NE LA DEVINES PAS/i);
+    // …et il reste minuscule (règles + mission, aucune donnée du commerce).
+    expect(instructions.length).toBeLessThan(4_200);
+    // L'outil de recherche voyage DANS le jeton : le navigateur ne peut pas le retirer.
+    const declarations = (setup.tools?.[0]?.functionDeclarations || []).map((d: any) => d.name);
+    expect(declarations).toContain('chercher_information');
     // Rien de tout ça ne fuit dans la réponse au navigateur.
     expect(JSON.stringify(json)).not.toContain('Livraison 400 DA');
   });
@@ -215,10 +221,11 @@ describe('ouvrir un appel vocal', () => {
     const { json } = await openCall();
     expect(json.ok).toBe(true);
     const instructions = geminiCalls[0].body.bidiGenerateContentSetup.systemInstruction.parts[0].text;
-    expect(instructions).toContain('VIDE');
-    expect(instructions).toMatch(/ne sais RIEN/i);
+    // Base vide = la recherche ne renverra rien : l'agent dit qu'il ne sait pas.
+    expect(instructions).toMatch(/ne sais RIEN de mémoire/i);
     expect(instructions).toMatch(/je ne sais pas/i);
-    expect(instructions.length).toBeLessThan(5_000);
+    expect(instructions).toMatch(/recherche vide|ne renvoie rien/i);
+    expect(instructions.length).toBeLessThan(4_200);
   });
 
   it('voix inconnue au catalogue : repli sur Puck, l’appel reste possible', async () => {

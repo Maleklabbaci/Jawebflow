@@ -435,9 +435,30 @@
               if (n && n.message) { callError = n.message; render(); }
             },
             onToolCall: function (call) {
-              // 🎯 L'agent veut NOTER la demande du client (nom, numéro,
-              // besoin, rendez-vous) : on l'enregistre chez le marchand. Sans
-              // réponse, Gemini attendrait — et l'appel deviendrait muet.
+              // Deux outils : RECHERCHER une information (la base du commerçant
+              // n'est plus dans le prompt, elle est interrogée à la question)
+              // et NOTER la demande (nom, numéro, rendez-vous).
+              var toolName = (call && call.name) || '';
+              var toolArgs = (call && call.args) || {};
+              if (toolName === 'chercher_information') {
+                return fetch((apiOrigin || '') + '/api/voice/knowledge', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    assistantId: assistantId,
+                    origin: window.location.origin,
+                    question: toolArgs.question || '',
+                  }),
+                })
+                  .then(function (r) { return r.json().catch(function () { return null; }); })
+                  .then(function (data) {
+                    // `result` = les lignes trouvées (vide = il ne sait pas) :
+                    // c'est CE texte que l'agent a le droit de dire au client.
+                    return { result: (data && data.text) || '', found: !!(data && data.found) };
+                  })
+                  .catch(function () { return { result: '', found: false }; });
+              }
+              // 🎯 Sans réponse, Gemini attendrait — et l'appel deviendrait muet.
               return fetch((apiOrigin || '') + '/api/voice/lead', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -445,7 +466,7 @@
                   assistantId: assistantId,
                   origin: window.location.origin,
                   sessionId: visitorId,
-                  args: (call && call.args) || {},
+                  args: toolArgs,
                 }),
               })
                 .then(function (r) { return r.json().catch(function () { return null; }); })

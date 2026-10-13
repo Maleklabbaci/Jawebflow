@@ -70,8 +70,10 @@ export async function onRequestPost(context: any) {
       voice: voice.voice,
       legacy: body?.fallback === true,
       // 🎯 L'agent peut NOTER la demande du visiteur (nom, téléphone, besoin) :
-      // la fiche arrive dans la console. L'outil ne lui donne aucune
-      // connaissance en plus — il ne sert qu'à enregistrer.
+      // la fiche arrive dans la console.
+      // 🔎 Et il CHERCHE dans la base du site (`chercher_information` → les
+      // mêmes réglages que le chat) : la base n'est pas dans le prompt, elle
+      // est interrogée à la question.
       tools: liveTools(voice.mission),
     });
     if (!live.ok || !live.token) {

@@ -18,8 +18,6 @@ import {
   supabaseConfigured,
   supabaseGetAssistant,
   supabaseAssistantRowToConfig,
-  supabaseListKnowledge,
-  supabaseListKnowledgeEntries,
 } from '../../_shared/supabase.ts';
 import { evaluateWidgetAccess } from '../../_shared/widget-access.ts';
 import { rateLimited } from '../../_shared/rate-limit.ts';
@@ -30,7 +28,7 @@ import {
   limitBlockReached,
   monthlyCostBlock,
 } from '../../_shared/limits.ts';
-import { buildVoiceSystemPrompt, voiceKnowledgeText } from '../../_shared/voice/prompt.ts';
+import { buildVoiceSystemPrompt } from '../../_shared/voice/prompt.ts';
 import {
   createLiveToken,
   normalizedVoiceSettings,
@@ -125,17 +123,18 @@ export async function onRequestPost(context: any) {
     if (!voice.enabled) return blocked(VOICE_NOT_ENABLED_MSG, { voiceDisabled: true });
 
     // 🎙️ Le jeton, avec les consignes du marchand à l'intérieur.
-    // Au téléphone l'agent a un prompt MINUSCULE : quelques règles + la base
-    // de connaissance du compte, rien d'autre. Pas de culture générale, pas de
-    // recherche sur Internet : s'il ne trouve pas dans ses fiches, il dit
-    // qu'il ne sait pas et propose de rappeler le client.
-    const knowledgeText = await loadVoiceKnowledge(env, assistantId, config);
+    // Le prompt est MINUSCULE et la base de connaissance NE Y EST PLUS : elle
+    // reste dans la base du compte, et l'agent la consulté à la question avec
+    // l'outil `chercher_information` (le serveur ne renvoie que les lignes
+    // utiles). Pas de culture générale, pas d'Internet : s'il ne trouve rien,
+    // il dit qu'il ne sait pas et propose de rappeler le client.
     const opening = voice.greeting
       ? `### OUVERTURE DE L'APPEL\nCommence l'appel par ces mots, exactement : « ${String(voice.greeting).slice(0, 300)} »`
       : '';
-    const systemInstruction = buildVoiceSystemPrompt(config, knowledgeText, opening, {
+    const systemInstruction = buildVoiceSystemPrompt(config, '', opening, {
       mission: voice.mission,
       languages: voice.languages,
+      knowledge: 'search',
     });
     // `fallback: true` = le navigateur vient de se faire fermer la session juste
     // après le setup : on lui redonne un jeton sur le couple historique.
@@ -175,35 +174,6 @@ export async function onRequestPost(context: any) {
   } catch (e) {
     console.error('[voice/session]', e);
     return json({ ok: false, error: "L'appel vocal est momentanément indisponible." }, 500);
-  }
-}
-
-/**
- * La base de connaissance du compte, en texte compact — les trois sources dans
- * l'ordre : les fiches du compte (manuelles, scan, imports, apprentissage), les
- * notes anciennes (`knowledge_notes`), puis les pages scannées du site. Si les
- * trois sont vides, on renvoie une chaîne vide : l'agent ne saura rien et le
- * dira honnêtement au client.
- */
-async function loadVoiceKnowledge(env: any, assistantId: string, config: any): Promise<string> {
-  try {
-    const base = await supabaseListKnowledgeEntries(env, assistantId);
-    if (base.available) {
-      const text = voiceKnowledgeText(base.entries);
-      if (text) return text;
-    }
-  } catch (e) {
-    console.error('[voice/session] fiches de connaissance :', e);
-  }
-  try {
-    const notes = voiceKnowledgeText(config?.knowledgeNotes);
-    if (notes) return notes;
-  } catch { /* colonne jsonb absente : on continue */ }
-  try {
-    return voiceKnowledgeText(await supabaseListKnowledge(env, assistantId));
-  } catch (e) {
-    console.error('[voice/session] pages scannées :', e);
-    return '';
   }
 }
 

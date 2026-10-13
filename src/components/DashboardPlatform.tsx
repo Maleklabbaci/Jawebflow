@@ -350,10 +350,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [faqText, setFaqText] = useState<string>('');
   const [pricingServicesText, setPricingServicesText] = useState<string>('');
   const [specialRulesText, setSpecialRulesText] = useState<string>('');
-  const [behavior, setBehavior] = useState<{ language: string; length: string; websiteMentions: string; stopWhenConfused: boolean; stopCommand: boolean; customRules: string } & { autoInsights?: string }>({
+  const [behavior, setBehavior] = useState<{ language: string; length: string; websiteMentions: string; conversationMode: string; stopWhenConfused: boolean; stopCommand: boolean; customRules: string } & { autoInsights?: string }>({
     language: 'auto',
     length: 'normal',
     websiteMentions: 'auto',
+    // 🎯 Par défaut l'assistant guide la conversation ; le propriétaire peut
+    // basculer sur « c'est le client qui mène » (réponses nettes, sans relance).
+    conversationMode: 'bot',
     stopWhenConfused: true,
     stopCommand: true,
     customRules: '',
@@ -823,7 +826,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             if (current.businessInfo) setBusinessInfo(current.businessInfo);
             setSiteShopping(Boolean(current.siteShopping));
             if (current.webhookUrl) setWebhookUrl(current.webhookUrl);
-            if (current.behavior) setBehavior({ language: 'auto', length: 'normal', websiteMentions: 'auto', stopWhenConfused: true, stopCommand: true, customRules: '', ...current.behavior });
+            if (current.behavior) setBehavior({ language: 'auto', length: 'normal', websiteMentions: 'auto', conversationMode: 'bot', stopWhenConfused: true, stopCommand: true, customRules: '', ...current.behavior });
             if (current.widgetConfig) {
               setWidgetConfig(prev => ({
                 ...prev,
@@ -3619,6 +3622,23 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">🎯 Qui mène la conversation ?</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="behavior-conversation-mode">
+                      {([
+                        ['bot', '🤝 Il propose et guide', "Le bot répond puis propose une option utile et la prochaine étape (commander, réserver, appeler…)."],
+                        ['visitor', '🎯 Il répond seulement', "C'est le client qui mène : réponse précise, aucune proposition ni relance non demandée."],
+                      ] as const).map(([value, title, hint]) => (
+                        <button key={value} type="button" onClick={() => updateBehavior({ conversationMode: value })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${behavior.conversationMode === value ? 'bg-purple-50 border-purple-500 ring-1 ring-purple-500/30' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                          <span className="block text-xs font-bold text-slate-800">{title}</span>
+                          <span className="block text-[10px] text-slate-500 mt-0.5 leading-snug">{hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1.5">Actif sur le chat du site et Instagram, dès l'enregistrement.</p>
                   </div>
 
                   <div>

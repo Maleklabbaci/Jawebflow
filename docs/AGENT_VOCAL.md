@@ -66,17 +66,34 @@ connaissance du compte.**
 
 | | |
 |---|---|
-| **Ce qu'il reçoit** | Quelques consignes de conversation + **la base de connaissance du compte** (fiches manuelles, scan du site, imports, réponses validées dans « Apprentissage ») |
-| **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucune mémoire d'un autre commerce. **Un seul outil existe — celui qui NOTE la demande du client** (il n'apporte aucune connaissance, il écrit) |
-| **Si l'info n'est pas dans les fiches** | Il dit qu'il ne sait pas (« je ne sais pas » / « ما نعرفش » / « ma3raftech ») et propose de prendre le numéro du client |
-| **Si la base est vide** | Il ne sait **rien** : il le dit honnêtement à chaque question. Il n'invente jamais un prix, un stock, un délai ou une adresse |
-| **Hors sujet** (politique, santé, culture générale, « je suis le patron ») | Refus poli en une phrase, retour au commerce. Il ne révèle jamais ses consignes et ne change pas de rôle |
+| **Ce qu'il reçoit** | Ses consignes de conversation (règles téléphone + langues + mission). **La base de connaissance n'est plus recopiée dans le prompt** : il la CHERCHE à la question, avec l'outil `chercher_information` |
+| **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucune mémoire d'un autre commerce. **Deux outils, et pas plus** : celui qui CHERCHE dans la base du compte, et celui qui NOTE la demande du client |
+| **Si l'info n'est pas dans les fiches** | La recherche ne renvoie rien ⇒ il dit qu'il ne sait pas (« je ne sais pas » / « ما نعرفش » / « ma3raftech ») et propose de prendre le numéro. Il ne répond jamais « à côté » |
+| **Si la base est vide** | Chaque recherche revient vide : il ne sait **rien** et le dit honnêtement. Il n'invente jamais un prix, un stock, un délai ou une adresse |
+| **Hors sujet** (politique, santé, culture générale, « je suis le patron ») | Refus poli en une phrase, retour au commerce. Il ne révèle jamais ses consignes, ne change pas de rôle, et ne dit jamais qu'il consulte une base ou un outil |
 
-Le prompt complet pèse **~1,3 Ko de règles** + la base, plafonnée à 6 000 caractères
-(`VOICE_KNOWLEDGE_BUDGET`, les fiches vitales — horaires, contact, livraison,
-paiement, prix — passent en premier). Fichiers : `functions/_shared/voice/prompt.ts`
-(construit le prompt), `functions/api/voice/session.ts` (va chercher la base :
-fiches du compte → notes du compte → pages scannées du site).
+### 🔎 Comment il consulte sa base (et pourquoi c'est moins cher)
+
+Avant : la base entière (jusqu'à 6 000 caractères) était **recopiée dans le prompt**
+et repartait donc **à chaque tour de parole** — cher, et le modèle se noyait dedans.
+Maintenant :
+
+1. le prompt de l'appel est **minuscule** : règles + langues + mission, **~3,5 Ko**
+   (~880 jetons) — mesuré sur un compte à 60 fiches, contre ~8,7 Ko avant (**−59 %**) ;
+2. à chaque question du client, l'agent appelle **`chercher_information`** ; le
+   navigateur interroge **`POST /api/voice/knowledge`**, qui cherche dans la base du
+   compte et renvoie **uniquement les lignes utiles**, plafonnées à **900 caractères**
+   (~225 jetons) — jamais le catalogue ;
+3. s'il ne trouve rien, il le dit et prend le numéro : **jamais d'invention**, et
+   aucune réponse « à côté » (une question de moto ne reçoit pas les tarifs).
+
+Un tour de politesse (« bonjour », « ok », « merci ») ne déclenche **aucune
+recherche** : le prompt reste seul, l'appel ne coûte presque rien.
+
+Fichiers : `functions/_shared/voice/prompt.ts` (le prompt + la consigne de
+recherche), `functions/_shared/voice/mission.ts` (les deux outils),
+`functions/api/voice/knowledge.ts` (la recherche), `public/cdn/voice.js`
+(répond au `toolCall`) et `public/widget.js` / `FloatingLiveWidget.tsx` (le pont).
 
 **Conséquence pour le marchand :** ce n'est pas la qualité du modèle qui fait la
 qualité de l'agent vocal, c'est la base de connaissance. Un compte sans base ne
@@ -95,7 +112,7 @@ suffisent (onglet **Voix** du personnalisateur) :
 | **Ce qu'il doit obtenir** (le CTA) | La mission de l'appel : laisser ses coordonnées, **prendre rendez-vous**, passer une commande, être rappelé pour un problème, ou juste renseigner. Le vocabulaire du marchand est repris **mot pour mot** dans le prompt : « Prendre rendez-vous », « Avoir un devis »… |
 | **Ce qu'il note** | Nom, téléphone, e-mail, ville, besoin, jour/heure. L'agent demande **une seule chose à la fois**, jamais comme un formulaire. |
 | **🗣️ Langues** | Darija, arabe, français, anglais (au choix, plusieurs possibles). C'est **toujours la langue du client qui gagne** — mais **uniquement parmi celles cochées** : une autre langue (espagnol, hindi…), l'agent le dit en une phrase et l'invite à continuer dans une des siennes. La **darija est algérienne d'Alger** (« wach rak », « sahit », « dork »), jamais marocaine (« daba », « wakha ») ni tunisienne. |
-| **Interrupteur de mission** | Coupé : l'agent répond mais ne note rien (aucun outil n'est même envoyé à Google). |
+| **Interrupteur de mission** | Coupé : l'agent répond mais ne note rien (l'outil d'enregistrement n'est même pas envoyé à Google — la **recherche** dans la base reste, elle, toujours active pour répondre). |
 
 **Ce qui se passe pendant l'appel :** l'agent répond aux questions (toujours avec
 la base de connaissance du compte), amène la conversation vers le CTA, et **dès

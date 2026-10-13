@@ -2576,6 +2576,41 @@ export function AdminPage() {
                     </div>
 
                     <div>
+                      <label className={labelCls}>Qui mène la conversation ?</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="site-chat-conversation-mode">
+                        {([
+                          {
+                            id: 'bot' as const,
+                            title: '🤝 Il propose et guide',
+                            hint: "L'assistant répond puis propose une option utile et la prochaine étape (essayer, voir les tarifs, appeler).",
+                          },
+                          {
+                            id: 'visitor' as const,
+                            title: '🎯 Il répond seulement',
+                            hint: 'C’est le visiteur qui mène : réponse précise, aucune proposition ni relance non demandée.',
+                          },
+                        ]).map((mode) => (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => patchSiteAi({ conversationMode: mode.id })}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              siteChat.ai.conversationMode === mode.id
+                                ? 'bg-purple-50 border-purple-500 ring-1 ring-purple-500/30'
+                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span className="block text-xs font-bold text-slate-800">{mode.title}</span>
+                            <span className="block text-[10px] text-slate-500 mt-0.5 leading-snug">{mode.hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1.5">
+                        Le choix s'applique dès l'enregistrement : c'est écrit dans le prompt de l'assistant, rien à redéployer.
+                      </p>
+                    </div>
+
+                    <div>
                       <label className={labelCls}>Réponse de secours (si l'IA est coupée ou en panne)</label>
                       <textarea
                         data-testid="site-chat-fallback"

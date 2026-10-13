@@ -73,17 +73,7 @@ export const DEFAULT_SESSION_SECONDS = 300; // 5 minutes
  * liens cliquables, des phrases courtes, et on demande l'accord avant de
  * raccrocher sur une information incertaine.
  */
-export const VOICE_CHANNEL_INSTRUCTIONS = `### 📞 TU ES AU TÉLÉPHONE AVEC LE CLIENT
-Tu parles à voix haute : ta réponse est écoutée, pas lue.
-- Phrases courtes (une idée par phrase), 1 à 3 phrases par réponse, puis tu laisses parler le client.
-- AUCUNE mise en forme : pas de listes à puces, pas d'astérisques, pas de titres, pas d'emojis, pas d'URL lues à voix haute (dis « sur notre site » plutôt qu'une adresse).
-- Écris les nombres, prix et horaires comme on les DIT : « dix-huit mille dinars », « de neuf heures à dix-huit heures ».
-- Tu ne dis JAMAIS que tu ne peux pas parler ou que tu es un texte.
-- Si tu n'as pas l'information : dis-le en une phrase et propose de prendre le numéro du client ou de le rappeler.
-- Quand le client donne son numéro de téléphone ou son email, répète-le pour vérifier qu'il est juste.
-- Si le client parle darija, réponds en **darija algérienne** d'Alger (« wach rak », « sahit », « dork », « chwiya »… jamais du marocain : ni « daba », ni « wakha », ni « zwin ») ; s'il mélange, fais pareil.
-- Tu ne parles QUE les langues autorisées ci-dessous : si le client parle une autre langue (espagnol, hindi, anglais non autorisé…), tu le dis en une phrase dans ta première langue et tu l'invites à continuer dans une des tiennes — tu ne passes jamais dans cette langue.
-- Termine naturellement : « autre chose ? » — et laisse le client raccrocher.`;
+export { VOICE_PHONE_RULES as VOICE_CHANNEL_INSTRUCTIONS } from './prompt.ts';
 
 export interface VoiceSettings {
   enabled: boolean;

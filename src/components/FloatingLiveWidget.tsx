@@ -319,19 +319,32 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           // Le navigateur a coupé la sortie audio : on le DIT au visiteur.
           if (n?.message) setCall((c) => ({ ...c, error: String(n.message) }));
         },
-        // 🎯 L'agent note la demande du visiteur (nom, téléphone, besoin) :
-        // la fiche part dans la console admin (id = site_leads). Sans réponse,
-        // Gemini attendrait — et l'appel deviendrait muet.
+        // Deux outils pour l'agent :
+        //   • `chercher_information` → la base du site n'est PAS dans le prompt,
+        //     le serveur renvoie uniquement les lignes utiles à la question ;
+        //   • l'enregistrement de la demande (nom, téléphone, besoin) → la fiche
+        //     part dans la console admin (id = site_leads).
+        // Sans réponse, Gemini attendrait — et l'appel deviendrait muet.
         onToolCall: async (call: any) => {
+          const args = call?.args || {};
           try {
+            if (call?.name === 'chercher_information') {
+              const res = await fetch('/api/voice/knowledge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ site: true, question: String(args.question || '') }),
+              });
+              const data = await res.json().catch(() => null);
+              return { result: String(data?.text || ''), found: Boolean(data?.found) };
+            }
             const res = await fetch('/api/voice/lead', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ site: true, sessionId, args: call?.args || {} }),
+              body: JSON.stringify({ site: true, sessionId, args }),
             });
             return await res.json().catch(() => null);
           } catch {
-            return null;
+            return { result: '', found: false };
           }
         },
         onError: (e: any) => {
@@ -502,8 +515,24 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     footer: light ? 'bg-neutral-100 text-neutral-500' : 'bg-black/30 text-neutral-500',
     bar: light ? 'bg-neutral-100/90 border-black/[0.07]' : 'bg-neutral-900/90 border-white/10',
     input: light
-      ? 'bg-white border border-black/10 text-neutral-900 placeholder:text-neutral-400'
-      : 'bg-neutral-900 border border-white/10 text-white placeholder:text-neutral-500',
+      ? 'bg-white border border-black/10 text-neutral-900 placeholder:text-neutral-400 focus:border-purple-400'
+      : 'bg-neutral-900 border border-white/10 text-white placeholder:text-neutral-500 focus:border-purple-400/60',
+    // 🔆 Le mode clair a ses propres contrastes : les puces et les liens du
+    // panneau sombre (gris très clair, violet 300) devenaient illisibles sur
+    // fond blanc — c'était le défaut visible sur la maquette.
+    chip: light
+      ? 'border border-black/10 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 hover:text-neutral-900'
+      : 'border border-white/10 bg-white/[0.06] text-neutral-300 hover:bg-white/[0.12] hover:text-white',
+    link: light ? 'text-purple-600 hover:text-purple-700' : 'text-purple-300 hover:text-purple-200',
+    pill: light
+      ? 'border-purple-500/25 bg-purple-50 text-purple-700'
+      : 'border-purple-400/30 bg-purple-500/15 text-purple-200',
+    iconBtn: light
+      ? 'bg-black/[0.06] text-neutral-700 hover:bg-black/[0.12] hover:text-neutral-900'
+      : 'bg-white/[0.05] text-neutral-300 hover:bg-white/[0.12] hover:text-white',
+    callBtn: light
+      ? 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20'
+      : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-300',
   };
 
   // 📏 La taille du panneau suit le réglage du propriétaire : une bulle de chat
@@ -519,7 +548,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   const contactLine = config?.contact?.email ? (
     <a
       href={`mailto:${config.contact.email}`}
-      className="inline-flex items-center gap-1 text-[0.62rem] font-light text-purple-300 transition-colors hover:text-purple-200"
+      className={`inline-flex items-center gap-1 text-[0.62rem] font-light transition-colors ${skin.link}`}
     >
       <Mail className="h-3 w-3" />
       {config.contact.email}
@@ -563,14 +592,16 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                   <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 bg-emerald-400 ${light ? 'border-white' : 'border-[#0b0912]'}`} />
                 )}
               </div>
-              <div className="min-w-0">
-                <h4 className="flex items-center gap-1.5 truncate text-xs font-semibold leading-tight sm:text-sm">
+              <div className="min-w-0 flex-1">
+                <h4 className="flex min-w-0 items-center gap-1.5 text-xs font-semibold leading-tight sm:text-sm">
                   <span className="truncate">{widget?.headerTitle || 'Assistant JawebFlow'}</span>
-                  <span className="shrink-0 rounded-full border border-purple-400/30 bg-purple-500/15 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-[0.1em] text-purple-200">
+                  {/* La pastille est décorative : sur un panneau étroit (320-344 px)
+                      elle mangeait la place du titre — on la garde en grand écran. */}
+                  <span className={`hidden shrink-0 rounded-full border px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-[0.1em] md:inline-flex ${skin.pill}`}>
                     Officiel
                   </span>
                 </h4>
-                <p className="truncate text-[0.68rem] font-light text-emerald-500">
+                <p className={`truncate text-[0.68rem] font-light ${light ? 'text-emerald-600' : 'text-emerald-500'}`}>
                   {widget?.headerSubtitle || 'En ligne • réponse immédiate'}
                 </p>
               </div>
@@ -582,7 +613,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                   type="button"
                   onClick={startCall}
                   data-testid="site-call-start"
-                  className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 transition-colors hover:bg-emerald-500/25 hover:text-emerald-300 sm:h-8 sm:w-8"
+                  className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${skin.callBtn}`}
                   title="Appeler maintenant"
                 >
                   <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -591,7 +622,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${light ? 'bg-black/[0.04] hover:bg-black/[0.09]' : 'bg-white/[0.05] hover:bg-white/[0.12] hover:text-white'}`}
+                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${skin.iconBtn}`}
                 title="Réduire"
               >
                 <Minus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -599,7 +630,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${light ? 'bg-black/[0.04] hover:bg-black/[0.09]' : 'bg-white/[0.05] hover:bg-white/[0.12] hover:text-white'}`}
+                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${skin.iconBtn}`}
                 title="Fermer"
               >
                 <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -771,7 +802,12 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           {/* Quick Prompts Bar */}
           <div className={`flex shrink-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain border-t px-3 py-2 ${skin.bar} ${call.active || call.state === 'error' ? 'hidden' : ''}`} style={{ scrollbarWidth: 'none' }}>
             {quickPrompts.map((qp, idx) => (
-              <button key={idx} type="button" onClick={() => handleSendMessage(qp)} className="lux-chip shrink-0">
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSendMessage(qp)}
+                className={`shrink-0 cursor-pointer rounded-lg px-2.5 py-1.5 text-[0.72rem] font-normal transition-colors ${skin.chip}`}
+              >
                 {qp}
               </button>
             ))}
@@ -786,15 +822,15 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder={config?.placeholder || 'Posez votre question…'}
-              className={`lux-input min-w-0 flex-1 rounded-[10px] px-3.5 py-2 text-[0.82rem] ${skin.input}`}
+              className={`min-w-0 flex-1 rounded-[10px] px-3.5 py-2 text-[0.82rem] transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500/20 ${skin.input}`}
             />
             <button
               id="live-widget-send-btn"
               type="button"
               onClick={() => handleSendMessage()}
               disabled={!inputText.trim()}
-              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
-              style={{ backgroundColor: primary }}
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 sm:h-9 sm:w-9"
+              style={inputText.trim() ? { backgroundColor: primary } : undefined}
               title="Envoyer"
             >
               <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -812,7 +848,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                     setIsOpen(false);
                     onOpenCreateAssistant();
                   }}
-                  className="shrink-0 cursor-pointer font-normal text-purple-300 transition-colors hover:text-purple-200"
+                  className={`shrink-0 cursor-pointer font-normal transition-colors ${skin.link}`}
                 >
                   Créer mon chatbot →
                 </button>

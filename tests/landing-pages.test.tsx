@@ -309,6 +309,66 @@ describe('site vitrine — navigation et widget flottant', () => {
   });
 });
 
+describe('widget du site — mode clair lisible', () => {
+  it('les puces, les liens et le bouton d’envoi restent contrastés sur fond blanc', async () => {
+    fetchMock.mockImplementation(async (input: any) => {
+      if (String(input).includes('/api/site-chat')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          enabled: true,
+          quickPrompts: ['Combien ça coûte ?'],
+          placeholder: 'Posez votre question…',
+          aiEnabled: true,
+          contact: { email: 'contact@jawebflow.dz', whatsapp: '', whatsappText: '' },
+          widget: {
+            themeMode: 'light',
+            showBranding: true,
+            headerTitle: 'Assistant JawebFlow',
+            headerSubtitle: 'En ligne • réponse immédiate',
+            primaryColor: '#9333ea',
+            gradientSecondary: '#6366f1',
+          },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ text: '' }), { status: 200 });
+    });
+
+    render(<FloatingLiveWidget onOpenCreateAssistant={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Ouvrir l'assistant/ }));
+
+    const panel = document.getElementById('live-widget-modal');
+    await waitFor(() => expect(panel?.className).toContain('bg-white/97'));
+
+    // 🎯 La pastille « Officiel » est décorative : elle disparaît sur les
+    // panneaux étroits (320-344 px) pour laisser respirer le titre.
+    const pill = screen.getByText('Officiel');
+    expect(pill.className).toContain('hidden');
+    expect(pill.className).toContain('md:inline-flex');
+    expect(pill.className).toContain('text-purple-700');
+
+    // Les questions rapides avaient les couleurs du panneau sombre (quasi
+    // invisibles en clair) : elles ont maintenant leur propre contraste.
+    const chip = screen.getByRole('button', { name: 'Combien ça coûte ?' });
+    expect(chip.className).toContain('bg-neutral-100');
+    expect(chip.className).toContain('text-neutral-700');
+    expect(chip.className).not.toContain('lux-chip');
+
+    // Le bouton d'envoi désactivé est gris (pas un dégradé délavé à 40 %).
+    const send = document.getElementById('live-widget-send-btn') as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.className).toContain('disabled:bg-neutral-200');
+    expect(send.style.backgroundColor).toBe('');
+    const input = document.getElementById('live-widget-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'Bonjour' } });
+    // jsdom normalise la couleur : on accepte la forme rgb.
+    expect((document.getElementById('live-widget-send-btn') as HTMLButtonElement).style.backgroundColor).toMatch(/9333ea|147, 51, 234/);
+
+    // Les liens du pied de page passent en violet foncé lisible.
+    expect(screen.getByRole('button', { name: /Créer mon chatbot/ }).className).toContain('text-purple-600');
+    noErrors();
+  });
+});
+
 describe('typographie du site vitrine', () => {
   it('une seule famille (Poppins) : aucun élément en police « code »', async () => {
     const fs = await import('node:fs');

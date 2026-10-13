@@ -17,6 +17,7 @@ import {
   LEAD_TOOL_NAME,
   LANGUAGE_LABELS,
   languageInstruction,
+  KNOWLEDGE_TOOL_NAME,
   leadToolDeclaration,
   liveTools,
   missionInstruction,
@@ -50,11 +51,16 @@ describe('la mission du marchand (le CTA)', () => {
     expect(mission.collect).toEqual(['telephone']);
   });
 
-  it('une mission coupée = aucun outil dans le jeton (le chat reste)', () => {
+  it('une mission coupée = plus d’outil « enregistrer », mais la RECHERCHE reste', () => {
     const off = normalizedMission({ enabled: false, goal: 'lead' });
     expect(off.enabled).toBe(false);
-    expect(liveTools(off)).toEqual([]);
     expect(missionInstruction(off)).toBe('');
+    // Le marchand a coupé le CTA : l'agent ne note plus de demande…
+    const names = (liveTools(off)[0] as any).functionDeclarations.map((d: any) => d.name);
+    expect(names).not.toContain(LEAD_TOOL_NAME);
+    // …mais il doit toujours pouvoir CHERCHER dans sa base pour répondre.
+    expect(names).toEqual([KNOWLEDGE_TOOL_NAME]);
+    expect(liveTools(off, { search: false })).toEqual([]);
   });
 
   it('l’outil demande toujours le téléphone et sait trier la demande', () => {

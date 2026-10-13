@@ -17,6 +17,26 @@ describe('prompt commercial partagé et RAG compact', () => {
     expect(system).toContain('Canal Instagram : réponses courtes.');
   });
 
+  it('écrit dans le prompt QUI mène la conversation (réglage du marchand)', async () => {
+    const { BOT_LED_RULE, VISITOR_LED_RULE, conversationModeRule, normalizedConversationMode } = await import('../functions/_shared/prompt');
+    // Par défaut : c'est le bot qui guide (comportement historique).
+    const guided = buildSalesSystemPrompt({ businessName: 'Boutique Nour' });
+    expect(guided).toContain(BOT_LED_RULE);
+    expect(guided).not.toContain(VISITOR_LED_RULE);
+
+    // Le marchand choisit « c'est le client qui mène ».
+    const led = buildSalesSystemPrompt({ businessName: 'Boutique Nour', behavior: { conversationMode: 'visitor' } });
+    expect(led).toContain(VISITOR_LED_RULE);
+    expect(led).not.toContain(BOT_LED_RULE);
+    expect(VISITOR_LED_RULE).toMatch(/annule toutes les consignes/);
+
+    expect(conversationModeRule('visitor')).toBe(VISITOR_LED_RULE);
+    expect(conversationModeRule(undefined)).toBe(BOT_LED_RULE);
+    expect(conversationModeRule('autre chose')).toBe(BOT_LED_RULE);
+    expect(normalizedConversationMode('VISITOR')).toBe('visitor');
+    expect(normalizedConversationMode(null)).toBe('bot');
+  });
+
   it('sépare le RAG du prompt stable et protège les balises de contexte', () => {
     const context = buildBusinessContextText({
       products: [{ title: 'Coque', url: 'https://shop.test/coque' }],

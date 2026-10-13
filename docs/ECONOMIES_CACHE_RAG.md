@@ -6,6 +6,7 @@ Deux leviers distincts, tout deux branchés sur **le même appel Gemini** :
 |---|---|---|
 | **RAG borné** | N'envoie à Gemini **que les sections de la base qui parlent de la question**, avec un plafond dur en caractères | `functions/api/site-chat.ts`, `functions/api/chat.js`, `functions/api/webhook/instagram.ts`, canaux |
 | **Mise en cache** *(context caching)* | Met en cache la partie **stable** (consignes + base complète + FAQ + tarifs) et la **relit à 10 % du prix** | `functions/api/chat.js` → `functions/_shared/gemini-cache.ts` |
+| **Recherche pendant l'appel** | L'agent vocal ne porte QUE ses règles : la base est cherchée à la question (≤ 900 car.) | `functions/api/voice/knowledge.ts` → `chercher_information` |
 
 Code : `functions/_shared/rag.ts` (sélection + budgets) · `functions/_shared/gemini-cache.ts` (cache) ·
 `functions/_shared/prompt.ts` (`buildCacheKnowledgeBlock`).
@@ -57,6 +58,32 @@ donne en plus au modèle **tout le catalogue** au lieu d'un extrait — réponse
 inventer un prix parce que la fiche n'était pas passée.
 
 ---
+
+## 2 bis. 🎙️ L'appel vocal : la base n'est plus dans le prompt du tout
+
+Le chat écrivait la base dans son prompt système ; **l'appel**, lui, ne la
+transportait même plus. Mesures (mêmes outils, 13/10/2026) :
+
+| Cas | Avant | Après |
+|---|---|---|
+| Appel d'un marchand, 60 fiches (base 5 768 car.) | prompt **8 676 car.** (~2 169 jetons) **à chaque tour de parole** | prompt **3 520 car.** (~880 jetons) **−59 %** |
+| Appel du site vitrine | 5 862 car. (base comprise) | **4 080 car.** (~1 020 jetons) **−30 %** |
+| Question du client pendant l'appel | — | recherche `chercher_information` → **≤ 900 car.** (~225 jetons), seulement s'il demande quelque chose |
+| « bonjour », « ok », « merci » | base renvoyée quand même | **aucune recherche** : 0 donnée payée |
+
+Le chemin est : `chercher_information` (outil du jeton) → `POST /api/voice/knowledge`
+→ `selectKnowledgeSections()` sur la base du compte (`knowledge_entries`, sinon les
+notes/FAQ/tarifs) → **les lignes utiles uniquement**, avec un plafond dur de
+900 caractères et **60 recherches / 10 min / IP**.
+
+Deux garde-fous ajoutés le même jour, parce qu'une recherche doit être HONNÊTE :
+
+- **plus de « réponse à côté »** : si la question n'a aucun terme en commun avec la
+  base, la recherche renvoie vide (le bloc « informations vitales » ne répond plus
+  à une question de moto) ⇒ l'agent dit « je ne sais pas » ;
+- **plus de faux positifs de mots outils** : « est », « ou », « vos », « quelle »…
+  sont ignorés, et un terme de 2-3 lettres ne compte que s'il est un **mot entier**
+  (« est » ne matche plus « question » ni « essentiel »).
 
 ## 3. Ce qui est **toujours** envoyé à 100 % du prix
 

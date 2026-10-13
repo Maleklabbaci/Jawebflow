@@ -79,12 +79,12 @@ describe('le prompt vocal : minuscule, borné, honnête', () => {
     const prompt = buildVoiceSystemPrompt({ businessName: 'Boutique Nour' }, voiceKnowledgeText(FICHES));
     expect(prompt).toContain('BASE DE CONNAISSANCE');
     expect(prompt).toContain('Ouvert de 9h à 18h, fermé le vendredi.');
-    expect(prompt).toMatch(/QU'AVEC les informations/i);
+    expect(prompt).toMatch(/QU'AVEC/i);
     expect(prompt).toMatch(/ni Internet, ni culture générale/i);
   });
 
-  it('base vide : il ne sait rien et le dit au client', () => {
-    const prompt = buildVoiceSystemPrompt({ businessName: 'Boutique Nour' }, '');
+  it('base vide (mode historique « tout dans le prompt ») : il ne sait rien et le dit', () => {
+    const prompt = buildVoiceSystemPrompt({ businessName: 'Boutique Nour' }, '', '', { knowledge: 'inline' });
     expect(prompt).toContain('VIDE');
     expect(prompt).toMatch(/je ne sais pas/i);
     expect(prompt).toMatch(/ne sais RIEN/i);
@@ -127,6 +127,28 @@ describe('le prompt vocal : minuscule, borné, honnête', () => {
   it('sans nom d’entreprise, il parle quand même au nom du commerce', () => {
     const prompt = buildVoiceSystemPrompt({}, '');
     expect(prompt).toContain('cette entreprise');
+    expect(prompt.length).toBeLessThan(2_600);
+  });
+
+  it('mode par défaut : la base est CHERCHÉE, elle n’est jamais recopiée dans le prompt', () => {
+    const prompt = buildVoiceSystemPrompt({ businessName: 'Boutique Nour' }, '');
+    expect(prompt).toContain('chercher_information');
+    expect(prompt).toMatch(/TU LA CHERCHES, TU NE LA DEVINES PAS/);
+    expect(prompt).toMatch(/ne sais RIEN de mémoire/i);
+    expect(prompt).toMatch(/une seconde/); // il prévient avant de chercher
+    // Aucune donnée du commerce : le prompt reste minuscule quoi qu'il arrive.
+    expect(prompt.length).toBeLessThan(2_600);
+  });
+
+  it('même une base de 6 000 caractères ne gonfle plus le prompt de l’appel', () => {
+    const gros = voiceKnowledgeText(Array.from({ length: 60 }, (_, i) => ({
+      title: `Fiche ${i}`,
+      content: 'Contenu utile avec un prix et un délai. '.repeat(6),
+      category: 'infos',
+    })));
+    expect(gros.length).toBeGreaterThan(4_000);
+    const prompt = buildVoiceSystemPrompt({ businessName: 'Nour' }, '');
+    expect(prompt).not.toContain('Contenu utile avec un prix');
     expect(prompt.length).toBeLessThan(2_600);
   });
 });

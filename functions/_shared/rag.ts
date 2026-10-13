@@ -163,8 +163,27 @@ export function splitKnowledgeSections(text: unknown, maxSections = 40): string[
 
   const byBlank = raw.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
   const blocks: string[] = [];
+  // Un « gros bloc » (une base écrite d'un trait, sans ligne vide) est lui aussi
+  // redécoupé : sinon toute la base serait UNE seule section impossible à scorer.
+  const splitByLines = (block: string): string[] => {
+    const out: string[] = [];
+    let current: string[] = [];
+    for (const line of block.split('\n')) {
+      const topLevel = /^[^\s]/.test(line) && (lineHasBullet(line) || lineIsHeading(line));
+      if (topLevel && current.length) {
+        out.push(current.join('\n').trim());
+        current = [];
+      }
+      current.push(line);
+    }
+    if (current.length) out.push(current.join('\n').trim());
+    return out.filter(Boolean);
+  };
   if (byBlank.length > 1) {
-    blocks.push(...byBlank);
+    for (const block of byBlank) {
+      if (block.length <= SECTION_MAX_CHARS) blocks.push(block);
+      else blocks.push(...splitByLines(block));
+    }
   } else {
     // Une seule suite de puces : chaque puce de premier niveau = une section.
     let current: string[] = [];
@@ -244,16 +263,34 @@ export interface KnowledgeSelection extends RagSelection {
 export function selectKnowledgeSections(
   text: unknown,
   message: string,
-  options: { budgetChars?: number; maxSections?: number; fallbackToHead?: boolean } = {},
+  options: { budgetChars?: number; maxSections?: number; fallbackToHead?: boolean; minScore?: number } = {},
 ): KnowledgeSelection {
   const raw = String(text || '').trim();
   const budget = Math.max(200, Math.floor(options.budgetChars ?? SITE_KB_TURN_BUDGET_CHARS));
   const fallbackToHead = options.fallbackToHead !== false;
+  // Un seul mot banal en commun (« question », « est »…) ne fait pas une
+  // réponse : au téléphone, on exige un vrai recoupement (2 minimum).
+  const minScore = Math.max(1, Math.floor(options.minScore ?? 1));
 
   if (!raw) {
     return { text: '', kept: [], dropped: [], chars: 0, omittedChars: 0, estimatedTokens: 0, total: 0, mode: 'full' };
   }
   if (raw.length <= budget) {
+    // Base courte : on la renvoie telle quelle — mais si l'appelant a interdit
+    // le repli (téléphone), une question SANS AUCUN rapport ne reçoit rien :
+    // l'agent dira « je ne sais pas » au lieu de répondre à côté.
+    if (fallbackToHead === false && scoreRelevantText(message, '', raw) < minScore) {
+      return {
+        text: '',
+        kept: [],
+        dropped: ['base (aucun terme en commun)'],
+        chars: 0,
+        omittedChars: raw.length,
+        estimatedTokens: 0,
+        total: raw.length,
+        mode: 'relevance',
+      };
+    }
     return {
       text: raw,
       kept: ['base'],
@@ -274,29 +311,61 @@ export function selectKnowledgeSections(
     essential: ESSENTIAL_RE.test(section),
   }));
 
-  const essentialBudget = Math.floor(budget * ESSENTIAL_SHARE);
+  // 🔇 Aucun terme en commun ET pas de repli autorisé (téléphone) : on ne
+  // renvoie RIEN. Sinon le bloc « informations vitales » répondrait à une
+  // question qui n'a rien à voir (moto, météo…) — l'agent doit dire qu'il ne
+  // sait pas, pas réciter les tarifs.
+  if (fallbackToHead === false && ranked.every((entry) => entry.score < minScore)) {
+    return {
+      text: '',
+      kept: [],
+      dropped: ranked.map((entry) => entry.section.slice(0, 40)),
+      chars: 0,
+      omittedChars: raw.length,
+      estimatedTokens: 0,
+      total: raw.length,
+      mode: 'relevance',
+    };
+  }
+
+  // S'il n'y a AUCUNE autre section pertinente, les informations vitales ont
+  // droit à tout le budget (mieux vaut une fiche entière qu'une fiche coupée).
+  const hasOtherRelevant = ranked.some((entry) => entry.score >= minScore && !entry.essential);
+  const essentialBudget = hasOtherRelevant ? Math.floor(budget * ESSENTIAL_SHARE) : budget;
   let used = 0;
   const parts: string[] = [];
   const kept: string[] = [];
 
   const tryAdd = (section: string, remaining: number) => {
-    const room = Math.min(remaining, budget - used);
+    // Le séparateur entre deux blocs (« \n\n ») fait partie du budget : sans
+    // ça, chaque bloc ajouté dépassait le plafond de deux caractères.
+    const separator = parts.length ? 2 : 0;
+    const room = Math.min(remaining, budget - used - separator);
     if (room < 80) return false;
-    const chunk = section.length <= room ? section : section.slice(0, room);
+    let chunk = section.length <= room ? section : section.slice(0, room);
+    // Coupe à la dernière ligne complète : au téléphone, une phrase coupée en
+    // plein milieu peut faire dire un demi-prix à l'agent.
+    if (chunk.length < section.length) {
+      const lastBreak = chunk.lastIndexOf('\n');
+      if (lastBreak > 120) chunk = chunk.slice(0, lastBreak);
+    }
     if (chunk.trim().length < 60) return false;
     parts.push(chunk.trim());
-    used += chunk.trim().length;
+    used += chunk.trim().length + separator;
     kept.push(section.slice(0, 40));
     return true;
   };
 
-  for (const item of ranked.filter((entry) => entry.essential).slice(0, 4)) {
+  // Les « informations vitales » (contact, prix, horaires) accompagnent une
+  // question qui CONCERNE le commerce — jamais une question hors sujet.
+  const essentials = ranked.every((entry) => entry.score < minScore) ? [] : ranked.filter((entry) => entry.essential).slice(0, 4);
+  for (const item of essentials) {
     if (used >= essentialBudget) break;
     tryAdd(item.section, essentialBudget - used);
   }
 
   const relevant = ranked
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score >= minScore)
     .sort((a, b) => b.score - a.score || a.index - b.index);
   for (const item of relevant) {
     if (used >= budget) break;
@@ -306,6 +375,8 @@ export function selectKnowledgeSections(
   }
 
   let mode: KnowledgeSelection['mode'] = used > 0 ? 'relevance' : 'head';
+  // `fallbackToHead === false` : on ne raconte pas la base au hasard.
+  if (used === 0 && !fallbackToHead) mode = 'relevance';
   if (used === 0 && fallbackToHead) {
     for (const item of ranked) {
       if (used >= budget) break;
@@ -314,7 +385,7 @@ export function selectKnowledgeSections(
     mode = 'head';
   }
 
-  const result = parts.join('\n\n');
+  const result = parts.join('\n\n').slice(0, budget);
   return {
     text: result,
     kept,

@@ -164,9 +164,45 @@ export function leadToolDeclaration(mission: VoiceMission) {
   };
 }
 
-/** L'outil prêt pour le jeton, ou `[]` si le marchand a coupé la mission. */
-export function liveTools(mission: VoiceMission) {
-  return mission.enabled ? [{ functionDeclarations: [leadToolDeclaration(mission)] }] : [];
+// ── 🔎 L'outil de RECHERCHE dans la base de connaissance ────────────────────
+
+/** Nom de l'outil que l'agent appelle avant de répondre. */
+export const KNOWLEDGE_TOOL_NAME = 'chercher_information';
+
+/**
+ * L'agent NE SAIT RIEN de mémoire : au téléphone, la base de connaissance du
+ * compte ne voyage plus dans le prompt (elle faisait 6 000 caractères envoyés à
+ * chaque tour). Il appelle cet outil avec les mots du client, le serveur cherche
+ * dans la base et ne renvoie QUE les lignes utiles — quelques centaines de
+ * caractères au lieu de 6 000.
+ */
+export function knowledgeToolDeclaration() {
+  return {
+    name: KNOWLEDGE_TOOL_NAME,
+    description:
+      "Cherche dans la base de connaissance du commerce l'information qui répond à la question du client (produit, prix, horaire, livraison, paiement, adresse, garantie, disponibilité, service…). À appeler AVANT de répondre à toute question sur le commerce : tu ne réponds jamais de mémoire. Le champ `result` contient les lignes trouvées ; s'il est vide, l'information n'existe pas.",
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        question: {
+          type: 'STRING',
+          description: "La question du client, avec ses mots (ex. « prix de la coque spiderman », « horaires du samedi », « livraison à Blida »).",
+        },
+      },
+      required: ['question'],
+    },
+  };
+}
+
+/**
+ * Les outils du jeton : la mission (enregistrer la demande) **et** la recherche
+ * dans la base. `search: false` n'est utilisé que par les tests.
+ */
+export function liveTools(mission: VoiceMission, options: { search?: boolean } = {}) {
+  const declarations: unknown[] = [];
+  if (mission.enabled) declarations.push(leadToolDeclaration(mission));
+  if (options.search !== false) declarations.push(knowledgeToolDeclaration());
+  return declarations.length ? [{ functionDeclarations: declarations }] : [];
 }
 
 // ── Les langues de l'assistant ───────────────────────────────────────────────
@@ -204,10 +240,11 @@ export const ALGERIAN_WORDS = ['dork', 'sahit', 'saha', 'labas', 'wach rak', 'ki
  */
 export function languageInstruction(
   languages: VoiceLanguage[],
-  opts: { surface?: 'voice' | 'chat' } = {},
+  opts: { surface?: 'voice' | 'chat'; compact?: boolean } = {},
 ): string {
   const chat = opts.surface === 'chat';
   const wanted = languages.length ? languages : DEFAULT_LANGUAGES;
+  if (opts.compact) return compactLanguageInstruction(wanted);
   const how = wanted.map((l) => LANGUAGE_HOW[l] || l).join(', ');
   const first = wanted[0];
   const names = wanted.map((l) => LANGUAGE_LABELS[l] || l).join(' · ');
@@ -221,6 +258,24 @@ export function languageInstruction(
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/**
+ * 🎙️ Version COMPACTE (téléphone) : au bout du fil, la consigne de langue doit
+ * tenir en quelques lignes — le détail « si le client mélange, si tu hésites »
+ * n'apporte rien à voix haute et chaque caractère repart à chaque tour de
+ * parole. La règle utile reste entière : darija algérienne, client maître du
+ * choix, et aucune autre langue parlée.
+ */
+export function compactLanguageInstruction(languages: VoiceLanguage[]): string {
+  const wanted = languages.length ? languages : DEFAULT_LANGUAGES;
+  const names = wanted.map((l) => LANGUAGE_LABELS[l] || l).join(' · ');
+  const first = wanted[0] ? LANGUAGE_LABELS[wanted[0]] || wanted[0] : 'Darija (algérien)';
+  return [
+    `### 🗣️ TES LANGUES : ${names} — ET RIEN D'AUTRE`,
+    `Tu réponds dans la langue que le client vient de parler, uniquement parmi celles-là${wanted.includes('darija') ? ' (darija **algérienne** d\'Alger : « wach rak », « sahit », « dork » — jamais du marocain : « daba », « wakha », ni du tunisien)' : ''}. S'il n\'a pas encore parlé, tu commences en ${first}.`,
+    `Une autre langue (espagnol, hindi…) : tu ne la parles pas et tu ne traduis rien — tu le dis en UNE phrase dans une de tes langues et tu l\'invites à continuer, même s\'il insiste.`,
+  ].join('\n');
 }
 
 export function normalizedLanguages(raw: unknown): VoiceLanguage[] {

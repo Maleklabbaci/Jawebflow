@@ -349,11 +349,16 @@ describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', 
       expect(url.pathname).toContain('/auth_tokens');
       const sent = JSON.parse(String(init.body));
       expect(sent.uses).toBe(1);
-      // Le prompt de l'appel contient les règles du téléphone ET la base du site.
+      // Le prompt de l'appel contient les règles du téléphone ET la consigne de
+      // recherche — mais PLUS la base du site : elle est interrogée à la question.
       const instruction = sent.bidiGenerateContentSetup.systemInstruction.parts[0].text;
       expect(instruction).toContain('TU ES AU TÉLÉPHONE');
-      expect(instruction).toContain('BASE DE CONNAISSANCE');
-      expect(instruction).toContain("JAWEBFLOW — l'essentiel");
+      expect(instruction).toContain('chercher_information');
+      expect(instruction).not.toContain("JAWEBFLOW — l'essentiel");
+      expect(instruction).not.toContain('Basic : 10 $/mois');
+      expect(instruction.length).toBeLessThan(5_000);
+      const tools = (sent.bidiGenerateContentSetup.tools?.[0]?.functionDeclarations || []).map((d: any) => d.name);
+      expect(tools).toContain('chercher_information');
       return new Response(JSON.stringify({ name: 'auth_tokens/TOKEN_SITE', expireTime: '2026-01-01T00:00:00Z' }), { status: 200 });
     };
 
@@ -431,6 +436,40 @@ describe('les règles écrites du chatbot du site', () => {
     expect(STRICT_LANGUAGES_RULE).toMatch(/espagnol/i);
     expect(CARD_STYLE_RULE).toMatch(/CARTE/);
     expect(CARD_STYLE_RULE).toMatch(/3 à 5 puces/);
+  });
+});
+
+describe('qui mène la conversation (réglage du propriétaire)', () => {
+  it('par défaut, l’assistant guide le visiteur (comportement historique, explicite)', async () => {
+    const { buildSiteChatPrompt, DEFAULT_SITE_CHAT } = await import('../functions/_shared/site-chat');
+    const { BOT_LED_RULE } = await import('../functions/_shared/prompt');
+    expect(DEFAULT_SITE_CHAT.ai.conversationMode).toBe('bot');
+    const prompt = buildSiteChatPrompt(DEFAULT_SITE_CHAT);
+    expect(prompt).toContain(BOT_LED_RULE);
+    expect(BOT_LED_RULE).toMatch(/propose spontanément/);
+    // L'invitation à créer son assistant fait partie du mode « il guide ».
+    expect(prompt).toMatch(/invites naturellement/);
+  });
+
+  it('en mode « c’est le visiteur qui mène », il répond et s’arrête', async () => {
+    const { buildSiteChatPrompt, DEFAULT_SITE_CHAT } = await import('../functions/_shared/site-chat');
+    const { VISITOR_LED_RULE, BOT_LED_RULE } = await import('../functions/_shared/prompt');
+    const config = { ...DEFAULT_SITE_CHAT, ai: { ...DEFAULT_SITE_CHAT.ai, conversationMode: 'visitor' as const } };
+    const prompt = buildSiteChatPrompt(config);
+    expect(prompt).toContain(VISITOR_LED_RULE);
+    expect(VISITOR_LED_RULE).toMatch(/AUCUNE proposition non demandée/);
+    expect(prompt).not.toContain(BOT_LED_RULE);
+    expect(prompt).not.toMatch(/invites naturellement/);
+    expect(prompt).toMatch(/C'est lui qui décide de la suite/);
+  });
+
+  it('une valeur inconnue retombe sur « il guide » (jamais de prompt cassé)', async () => {
+    const { normalizeSiteChat, DEFAULT_SITE_CHAT } = await import('../functions/_shared/site-chat');
+    const normalized = normalizeSiteChat({ ai: { conversationMode: 'n_importe_quoi' } } as any);
+    expect(normalized.ai.conversationMode).toBe('bot');
+    expect(normalized.ai.knowledge).toBe(DEFAULT_SITE_CHAT.ai.knowledge);
+    const forced = normalizeSiteChat({ ai: { conversationMode: 'visitor' } } as any);
+    expect(forced.ai.conversationMode).toBe('visitor');
   });
 });
 
