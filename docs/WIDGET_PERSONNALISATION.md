@@ -31,6 +31,41 @@ réglages d'origine — c'est corrigé, et un test le vérifie à chaque livrais
 | Mention « Développé par JawebFlow » | affichée · masquée | `data-branding` |
 | Bouton d'appel vocal | allumé · éteint | `data-voice`, `data-voice-greeting` |
 | Contact humain de secours (WhatsApp) | numéro international | `data-whatsapp` |
+| **Mode du widget** | les deux · **le bot qui appelle** (aucun chat) · écrit seulement | `data-mode` |
+| **Bulle qui pulse** | oui · non | `data-pulse` |
+| **Accroche retardée** | tout de suite · 3 · 5 · 10 s | `data-teaser-delay` |
+| **Ouverture automatique** | jamais · 5 · 10 · 20 s | `data-auto-open` |
+| **Message du bot qui parle le premier** | texte libre | `data-proactive` |
+| **Libellé du bouton d'appel** | texte libre | `data-call-cta` |
+| **CSS libre** | son propre CSS (max 4 000 caractères) | *config serveur* (`customCss`) |
+
+### 🎯 Le mode « le bot qui appelle »
+
+Pour un garage, un cabinet, un restaurant : le visiteur **n'écrit pas**, il
+**appelle**. Le marchand passe le widget en mode `voice` :
+
+- la bulle affiche un micro et **pulse** ;
+- au clic, l'appel démarre immédiatement (aucun chat à remplir) ;
+- l'accroche par défaut devient l'invitation à appeler ;
+- si la voix n'est pas prête côté serveur, le visiteur voit un message clair,
+  jamais une erreur technique.
+
+### 🎣 Capter l'attention (sans agresser)
+
+1. **La bulle pulse** — une onde continue autour du bouton.
+2. **L'accroche arrive après X secondes** — le visiteur a d'abord vu la page.
+3. **Le chat s'ouvre tout seul après X secondes** (si le marchand l'a demandé).
+4. **Le bot parle le premier** — « Vous cherchez un prix ? Je peux vous appeler. »
+5. **Le bouton d'appel est toujours visible** sous les messages, avec son libellé.
+
+Tout est éteint ou neutre par défaut : rien ne s'impose tant que le marchand ne
+l'a pas activé.
+
+### 🎨 Le CSS libre
+
+Le CSS du marchand est injecté **dans le shadow DOM du widget** : il peut tout
+changer (ombres, animations, polices) sans jamais toucher au reste de son site,
+et sans casser la page. Limité à 4 000 caractères.
 
 ## Comportement (écrit **et** vocal)
 

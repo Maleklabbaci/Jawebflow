@@ -72,6 +72,14 @@ export function buildWidgetSnippet(input: WidgetSnippetInput): string {
     attr('data-voice', 'on');
     if (String(config.voice.greeting || '').trim()) attr('data-voice-greeting', config.voice.greeting);
   }
+  // 🎯 Mode + accroche : le widget obéit dès le premier affichage, sans
+  // attendre la config du serveur (pas de flash « chat » en mode appel).
+  attr('data-mode', config.mode || 'both');
+  attr('data-pulse', config.attention?.pulse === false ? 'off' : 'on');
+  if (config.attention?.teaserDelaySeconds) attr('data-teaser-delay', config.attention.teaserDelaySeconds);
+  if (config.attention?.autoOpenSeconds) attr('data-auto-open', config.attention.autoOpenSeconds);
+  if (String(config.attention?.proactiveText || '').trim()) attr('data-proactive', config.attention!.proactiveText);
+  if (String(config.attention?.callCtaText || '').trim()) attr('data-call-cta', config.attention!.callCtaText);
   const whatsapp = String(input.whatsappEscalation || '').replace(/\s+/g, '');
   if (whatsapp) attr('data-whatsapp', whatsapp);
 

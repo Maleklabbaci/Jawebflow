@@ -26,6 +26,7 @@
   var whatsappNumber = (scriptEl && scriptEl.getAttribute('data-whatsapp')) || '';
   var avatarUrl = (scriptEl && scriptEl.getAttribute('data-avatar-url')) || '';
   var brandingEnabled = (scriptEl && scriptEl.getAttribute('data-branding')) !== 'false';
+  if (widgetMode === 'voice' && teaserAttr === null) teaserText = callCtaText;
   var size = (scriptEl && scriptEl.getAttribute('data-size')) || 'standard';
   var headerTitle = (scriptEl && scriptEl.getAttribute('data-header-title')) || '';
   var headerSubtitle = (scriptEl && scriptEl.getAttribute('data-header-subtitle')) || '';
@@ -49,6 +50,22 @@
   var voiceEnabled = ((scriptEl && scriptEl.getAttribute('data-voice')) || '').toLowerCase() === 'on';
   var voiceGreeting = (scriptEl && scriptEl.getAttribute('data-voice-greeting')) || '';
   var voiceMaxMinutes = 5;
+
+  // ── 🎯 MODE & ACCROCHE (décision du 14/10/2026) : le marchand décide de tout.
+  // 'both' = écrit + appels · 'voice' = LE BOT QUI APPELLE seulement (pas de
+  // chat) · 'chat' = écrit seulement (le micro disparaît même si la voix est
+  // allumée). pulse / teaser-delay / auto-open / proactive servent à attirer
+  // l'attention du visiteur pour qu'il engage la conversation.
+  var widgetMode = ((scriptEl && scriptEl.getAttribute('data-mode')) || 'both').toLowerCase();
+  if (widgetMode !== 'voice' && widgetMode !== 'chat') widgetMode = 'both';
+  var pulse = ((scriptEl && scriptEl.getAttribute('data-pulse')) || 'on').toLowerCase() !== 'off';
+  var teaserDelaySeconds = Number(scriptEl && scriptEl.getAttribute('data-teaser-delay')) || 0;
+  var autoOpenSeconds = Number(scriptEl && scriptEl.getAttribute('data-auto-open')) || 0;
+  var proactiveText = (scriptEl && scriptEl.getAttribute('data-proactive')) || '';
+  var callCtaText = (scriptEl && scriptEl.getAttribute('data-call-cta')) || 'Appelez-moi';
+  var customCss = '';
+  var teaserVisible = teaserDelaySeconds <= 0;
+  var attentionArmed = false;
   var callActive = false;      // un appel est en cours (ou en train de s'ouvrir)
   var callSession = null;      // le moteur d'appel, une fois chargé
   var callState = '';          // connecting | listening | speaking | error
@@ -185,7 +202,14 @@
     '.jw-call-btn svg{width:16px;height:16px;}' +
     '.jw-call-mute{background:rgba(127,127,127,.18);color:inherit;}' +
     '.jw-call-hang{background:#e11d48;color:#fff;}' +
-    '.jw-call-error{font-size:12.5px;line-height:1.5;color:#e11d48;max-width:280px;}';
+    '.jw-call-error{font-size:12.5px;line-height:1.5;color:#e11d48;max-width:280px;}' +
+    '.jw-call-start{background:#10b981;color:#fff;font-size:15px;padding:14px 28px;}' +
+    '.jw-bubble-pulse::before{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--primary);opacity:.5;animation:jwBubblePulse 2.4s infinite;z-index:-1;}' +
+    '.jw-bubble-btn{position:relative;}' +
+    '@keyframes jwBubblePulse{0%{transform:scale(1);opacity:.45;}70%{transform:scale(1.6);opacity:0;}100%{transform:scale(1.6);opacity:0;}}' +
+    '.jw-cta{margin:10px 12px 0;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:13.5px;color:#fff;background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 6px 18px -6px var(--primary);}' +
+    '.jw-cta svg{width:16px;height:16px;}' +
+    '.jw-cta:hover{transform:translateY(-1px);}';
   shadow.appendChild(styleEl);
 
   // --- Suivi prospect (Supabase via /api/track, best-effort, ne bloque jamais l'IA) ---
@@ -386,16 +410,19 @@
     } else {
       var status = document.createElement('div');
       status.className = 'jw-call-status';
-      status.textContent = callState === 'connecting' ? 'Connexion a l\u2019appel...'
+      status.textContent = !callActive ? 'Appuyez : l\u2019assistant decroche tout de suite.'
+        : callState === 'connecting' ? 'Connexion a l\u2019appel...'
         : callState === 'speaking' ? 'Il vous repond...'
         : callState === 'listening' ? 'Je vous ecoute : parlez normalement.'
         : 'Appel en cours';
       overlay.appendChild(status);
 
-      var timer = document.createElement('div');
-      timer.className = 'jw-call-timer';
-      timer.textContent = formatTimer(callSeconds);
-      overlay.appendChild(timer);
+      if (callActive) {
+        var timer = document.createElement('div');
+        timer.className = 'jw-call-timer';
+        timer.textContent = formatTimer(callSeconds);
+        overlay.appendChild(timer);
+      }
     }
 
     if (callLines.length) {
@@ -412,7 +439,24 @@
 
     var actions = document.createElement('div');
     actions.className = 'jw-call-actions';
-    if (callState === 'error') {
+    if (!callActive && callState !== 'error') {
+      // Avant l'appel : un seul bouton, gros et évident.
+      var pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'jw-call-btn jw-call-start';
+      pick.innerHTML = icon24('mic', 16) + '<span>' + callCtaText + '</span>';
+      pick.onclick = function () { startVoice(); };
+      actions.appendChild(pick);
+
+      if (widgetMode !== 'voice') {
+        var writeInstead = document.createElement('button');
+        writeInstead.type = 'button';
+        writeInstead.className = 'jw-call-btn jw-call-mute';
+        writeInstead.textContent = 'Ecrire a la place';
+        writeInstead.onclick = function () { isOpen = false; render(); };
+        actions.appendChild(writeInstead);
+      }
+    } else if (callState === 'error') {
       var retry = document.createElement('button');
       retry.type = 'button';
       retry.className = 'jw-call-btn jw-call-hang';
@@ -448,10 +492,48 @@
   }
 
   // --- Rendu ---
+  /** Le CSS du marchand : injecté dans le shadow DOM, donc scoped au widget. */
+  function applyCustomCss() {
+    if (!customCss) return;
+    var el = shadow.querySelector('#jawebflow-custom-css');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'jawebflow-custom-css';
+      shadow.appendChild(el);
+    }
+    el.textContent = String(customCss).slice(0, 4000);
+  }
+
+  /**
+   * Attire l'attention : accroche retardée puis ouverture automatique, avec le
+   * message du bot s'il en a écrit un. Un seul armement (le marchand peut
+   * recharger sa config, on ne double pas les minuteurs).
+   */
+  function armAttentionTimers() {
+    if (attentionArmed) return;
+    attentionArmed = true;
+    if (teaserDelaySeconds > 0) {
+      setTimeout(function () {
+        if (isOpen) return;
+        teaserVisible = true;
+        render();
+      }, Math.min(120, teaserDelaySeconds) * 1000);
+    }
+    if (autoOpenSeconds > 0 && widgetMode !== 'voice') {
+      setTimeout(function () {
+        if (isOpen || callActive) return;
+        isOpen = true;
+        if (proactiveText) messages.push({ sender: 'bot', text: proactiveText });
+        trackProspect('opened_bubble');
+        render();
+      }, Math.min(120, autoOpenSeconds) * 1000);
+    }
+  }
+
   function render() {
     wrapper.innerHTML = '';
 
-    if (!isOpen && teaserText) {
+    if (!isOpen && teaserText && teaserVisible) {
       var teaser = document.createElement('div');
       teaser.className = 'jw-teaser';
       var teaserSpan = document.createElement('span');
@@ -462,7 +544,14 @@
       teaserClose.textContent = '\u2715';
       teaserClose.onclick = function (ev) { ev.stopPropagation(); teaserText = ''; render(); };
       teaser.appendChild(teaserClose);
-      teaser.onclick = function (ev) { if (ev.target !== teaserClose) { isOpen = true; trackProspect('opened_bubble'); render(); } };
+      teaser.onclick = function (ev) {
+        if (ev.target === teaserClose) return;
+        isOpen = true;
+        trackProspect('opened_bubble');
+        render();
+        // Mode « le bot qui appelle » : l'accroche lance l'appel directement.
+        if (widgetMode === 'voice' && !callActive) startVoice();
+      };
       wrapper.appendChild(teaser);
     }
 
@@ -502,7 +591,7 @@
       meta.appendChild(subtitle);
       headerInfo.appendChild(meta);
       header.appendChild(headerInfo);
-      if (voiceEnabled) {
+      if (voiceEnabled && widgetMode !== 'chat') {
         var micBtn = document.createElement('button');
         micBtn.type = 'button';
         micBtn.className = 'jw-header-mic';
@@ -572,6 +661,15 @@
         body.appendChild(wa);
       }
 
+      if (voiceEnabled && widgetMode !== 'chat' && !callActive) {
+        var cta = document.createElement('button');
+        cta.type = 'button';
+        cta.className = 'jw-cta';
+        cta.innerHTML = icon24('mic', 16) + '<span>' + callCtaText + '</span>';
+        cta.onclick = function () { startVoice(); };
+        win.appendChild(cta);
+      }
+
       var form = document.createElement('form');
       form.className = 'jw-input-bar';
       var inputWrap = document.createElement('div');
@@ -629,7 +727,7 @@
         win.appendChild(branding);
       }
 
-      if (callActive || callState === 'error') {
+      if (callActive || callState === 'error' || (widgetMode === 'voice' && isOpen)) {
         win.style.position = 'relative';
         win.appendChild(buildCallPanel());
       }
@@ -639,8 +737,8 @@
     }
 
     var bubble = document.createElement('button');
-    bubble.className = 'jw-bubble-btn';
-    bubble.setAttribute('aria-label', 'Ouvrir le chat');
+    bubble.className = 'jw-bubble-btn' + (pulse && !isOpen ? ' jw-bubble-pulse' : '');
+    bubble.setAttribute('aria-label', widgetMode === 'voice' ? 'Appeler' : 'Ouvrir le chat');
     if (isOpen) {
       bubble.innerHTML = icon24('arrowdown', 24);
     } else if (avatarUrl) {
@@ -650,9 +748,20 @@
       bubbleImg.src = avatarUrl; bubbleImg.referrerPolicy = 'no-referrer';
       bubble.appendChild(bubbleImg);
     } else {
-      bubble.innerHTML = icon24(icon, 24);
+      bubble.innerHTML = icon24(widgetMode === 'voice' ? 'mic' : icon, 24);
     }
-    bubble.onclick = function () { isOpen = !isOpen; if (isOpen) trackProspect('opened_bubble'); render(); };
+    bubble.onclick = function () {
+      if (widgetMode === 'voice') {
+        isOpen = true;
+        trackProspect('opened_bubble');
+        render();
+        if (!callActive) startVoice();
+        return;
+      }
+      isOpen = !isOpen;
+      if (isOpen) trackProspect('opened_bubble');
+      render();
+    };
     wrapper.appendChild(bubble);
   }
 
@@ -682,6 +791,15 @@
       if (c.size) size = c.size;
       if (c.iconType) icon = c.iconType;
       else if (c.icon) icon = c.icon;
+      if (c.mode) widgetMode = String(c.mode);
+      if (c.attention && typeof c.attention === 'object') {
+        if (typeof c.attention.pulse === 'boolean') pulse = c.attention.pulse;
+        if (c.attention.teaserDelaySeconds) teaserDelaySeconds = Number(c.attention.teaserDelaySeconds) || 0;
+        if (c.attention.autoOpenSeconds) autoOpenSeconds = Number(c.attention.autoOpenSeconds) || 0;
+        if (c.attention.proactiveText) proactiveText = String(c.attention.proactiveText);
+        if (c.attention.callCtaText) callCtaText = String(c.attention.callCtaText);
+      }
+      if (typeof c.customCss === 'string') { customCss = c.customCss; applyCustomCss(); }
       if (c.voice && typeof c.voice === 'object') {
         if (c.voice.enabled === true) voiceEnabled = true;
         if (c.voice.greeting) voiceGreeting = String(c.voice.greeting);
@@ -697,5 +815,5 @@
       render();
     })
     .catch(function (e) { console.warn('JawebFlow sync error:', e); })
-    .finally(function () { trackProspect('visited'); });
+    .finally(function () { armAttentionTimers(); trackProspect('visited'); });
 })();

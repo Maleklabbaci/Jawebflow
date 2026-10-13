@@ -95,6 +95,42 @@ describe('code d’installation du widget', () => {
     expect(code).toContain('data-teaser="Devis &lt; 1 min"');
   });
 
+  it('mode « le bot qui appelle » : aucun chat, un seul bouton d’appel', () => {
+    const code = buildWidgetSnippet({
+      ...base,
+      config: { mode: 'voice', voice: { enabled: true, voice: 'Kore', greeting: '', maxMinutes: 5 } },
+    });
+    expect(code).toContain('data-mode="voice"');
+    const chat = buildWidgetSnippet({ ...base, config: { mode: 'chat' } });
+    expect(chat).toContain('data-mode="chat"');
+    // Sans réglage : les deux modes, comme avant.
+    expect(buildWidgetSnippet(base)).toContain('data-mode="both"');
+  });
+
+  it('accroche : pulsation, retard, ouverture auto, message proactif, libellé d’appel', () => {
+    const code = buildWidgetSnippet({
+      ...base,
+      config: {
+        attention: {
+          pulse: false,
+          teaserDelaySeconds: 5,
+          autoOpenSeconds: 10,
+          proactiveText: 'Vous cherchez un prix ?',
+          callCtaText: 'Appelez-moi maintenant',
+        },
+      },
+    });
+    expect(code).toContain('data-pulse="off"');
+    expect(code).toContain('data-teaser-delay="5"');
+    expect(code).toContain('data-auto-open="10"');
+    expect(code).toContain('data-proactive="Vous cherchez un prix ?"');
+    expect(code).toContain('data-call-cta="Appelez-moi maintenant"');
+    // Par défaut : bulle qui pulse, aucune ouverture forcée.
+    const defaut = buildWidgetSnippet(base);
+    expect(defaut).toContain('data-pulse="on"');
+    expect(defaut).not.toContain('data-auto-open');
+  });
+
   it('contact WhatsApp : les espaces du numéro sont nettoyés', () => {
     const code = buildWidgetSnippet({ ...base, whatsappEscalation: '+213 555 12 34 56' });
     expect(code).toContain('data-whatsapp="+213555123456"');
@@ -119,6 +155,15 @@ describe('le widget servi lit ce que le code lui donne', () => {
     expect(widget).toContain('c.showBranding');
     expect(widget).toContain('c.headerSubtitle');
     expect(widget).toContain('c.showTeaser === false');
+  });
+
+  it('mode, accroche et CSS libre sont réellement lus par widget.js', () => {
+    for (const attr of ['data-mode', 'data-pulse', 'data-teaser-delay', 'data-auto-open', 'data-proactive', 'data-call-cta']) {
+      expect(widget).toContain(attr);
+    }
+    expect(widget).toContain('applyCustomCss');
+    expect(widget).toContain('armAttentionTimers');
+    expect(widget).toContain("widgetMode === 'voice'");
   });
 
   it('un seul widget : la vieille copie /cdn/widget.js n’existe plus mais reste servie', () => {

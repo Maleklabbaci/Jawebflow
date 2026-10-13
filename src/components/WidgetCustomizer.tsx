@@ -59,12 +59,23 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   scriptUrl,
   isSaving = false
 }) => {
-  const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content' | 'voice'>('icon');
+  const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content' | 'voice' | 'attention'>('icon');
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   const [previewTestMessage, setPreviewTestMessage] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   // Réglages de voix : valeurs par défaut tant que le marchand n'a rien réglé.
   const voice = config.voice || { enabled: false, voice: 'Puck', greeting: '', maxMinutes: 5 };
+  // 🎯 Mode + accroche : valeurs par défaut tant que le marchand n'a rien réglé.
+  const mode = config.mode || 'both';
+  const attention = config.attention || {
+    pulse: true,
+    teaserDelaySeconds: 0,
+    autoOpenSeconds: 0,
+    proactiveText: '',
+    callCtaText: '',
+  };
+  const setAttention = (patch: Partial<NonNullable<WidgetCustomization['attention']>>) =>
+    onChange({ attention: { ...attention, ...patch } });
 
   const [previewMessages, setPreviewMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string }>>([
     { sender: 'bot', text: config.welcomeMessage || `Bonjour ! 👋 Comment puis-je vous aider aujourd'hui ?` }
@@ -180,7 +191,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
         <div className="lg:col-span-7 space-y-4">
           
           {/* Sub-tabs for customization categories */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
             <button
               type="button"
               onClick={() => setActiveTab('icon')}
@@ -245,6 +256,20 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
             >
               <Mic className="w-3.5 h-3.5" />
               <span className="truncate">5. Voix</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('attention')}
+              data-testid="tab-attention"
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'attention'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="truncate">6. Accroche</span>
             </button>
           </div>
 
@@ -782,6 +807,160 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                   l'en-tête du chat. Le chat écrit continue de fonctionner exactement comme avant.
                 </p>
               )}
+            </div>
+          )}
+
+          {activeTab === 'attention' && (
+            <div className="space-y-4">
+              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600" /> Mode du widget
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Vous décidez ce que vos visiteurs voient : le chat, l'appel, ou les deux.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+                    {[
+                      { id: 'both', titre: 'Écrit + appels', desc: 'Le chat, avec un bouton d\'appel' },
+                      { id: 'voice', titre: 'Le bot qui appelle', desc: 'Aucun chat : un seul bouton d\'appel' },
+                      { id: 'chat', titre: 'Écrit seulement', desc: 'Aucun appel, même si la voix est prête' },
+                    ].map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        data-testid={`mode-${option.id}`}
+                        onClick={() => onChange({ mode: option.id as 'both' | 'voice' | 'chat' })}
+                        className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                          mode === option.id
+                            ? 'border-purple-600 bg-purple-50'
+                            : 'border-slate-200 bg-white hover:border-purple-300'
+                        }`}
+                      >
+                        <span className="block text-xs font-bold text-slate-900">{option.titre}</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5">{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-900">Attirer l'attention</h4>
+
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      data-testid="attention-pulse"
+                      checked={attention.pulse !== false}
+                      onChange={(e) => setAttention({ pulse: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-purple-600 cursor-pointer"
+                    />
+                    <span>
+                      <span className="block text-xs font-semibold text-slate-800">Bulle qui pulse</span>
+                      <span className="block text-[10px] text-slate-500">
+                        Une onde continue autour de la bulle : impossible de la rater.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Afficher l'accroche après…
+                    </span>
+                    <div className="flex gap-2">
+                      {[0, 3, 5, 10].map((seconds) => (
+                        <button
+                          key={seconds}
+                          type="button"
+                          data-testid={`teaser-delay-${seconds}`}
+                          onClick={() => setAttention({ teaserDelaySeconds: seconds })}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            (attention.teaserDelaySeconds || 0) === seconds
+                              ? 'border-purple-600 bg-purple-50 text-purple-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {seconds === 0 ? 'Tout de suite' : `${seconds} s`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Ouvrir le chat automatiquement après…
+                    </span>
+                    <div className="flex gap-2">
+                      {[0, 5, 10, 20].map((seconds) => (
+                        <button
+                          key={seconds}
+                          type="button"
+                          data-testid={`auto-open-${seconds}`}
+                          onClick={() => setAttention({ autoOpenSeconds: seconds })}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            (attention.autoOpenSeconds || 0) === seconds
+                              ? 'border-purple-600 bg-purple-50 text-purple-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {seconds === 0 ? 'Jamais' : `${seconds} s`}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="block text-[10px] text-slate-500 mt-1.5">
+                      Sans ouverture automatique, le visiteur ouvre lui-même le chat.
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Message du bot qui parle le premier
+                    </span>
+                    <input
+                      type="text"
+                      data-testid="proactive-text"
+                      value={attention.proactiveText || ''}
+                      onChange={(e) => setAttention({ proactiveText: e.target.value })}
+                      placeholder="Vous cherchez un prix ? Je peux vous appeler tout de suite."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                    />
+                    <span className="block text-[10px] text-slate-500 mt-1.5">
+                      Il s'affiche quand le chat s'ouvre — c'est ce qui fait répondre le visiteur.
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Libellé de votre bouton d'appel
+                    </span>
+                    <input
+                      type="text"
+                      data-testid="call-cta"
+                      value={attention.callCtaText || ''}
+                      onChange={(e) => setAttention({ callCtaText: e.target.value })}
+                      placeholder="📞 Appelez-moi maintenant"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-900">CSS libre</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Pour aller au-delà des réglages : votre CSS est appliqué au widget, sans toucher
+                    au reste de votre site.
+                  </p>
+                  <textarea
+                    data-testid="custom-css"
+                    value={config.customCss || ''}
+                    onChange={(e) => onChange({ customCss: e.target.value })}
+                    rows={5}
+                    spellCheck={false}
+                    placeholder={'.jw-bubble-btn{box-shadow:0 0 0 4px rgba(147,51,234,.25);}'}
+                    className="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-mono focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
