@@ -1075,7 +1075,7 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
   }
 
   // QUOTAS PAR PLAN (mêmes règles que /api/chat) : Gratuit = 0 crédit IA,
-  // Basic 1 000 conv/mois, Pro 5 000, Enterprise illimité. Limite atteinte =>
+  // Basic 500 conv/mois, Pro 1 500, Enterprise illimité. Limite atteinte =>
   // on envoie le message de blocage au lieu de la réponse IA.
   if (integration.assistantId && supabaseConfigured(env)) {
     const limits = await supabaseGetPlanLimits(env);

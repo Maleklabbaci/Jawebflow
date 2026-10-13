@@ -37,7 +37,7 @@ const HYPOTHESES = {
   prixStockageCacheUsdParMTokParHeure: 1.0,
 
   /** Une « conversation commerciale » facturée au client = 5 unités de quota. */
-  unitesParConversation: 5,
+  unitesParConversation: 1,
 
   /** Tokens du prompt système stable (mesuré sur le code : 6 125 → 7 499 car.). */
   tokensPromptSysteme: 1600,
@@ -45,8 +45,8 @@ const HYPOTHESES = {
   /** Packs vendus : quota en conversations, plafond de coût IA, prix. */
   packs: [
     { id: 'free',       libelle: 'Découverte',    prixDzd: 0,     quotaConversations: 0,    capUsd: 0 },
-    { id: 'basic',      libelle: 'Basic',         prixDzd: 4500,  quotaConversations: 1000, capUsd: 3 },
-    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 14000, quotaConversations: 5000, capUsd: 9 },
+    { id: 'basic',      libelle: 'Basic',         prixDzd: 2700,  quotaConversations: 500,  capUsd: 0 },
+    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 5400,  quotaConversations: 1500, capUsd: 0 },
     { id: 'enterprise', libelle: 'Enterprise',    prixDzd: 47100, quotaConversations: null, capUsd: 30 },
   ],
 

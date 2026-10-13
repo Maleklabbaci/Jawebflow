@@ -136,20 +136,22 @@ describe('site vitrine — pages', () => {
     const nav = vi.fn();
     render(<PricingPage onOpenAssistantModal={open} onNavigate={nav} />);
 
-    expect(screen.getByText(/moins de 250 DA par jour/)).toBeTruthy();
+    expect(screen.getByText(/moins de 100 DA par jour/)).toBeTruthy();
     // Prix en dinars affiché avec l'espace insécable produit par toLocaleString('fr-FR').
     const dzd = (value: string) => screen.getAllByText((_, el) => {
       const text = el?.textContent || '';
-      return el?.tagName === 'DIV' && /DZD \/ mois/.test(text) && new RegExp(value).test(text);
+      return el?.tagName === 'DIV' && /DZD \/ (mois|an)/.test(text) && new RegExp(value).test(text);
     });
-    expect(dzd('4\\s*500')[0].textContent).toContain('mois');
+    expect(dzd('2\\s*700')[0].textContent).toContain('mois');
 
     // Enterprise n'affiche plus aucun prix : la formule est « à la demande ».
     expect(screen.getByText('À la demande')).toBeTruthy();
     expect(screen.queryByText(/47\s*100/)).toBeNull();
 
+    // Annuel = 2 mois offerts : on affiche le total de l'année (10 mois payés).
     fireEvent.click(screen.getByRole('button', { name: /Annuel/ }));
-    expect(dzd('3\\s*600').length).toBeGreaterThan(0);
+    expect(dzd('27\\s*000').length).toBeGreaterThan(0);
+    expect(dzd('54\\s*000').length).toBeGreaterThan(0);
 
     // Le plan gratuit mène à la création de compte, Enterprise au contact :
     // plus aucun bouton n'envoie vers une caisse impossible.
@@ -261,8 +263,8 @@ describe('site vitrine — navigation et widget flottant', () => {
     expect(screen.getByText(/Assistant JawebFlow/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Combien ça coûte/ }));
-    const answer = await screen.findByText(/4\s*500 DA\/mois/, {}, { timeout: 3000 });
-    expect(answer.textContent).toMatch(/14\s*000 DA\/mois/);
+    const answer = await screen.findByText(/2\s*700 DA\/mois/, {}, { timeout: 3000 });
+    expect(answer.textContent).toMatch(/5\s*400 DA\/mois/);
     expect(answer.textContent).not.toContain('2 900');
 
     fireEvent.click(screen.getByRole('button', { name: /Créer mon assistant gratuitement/ }));

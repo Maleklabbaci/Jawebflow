@@ -19,8 +19,8 @@
 import { verifySupabaseIdToken, supabaseRequest, supabaseConfigured } from '../_shared/supabase.ts';
 
 // Tarifs officiels DZD (source de vérité serveur — alignés sur la page Tarifs)
-const PLAN_AMOUNTS_DZD = { basic: 4500, pro: 14000, enterprise: 47100 };
-const PLAN_AMOUNTS_USD = { basic: 19, pro: 59, enterprise: 199 };
+const PLAN_AMOUNTS_DZD = { basic: 2700, pro: 5400, enterprise: 47100 };
+const PLAN_AMOUNTS_USD = { basic: 10, pro: 20, enterprise: 199 };
 const PLAN_LABELS = { basic: 'Basic', pro: 'Pro / Business', enterprise: 'Enterprise' };
 
 const cors = {

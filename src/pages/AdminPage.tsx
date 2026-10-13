@@ -74,8 +74,8 @@ const PLAN_CHIPS: Record<string, string> = {
 };
 
 const PLAN_PRICES: Record<string, { dzd: number; usd: number }> = {
-  basic: { dzd: 4500, usd: 19 },
-  pro: { dzd: 14000, usd: 59 },
+  basic: { dzd: 2700, usd: 10 },
+  pro: { dzd: 5400, usd: 20 },
   enterprise: { dzd: 47100, usd: 199 },
 };
 
@@ -362,7 +362,7 @@ export function AdminPage() {
   const [newInvEmail, setNewInvEmail] = useState('');
   const [newInvName, setNewInvName] = useState('');
   const [newInvPlan, setNewInvPlan] = useState<'basic' | 'pro' | 'enterprise'>('pro');
-  const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(14000);
+  const [newInvAmountDzd, setNewInvAmountDzd] = useState<number>(5400);
   const [newInvMethod, setNewInvMethod] = useState('baridimob_ccp');
   const [newInvStatus, setNewInvStatus] = useState('paid');
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
@@ -2080,8 +2080,8 @@ export function AdminPage() {
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Plan (verrou IA)</label>
                   <select value={local.plan} onChange={(e) => setLocal({ ...local, plan: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 cursor-pointer">
                     <option value="free">Gratuit — IA bloquée</option>
-                    <option value="basic">Basic — 1 000 conv/mois</option>
-                    <option value="pro">Pro — 5 000 conv/mois</option>
+                    <option value="basic">Basic — 500 conv/mois</option>
+                    <option value="pro">Pro — 1 500 conv/mois</option>
                     <option value="enterprise">Enterprise — illimité</option>
                   </select>
                 </div>

@@ -13,8 +13,8 @@
  *
  * Les valeurs viennent du CODE et des tarifs officiels :
  *   • plafonds IA ................ functions/_shared/limits.ts (3 / 9 / 30 $)
- *   • quotas .................... functions/_shared/limits.ts (1 000 / 5 000)
- *   • 8 unités = 1 conversation .. supabase/migration_ai_usage.sql
+ *   • quotas .................... functions/_shared/limits.ts (500 / 1 500)
+ *   • 1 unité = 1 conversation ... functions/_shared/limits.ts (14/10/2026)
  *   • texte (3.1 Flash-Lite) ..... 0,25 $/M entrée · 1,50 $/M sortie (mesuré)
  *   • voix (Gemini Live, audio) ... 3 $/M entrée · 12 $/M sortie
  *   • 1 s d'audio ............... ~32 tokens en entrée, ~25 en sortie
@@ -31,8 +31,8 @@ const H = {
   /** ---- ÉCRIT (Gemini 3.1 Flash-Lite) — coût réel mesuré sur le trafic. ---- */
   /** Un échange = 1 message du client + 1 réponse de l'IA (moyenne pondérée). */
   messageUsd: 0.00138,
-  /** Une conversation commerciale = 5 échanges → 5 unités de quota. */
-  messagesParConversation: 5,
+  /** 1 conversation = 1 message du client + sa réponse → 1 unité de quota. */
+  messagesParConversation: 1,
   /** Quand le contexte est déjà en cache : lecture à 10 % du prix d'entrée. */
   conversationCacheUsd: 0.0047,
 
@@ -48,8 +48,8 @@ const H = {
 
   /** ---- Les packs : ce qu'ils vendent et ce que le code plafonne. ---- */
   plans: [
-    { id: 'basic', libelle: 'Basic', prixDzd: 4500, capUsd: 3, quotaConversations: 1000 },
-    { id: 'pro', libelle: 'Pro', prixDzd: 14000, capUsd: 9, quotaConversations: 5000 },
+    { id: 'basic', libelle: 'Basic', prixDzd: 2700, capUsd: 0, quotaConversations: 500 },
+    { id: 'pro', libelle: 'Pro', prixDzd: 5400, capUsd: 0, quotaConversations: 1500 },
     { id: 'enterprise', libelle: 'Enterprise', prixDzd: null, capUsd: 30, quotaConversations: null },
   ],
 
@@ -104,15 +104,16 @@ console.log(titre(`LE CHATBOT WEB — APPEL ET MESSAGE (1 $ = ${H.change} DA)`))
 
 console.log(`
   Un seul assistant, deux façons de parler : le visiteur ÉCRIT (petit modèle
-  texte, quasi gratuit) ou il APPELA (Gemini Live, audio bidirectionnel — 40×
-  plus cher à la seconde). Les deux tapent dans le MÊME plafond du pack.
+  texte, quasi gratuit) ou il APPELA (Gemini Live, audio bidirectionnel — une
+  minute d'appel coûte 17 messages écrits). Les deux tapent dans le MÊME quota
+  du pack : 1 minute d'appel = 10 conversations.
 `);
 
 // --- 1. L'écrit ------------------------------------------------------------
 console.log(titre("1. L'ÉCRIT — ce qu'un message coûte"));
 console.log(`
   1 échange (question + réponse) ................ ${usd(MESSAGE_USD, 5)}  ≈ ${dzd(da(MESSAGE_USD), 3)}
-  1 conversation commerciale (5 échanges) ....... ${usd(CONVERSATION_USD, 4)}  ≈ ${dzd(da(CONVERSATION_USD))}
+  1 conversation commerciale (1 échange) ........ ${usd(CONVERSATION_USD, 4)}  ≈ ${dzd(da(CONVERSATION_USD))}
      (même conversation, contexte en cache) ..... ${usd(H.conversationCacheUsd, 4)}  ≈ ${dzd(da(H.conversationCacheUsd))}
 `);
 console.log(`  Autrement dit : ${dzd(da(MESSAGE_USD), 3)} le message, et il en faut ${H.messagesParConversation} pour marquer 1 conversation au compteur.`);

@@ -93,9 +93,9 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
   const getDzdAmountStr = () => {
     if (selectedCheckoutPlan === 'free') return '0';
     if (selectedCheckoutPlan === 'basic') {
-      return billingCycle === 'monthly' ? '4 500' : '43 200';
+      return billingCycle === 'monthly' ? '2 700' : '27 000';
     } else if (selectedCheckoutPlan === 'pro') {
-      return billingCycle === 'monthly' ? '14 000' : '134 400';
+      return billingCycle === 'monthly' ? '5 400' : '54 000';
     } else {
       return billingCycle === 'monthly' ? '47 100' : '452 160';
     }
@@ -104,9 +104,9 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
   const getUsdAmountStr = () => {
     if (selectedCheckoutPlan === 'free') return '$0';
     if (selectedCheckoutPlan === 'basic') {
-      return billingCycle === 'monthly' ? '$29' : '$276';
+      return billingCycle === 'monthly' ? '$10' : '$100';
     } else if (selectedCheckoutPlan === 'pro') {
-      return billingCycle === 'monthly' ? '$79' : '$756';
+      return billingCycle === 'monthly' ? '$20' : '$200';
     } else {
       return billingCycle === 'monthly' ? '$199' : '$1 908';
     }
@@ -351,13 +351,13 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                     <span className="text-xs text-slate-500 font-semibold">/mois</span>
                   </div>
                   <p className="text-[11px] text-purple-700 font-bold mt-1">
-                    ~{billingCycle === 'monthly' ? '4 500' : '3 600'} DZD /mois
+                    ~{billingCycle === 'monthly' ? '2 700' : '2 250'} DZD /mois
                   </p>
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1.5">
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Widget Web (1 site)</p>
-                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> 1 000 conversations / mois</p>
+                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> 500 conversations / mois (1 000 messages · 50 min d'appels)</p>
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600" /> Assistant préparé avec vos documents</p>
                 </div>
               </div>
@@ -391,13 +391,13 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                     <span className="text-xs text-slate-500 font-semibold">/mois</span>
                   </div>
                   <p className="text-[11px] text-purple-700 font-bold mt-1">
-                    ~{billingCycle === 'monthly' ? '14 000' : '11 200'} DZD /mois
+                    ~{billingCycle === 'monthly' ? '5 400' : '4 500'} DZD /mois
                   </p>
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1.5">
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600 font-bold" /> Web + WhatsApp Intégré</p>
-                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600 font-bold" /> 5 000 conversations / mois</p>
+                  <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600 font-bold" /> 1 500 conversations / mois (3 000 messages · 150 min d'appels)</p>
                   <p className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-600 font-bold" /> Capture de leads & CRM synchro</p>
                 </div>
               </div>
@@ -805,9 +805,9 @@ export const CheckoutWizard: React.FC<CheckoutWizardProps> = ({
                     <span className="text-slate-400">Équivalent DZD :</span>
                     <span className="font-extrabold text-purple-300 font-mono">
                       ~{selectedCheckoutPlan === 'basic'
-                        ? (billingCycle === 'monthly' ? '4 500' : '43 200')
+                        ? (billingCycle === 'monthly' ? '2 700' : '27 000')
                         : selectedCheckoutPlan === 'pro'
-                        ? (billingCycle === 'monthly' ? '14 000' : '134 400')
+                        ? (billingCycle === 'monthly' ? '5 400' : '54 000')
                         : (billingCycle === 'monthly' ? '47 100' : '452 160')} DZD
                     </span>
                   </div>

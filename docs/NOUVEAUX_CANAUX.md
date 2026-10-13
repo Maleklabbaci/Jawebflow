@@ -1,5 +1,11 @@
 # Ajouter des canaux (réseaux sociaux) — ce qui est possible et ce que ça coûte
 
+> ⚠️ **Chiffres révisés le 14/10/2026** — Basic **10 $ (2 700 DA)** = **500 conversations**,
+> Pro **20 $ (5 400 DA)** = **1 500 conversations**, Enterprise sur devis, annuel = 2 mois offerts,
+> et **1 conversation = 1 message du client + sa réponse**. Le document à jour :
+> `docs/PLAN_OFFRE.md`. Les montants ci-dessous datent de l'ancien barème et servent
+> d'historique de calcul.
+
 > État au **7 octobre 2026** · Branche `arena/ec76ae56-jawebflow`
 > Les tarifs Meta ont changé le **1er octobre 2026** (voir §3) : les chiffres ci-dessous
 > sont ceux du barème en vigueur aujourd'hui, pas ceux des guides plus anciens.

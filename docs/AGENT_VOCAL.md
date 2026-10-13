@@ -68,7 +68,7 @@ chaque seconde de parole (et chaque seconde de réponse) est facturée par Googl
 
 | Protection | Ce qu'elle fait |
 |---|---|
-| **Quota de conversations** (le seul arrêt — décision du 13/10/2026) | **1 minute d'appel = 10 conversations** (50 unités de quota, 5 unités = 1 conversation). Basic : 100 min d'appel **ou** 5 000 messages. Pro : 500 min **ou** 25 000 messages. Épuisé → l'assistant se met en pause et reprend le 1er du mois. |
+| **Quota de conversations** (le seul arrêt — décision du 14/10/2026) | **1 minute d'appel = 10 conversations** (10 unités de quota, 1 unité = 1 conversation = 1 message du client + sa réponse). Basic : **50 min** d'appel **ou** 1 000 messages. Pro : **150 min** **ou** 3 000 messages. Épuisé → l'assistant se met en pause et reprend le 1er du mois. |
 | **Plus de plafond en dollars** | Basic et Pro n'ont plus de plafond de coût : c'est le quota qui arrête tout, pour que le client ait **tout** son forfait. Enterprise garde un fusible de 30 $ tant que son quota « sur devis » n'est pas chiffré. |
 | **Durée maximale** | L'appel se coupe tout seul à la fin du temps réglé (2 → 15 min). |
 | **Anti-abus** | 6 appels maximum par visiteur (IP) et par tranche de 10 minutes. |
@@ -118,7 +118,7 @@ activé »* — et rien n'est facturé.
 - 📞 **L'appel dans les « Clients »** : la transcription est déjà enregistrée (canal `voice`) ;
   il reste à l'afficher dans la fiche du prospect, avec un badge « appel entrant ».
 - 💳 **Recharge d'appels** : aujourd'hui c'est **le quota de conversations** qui protège (Basic
-  100 min, Pro 500 min) ; une recharge à l'unité (comme pour WhatsApp) serait la suite logique.
+  50 min, Pro 150 min) ; une recharge à l'unité (comme pour WhatsApp) serait la suite logique.
 - 🧮 **Choisir la formule** : réserver la voix à Pro/Enterprise (voir §3).
 
 ---

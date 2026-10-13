@@ -37,7 +37,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Combien ça coûte réellement ?',
-    a: "Vous commencez gratuitement pour tester. Ensuite, la formule Basic démarre à 4 500 DA (~19 $) par mois et la Pro à 14 000 DA (~59 $) par mois pour les volumes plus élevés. La formule Enterprise est à la demande, sur devis selon votre volume. Facture d'entreprise conforme disponible sur demande.",
+    a: "Vous commencez gratuitement pour tester. Ensuite, la formule Basic démarre à 2 700 DA (~10 $) par mois (500 conversations = 1 000 messages ou 50 min d'appels) et la Pro à 5 400 DA (~20 $) par mois, trois fois plus large (1 500 conversations = 3 000 messages ou 150 min d'appels). En annuel : 2 mois offerts. La formule Enterprise est à la demande, sur devis selon votre volume. Facture d'entreprise conforme disponible sur demande.",
   },
   {
     q: 'Et si je veux un devis ou une facture pour ma société ?',

@@ -146,7 +146,7 @@ le site du marchand. C'est le marchand qui l'allume : **Tableau de bord → Appa
 ⚠️ La clé doit avoir accès à l'**API Live** (Google AI Studio → projet → activer l'API Gemini
 Live). Sinon la réponse est claire : « L'appel vocal n'est pas encore activé », et rien n'est
 facturé. 💸 La voix consomme plus vite que le texte : **la minute d'appel compte 10 conversations**
-(50 unités) dans le quota du marchand — Basic 100 min, Pro 500 min. C'est **le quota** qui arrête
+(10 unités) dans le quota du marchand — Basic 50 min, Pro 150 min. C'est **le quota** qui arrête
 tout, pas un montant en dollars : Basic et Pro n'ont aucun plafond de coût, Enterprise garde un
 fusible de 30 $. Tout le détail : `docs/AGENT_VOCAL.md`.
 

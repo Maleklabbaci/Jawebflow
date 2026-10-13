@@ -46,8 +46,8 @@ const H = {
   /** Les 4 packs : ce qu'ils incluent. */
   packs: [
     { id: 'free',       libelle: 'Découverte',    prixDzd: 0,     convWebInclus: 0,    waInclus: 0,    capIaUsd: 0 },
-    { id: 'basic',      libelle: 'Basic',         prixDzd: 4500,  convWebInclus: 1000, waInclus: 0,    capIaUsd: 3 },
-    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 14000, convWebInclus: 5000, waInclus: 1000, capIaUsd: 9 },
+    { id: 'basic',      libelle: 'Basic',         prixDzd: 2700,  convWebInclus: 500,  waInclus: 0,    capIaUsd: 0 },
+    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 5400,  convWebInclus: 1500, waInclus: 1000, capIaUsd: 0 },
     { id: 'enterprise', libelle: 'Enterprise',    prixDzd: 47100, convWebInclus: null, waInclus: 5000, capIaUsd: 30 },
   ],
 

@@ -33,8 +33,8 @@ export const SCAN_LIMITS_PER_MONTH: Record<string, number> = {
 
 // 💸 PLAFOND DE COÛT RÉEL — DÉCISION DU 13/10/2026 : plus de plafond en
 // dollars sur Basic et Pro. C'est le QUOTA DE CONVERSATIONS qui arrête tout
-// (Basic : 1 000 conversations = 100 minutes d'appel OU 8 000 messages ;
-// Pro : 5 000 conversations = 500 minutes OU 25 000 messages). Le client a
+// (Basic : 500 conversations = 50 minutes d'appel OU 1 000 messages ;
+// Pro : 1 500 conversations = 150 minutes OU 3 000 messages). Le client a
 // donc TOUT son forfait, et jamais une pause au milieu à cause d'un montant.
 // 0 = aucun plafond. Enterprise, qui n'a pas encore de quota chiffré (vendu
 // « sur devis »), garde un fusible en attendant sa limite négociée.
@@ -82,19 +82,23 @@ export function costCapReachedMsg(plan: string, cost: number, cap: number) {
 }
 
 /**
- * 🧮 TAILLE D'UNE CONVERSATION (décision du 13/10/2026) : **5 messages écrits
- * = 1 conversation** du forfait (c'était 8). Moins de messages par
- * conversation = un forfait qui se consomme moins vite en écrit, donc un coût
- * Gemini plus bas à prix vendu identique : le pire cas d'un Basic passe de
- * 2 870 DA à 1 794 DA, celui d'un Pro de 14 350 DA à 8 970 DA (à 260 DA/$).
- * La voix, elle, garde son barème (1 minute d'appel = 10 conversations).
+ * 🧮 TAILLE D'UNE CONVERSATION (décision du 14/10/2026) : **1 message du client
+ * + sa réponse = 1 conversation** (2 messages). C'est la définition commerciale
+ * retenue : le client compte ses échanges, pas nos appels à Gemini.
+ *
+ * Conséquence sur les compteurs : un message du client = 1 unité = 1
+ * conversation (la réponse appartient au même échange).
+ *
+ * La voix garde son barème : 1 minute d'appel = 10 conversations = 10 unités.
+ * Les deux canaux pèsent alors le même ordre de grandeur en argent — 10
+ * conversations écrites coûtent 3,60 DA, la même minute d'appel 6,18 DA.
  */
-export const UNITS_PER_CONVERSATION = 5;
+export const UNITS_PER_CONVERSATION = 1;
 
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 0,        // Plan Gratuit = zéro crédit IA (page Tarifs)
-  basic: 1000,    // « Jusqu’à 1 000 conversations par mois »
-  pro: 5000,      // « Jusqu’à 5 000 conversations par mois »
+  basic: 500,     // « 500 conversations par mois » (1 000 messages)
+  pro: 1500,      // « 1 500 conversations par mois » (3 000 messages)
   enterprise: null, // illimité
 };
 

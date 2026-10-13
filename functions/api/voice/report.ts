@@ -4,8 +4,8 @@
  * Fin d'appel : on range la durée et les tokens réellement consommés dans
  * `conversation_contexts` (canal « voice »), exactement comme un échange écrit.
  *
- * BARÈME (décision du 13/10/2026) : 1 minute d'appel = 10 conversations, soit
- * 50 unités de quota (5 unités = 1 conversation, décision du même jour). Une
+ * BARÈME (décision du 14/10/2026) : 1 minute d'appel = 10 conversations, soit
+ * 10 unités de quota (1 unité = 1 conversation, décision du même jour). Une
  * minute d'appel consomme donc autant de forfait que 50 messages écrits, et
  * 8 appels d'une minute valent 80 conversations — plus 1.
  *
@@ -30,8 +30,8 @@ const json = (body: unknown, status = 200) =>
 /** Bornes : on préfère perdre un peu de précision que fausser une facture. */
 const MAX_TOKENS = 400_000;
 
-/** 1 minute d'appel = 10 conversations = 10 × 5 unités de quota. */
-const WEIGHT_PER_MINUTE = 50;
+/** 1 minute d'appel = 10 conversations = 10 × 1 unité de quota. */
+const WEIGHT_PER_MINUTE = 10;
 
 const clampInt = (value: unknown, min: number, max: number): number => {
   const n = Math.round(Number(value));
@@ -81,7 +81,7 @@ export async function onRequestPost(context: any) {
       tokensIn,
       tokensOut,
       model: String(body.model || '').slice(0, 60) || undefined,
-      // 1 minute = 50 unités (10 conversations). Une seconde entamée compte
+      // 1 minute = 10 unités (10 conversations). Une seconde entamée compte
       // une minute pleine (voir `minutes`), et un appel ne peut pas dépasser
       // 15 minutes : le poids maximal d'un relevé est donc 750 unités.
       weight: WEIGHT_PER_MINUTE * minutes,
