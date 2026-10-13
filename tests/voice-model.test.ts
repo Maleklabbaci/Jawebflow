@@ -90,9 +90,54 @@ describe('modèle temps réel des appels', () => {
 
     expect(res.ok).toBe(false);
     expect(res.wsUrl).toBeUndefined();
-    expect(appels).toBe(2); // v1alpha puis v1beta, puis on s'arrête
+    // 4 = deux versions d'API × (avec puis sans les réglages fins) : quand Google
+    // refuse un champ optionnel (400), on refait la demande sans lui.
+    expect(appels).toBe(4);
     expect(String(res.detail)).toContain('jeton');
     expect(String(res.error)).toContain("n'est pas encore activé");
+  });
+
+  it('le jeton porte les réglages anti-coupure et les transcriptions', async () => {
+    // 📞 Sans ces réglages, Google croit qu'un bruit est une prise de parole et
+    // coupe l'assistant en plein milieu de sa phrase.
+    let vu: any = null;
+    const fetchImpl = (async (url: any, init: any) => {
+      vu = JSON.parse(String(init.body));
+      return tokenOk();
+    }) as any;
+
+    const res = await createLiveToken({ GEMINI_API_KEY: 'K' }, { systemInstruction: 'T', fetchImpl });
+
+    expect(res.ok).toBe(true);
+    const setup = vu.bidiGenerateContentSetup;
+    expect(setup.realtimeInputConfig.automaticActivityDetection.startOfSpeechSensitivity).toBe('START_SENSITIVITY_LOW');
+    expect(setup.inputAudioTranscription).toBeDefined();
+    expect(setup.outputAudioTranscription).toBeDefined();
+  });
+
+  it('réglages fins refusés (400) : on redemande sans eux et l’appel démarre quand même', async () => {
+    const corps: any[] = [];
+    const fetchImpl = (async (url: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      corps.push(body);
+      if (body.bidiGenerateContentSetup.realtimeInputConfig) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Invalid JSON payload: unknown field realtimeInputConfig' } }),
+          { status: 400 },
+        );
+      }
+      return tokenOk();
+    }) as any;
+
+    const res = await createLiveToken({ GEMINI_API_KEY: 'K' }, { systemInstruction: 'T', fetchImpl });
+
+    expect(res.ok).toBe(true);
+    expect(corps).toHaveLength(2);
+    expect(corps[0].bidiGenerateContentSetup.realtimeInputConfig).toBeTruthy();
+    // Le second essai garde tout ce qui compte : modèle, voix, consignes, outils.
+    expect(corps[1].bidiGenerateContentSetup.realtimeInputConfig).toBeUndefined();
+    expect(corps[1].bidiGenerateContentSetup.outputAudioTranscription).toBeUndefined();
+    expect(corps[1].bidiGenerateContentSetup.model).toContain('gemini-3.8-live');
   });
 
   it('`legacy: true` : la MÊME porte, sur l’autre version d’API', async () => {

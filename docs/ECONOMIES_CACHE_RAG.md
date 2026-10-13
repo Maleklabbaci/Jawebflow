@@ -85,6 +85,38 @@ Deux garde-fous ajoutés le même jour, parce qu'une recherche doit être HONNÊ
   sont ignorés, et un terme de 2-3 lettres ne compte que s'il est un **mot entier**
   (« est » ne matche plus « question » ni « essentiel »).
 
+## 2 ter. 🧩 L'architecture « règles / données » — et l'étanchéité entre comptes
+
+Depuis le 15/10/2026, **aucun prompt de JawebFlow ne contient plus une seule donnée
+d'un commerce**. Le partage est net, partout (site vitrine, chat des clients,
+Instagram, WhatsApp/Messenger/Telegram, appels) :
+
+| Morceau de l'appel | Ce qu'il contient | Il change ? |
+|---|---|---|
+| **instructions système** | les RÈGLES : identité, ton, langues, honnêteté, politesse, interdits d'invention | **jamais** ⇒ même texte à chaque message (cache implicite + lecture à 10 %) |
+| **contexte du tour** | les DONNÉES du compte : extraits de SA base sélectionnés pour la question, coordonnées (téléphone, adresse, horaires, jours fermés), mémoire du prospect, documents du site, brouillon de commande | à chaque message |
+| **message du client** | la question, et rien d'autre | à chaque message |
+
+Concrètement :
+
+- `buildSiteChatPrompt(config)` / `buildSalesSystemPrompt(config)` ne reçoivent plus la
+  base ni `officialInfoBlock` : le téléphone et les horaires sont renvoyés par
+  `businessInfoFacts(config)` et voyagent dans `<business_context>.infosOfficielles`
+  (site vitrine : `<contexte_client>` + `siteContactFacts`) ;
+- l'appel vocal n'a **rien** du commerce dans ses consignes : les coordonnées sortent de
+  l'outil `chercher_information` (`/api/voice/knowledge`), et seulement quand le client
+  les demande ;
+- 🔒 **étanchéité** : les lectures sont filtrées par `assistant_id`, et
+  `sameTenantMetadata()` rejette en plus toute fiche dont `metadata.assistantId`
+  désigne un AUTRE compte (fiches `knowledge_entries` et documents
+  `knowledge_documents`). Un test le vérifie sur deux comptes qui parlent du même
+  produit : ni les fiches, ni les coordonnées de l'un ne peuvent apparaître chez
+  l'autre. Même contrôle pour la recherche vocale du site et des marchands.
+
+Effet mesuré sur le prompt du site vitrine : les instructions perdent toute la base
+(≈ 1 300 jetons) et se stabilisent à **~4 000 caractères de règles pures** ; seuls les
+extraits utiles (plafonnés à `SITE_KB_TURN_BUDGET_CHARS`) partent avec la question.
+
 ## 3. Ce qui est **toujours** envoyé à 100 % du prix
 
 La donnée vivante ne se cache pas (sinon Gemini répondrait avec un contexte périmé) :

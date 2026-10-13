@@ -66,6 +66,10 @@ class FakeAudioContext {
   static lastProcessor: any = null;
   static played: number[] = [];
   static closed = 0;
+  /** 🔔 La sonnerie (oscillateur) : nombre de démarrages. */
+  static rings = 0;
+  /** 🔊 Les morceaux d'audio joués, pour simuler leur fin de lecture. */
+  static sources: any[] = [];
   sampleRate = 48000;
   currentTime = 0;
   destination = { connect() {} };
@@ -76,14 +80,44 @@ class FakeAudioContext {
     return { duration: length / rate, copyToChannel() {} };
   }
   createBufferSource() {
-    return {
-      buffer: null as any,
+    const node: any = {
+      buffer: null,
       connect() {},
       start() {
         FakeAudioContext.played.push(1);
       },
       stop() {},
-      onended: null as any,
+      onended: null,
+    };
+    FakeAudioContext.sources.push(node);
+    return node;
+  }
+  /** Simule la fin de lecture : un vrai navigateur appelle `onended`. */
+  static finishAudio() {
+    const nodes = FakeAudioContext.sources;
+    FakeAudioContext.sources = [];
+    for (const node of nodes) {
+      if (typeof node.onended === 'function') node.onended({});
+    }
+  }
+  /** 🔔 La tonalité d'appel : un gain + un oscillateur, comme dans le moteur. */
+  createGain() {
+    return {
+      gain: { value: 0, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {} },
+      connect() {},
+      disconnect() {},
+    };
+  }
+  createOscillator() {
+    return {
+      type: '',
+      frequency: { value: 0 },
+      connect() {},
+      disconnect() {},
+      start() {
+        FakeAudioContext.rings += 1;
+      },
+      stop() {},
     };
   }
   createMediaStreamSource() {
@@ -131,6 +165,8 @@ afterEach(() => {
   FakeAudioContext.lastProcessor = null;
   FakeAudioContext.played = [];
   FakeAudioContext.closed = 0;
+  FakeAudioContext.rings = 0;
+  FakeAudioContext.sources = [];
 });
 
 describe('conversions audio', () => {
@@ -245,7 +281,39 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     // fait que demander à l'assistant d'ouvrir l'appel.
     expect(JSON.parse(ws.sent[1]).clientContent.turns[0].parts[0].text).toMatch(/Ouvre l.appel/);
 
-    // 3. Le micro envoie de l'audio 16 kHz (48 kHz ramené à 16).
+    // 3. 🔇 Tant que l'assistant n'a pas dit un mot, le micro est FERMÉ : le
+    // client n'est pas encore censé parler, et surtout Google ne doit entendre
+    // ni la sonnerie ni l'écho du haut-parleur. Sans cette porte, il croyait
+    // que le client parlait et attendait… (les « 12 secondes » avant le premier
+    // mot), ou coupait sa propre phrase.
+    const avantPremierMot = ws.sent.length;
+    FakeAudioContext.lastProcessor.onaudioprocess({
+      inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.2), sampleRate: 48000 },
+    });
+    expect(ws.sent.length).toBe(avantPremierMot); // rien n'est parti
+
+    // 4. Gemini répond en audio : on le joue et on passe en « il parle ».
+    ws.emit({ serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } } });
+    expect(call.getState()).toBe(VOICE_STATES.SPEAKING);
+    expect(FakeAudioContext.played.length).toBe(1);
+
+    // 5. 🔇 Il parle : le micro du client ne part TOUJOURS pas — Gemini ne doit
+    // pas s'entendre lui-même (« elle parle et ça coupe »).
+    const pendantLaPhrase = ws.sent.length;
+    FakeAudioContext.lastProcessor.onaudioprocess({
+      inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.2), sampleRate: 48000 },
+    });
+    expect(ws.sent.length).toBe(pendantLaPhrase);
+
+    // 6. Transcription + consommation.
+    ws.emit({ serverContent: { outputTranscription: { text: 'Oui, nous sommes ouverts.' }, turnComplete: true } });
+    ws.emit({ usageMetadata: { promptTokenCount: 152, responseTokenCount: 480 } });
+    expect(transcripts).toEqual([{ speaker: 'bot', text: 'Oui, nous sommes ouverts.', final: true }]);
+
+    // 7. Le dernier mot est joué : la ligne revient au client, le micro repart —
+    //    en 16 kHz (48 kHz ramené à 16).
+    FakeAudioContext.finishAudio();
+    expect(call.getState()).toBe(VOICE_STATES.LISTENING);
     FakeAudioContext.lastProcessor.onaudioprocess({
       inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.2), sampleRate: 48000 },
     });
@@ -255,21 +323,12 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     // 4096 échantillons à 48 kHz → 1365 échantillons à 16 kHz → 2730 octets → 3640 caractères base64.
     expect(audio.data.length).toBe(3640);
 
-    // 4. Gemini répond en audio : on le joue et on passe en « il parle ».
+    // 8. Il coupe la parole : la lecture en cours s'arrête, on réécoute.
     ws.emit({ serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } } });
-    expect(call.getState()).toBe(VOICE_STATES.SPEAKING);
-    expect(FakeAudioContext.played.length).toBe(1);
-
-    // 5. Transcription + consommation.
-    ws.emit({ serverContent: { outputTranscription: { text: 'Oui, nous sommes ouverts.' }, turnComplete: true } });
-    ws.emit({ usageMetadata: { promptTokenCount: 152, responseTokenCount: 480 } });
-    expect(transcripts).toEqual([{ speaker: 'bot', text: 'Oui, nous sommes ouverts.', final: true }]);
-
-    // 6. Il coupe la parole : la lecture en cours s'arrête, on réécoute.
     ws.emit({ serverContent: { interrupted: true } });
     expect(call.getState()).toBe(VOICE_STATES.LISTENING);
 
-    // 7. Raccrocher libère tout et remonte ce qui a été consommé.
+    // 9. Raccrocher libère tout et remonte ce qui a été consommé.
     call.stop('client');
     expect(call.getState()).toBe(VOICE_STATES.ENDED);
     expect(ws.closed[0].code).toBe(1000);
@@ -279,6 +338,10 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     // `setupDone` distingue un vrai appel d'une session morte avant le 1er mot :
     // c'est ce que le widget lit pour décider s'il retente avec l'ancien modèle.
     expect(ended().setupDone).toBe(true);
+    // ⏱️ Où est passé le temps : micro, connexion, setup, premier mot. C'est ce
+    // qui permet de diagnostiquer un appel lent sans deviner.
+    expect(ended().timings).toBeTruthy();
+    expect(ended().timings.firstAudioMs).toBeGreaterThanOrEqual(0);
     expect(errors).toEqual([]);
   });
 
@@ -290,6 +353,11 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     ws.open();
     ws.emit({ setupComplete: {} });
     await flush();
+    // L'assistant dit bonjour puis se tait : la ligne revient au client, donc le
+    // micro est de nouveau ouvert (sinon rien ne pourrait partir, par sécurité).
+    ws.emit({ serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(480)) } }] } } });
+    ws.emit({ serverContent: { turnComplete: true } });
+    FakeAudioContext.finishAudio();
 
     const before = ws.sent.length;
     expect(call.setMuted(true)).toBe(true);
@@ -321,6 +389,43 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     expect(call.getState()).toBe(VOICE_STATES.ERROR);
     expect(errors[0].message).toBe(VOICE_MESSAGES.denied);
     expect(FakeWebSocket.instances.length).toBe(0);
+  });
+
+  it('appel établi qui se coupe : le visiteur LIT pourquoi (plus de coupure muette)', async () => {
+    const notices: Array<{ code: string; message: string }> = [];
+    const { call, ended } = makeCall({ onNotice: (n: any) => notices.push(n) });
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    // Google referme la session en pleine conversation (réseau, durée côté
+    // serveur) : l'appel s'arrête ET on dit au visiteur de réessayer.
+    ws.close(1006, 'réseau');
+    await flush();
+    expect(call.getState()).toBe(VOICE_STATES.ENDED);
+    expect(ended().reason).toBe('closed');
+    expect(notices[0]).toMatchObject({ code: 'closed' });
+    expect(notices[0].message).toBe(VOICE_MESSAGES.disconnected);
+  });
+
+  it('durée de parole atteinte : on l’explique au lieu de couper sans un mot', async () => {
+    const notices: Array<{ code: string; message: string }> = [];
+    const { call, ended } = makeCall({ maxSeconds: 1, onNotice: (n: any) => notices.push(n) });
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    await new Promise((resolve) => setTimeout(resolve, 1200)); // le minuteur fait son travail
+    expect(ended().reason).toBe('max-duration');
+    expect(notices[0]).toMatchObject({ code: 'max-duration' });
+    expect(notices[0].message).toBe(VOICE_MESSAGES.timeout);
+    call.stop('client');
   });
 
   it('appel interrompu par le serveur : on remonte quand même la durée', async () => {
@@ -384,8 +489,86 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     const { call, errors } = makeCall({ wsUrl: '' });
     call.start();
     await flush();
+    // 🔔 Nouveau : la session démarre SANS le jeton (la sonnerie tourne déjà),
+    // donc l'absence d'adresse n'est une erreur qu'au moment de brancher.
+    expect(FakeAudioContext.rings).toBe(1);
+    await call.connect({ wsUrl: '' });
     expect(call.getState()).toBe(VOICE_STATES.ERROR);
     expect(errors[0].message).toBe(VOICE_MESSAGES.disconnected);
+    call.stop('client');
+  });
+
+  it('la sonnerie et le micro démarrent AVANT le jeton du serveur', async () => {
+    // C'est le correctif du « ça sonne 4 secondes puis 7 secondes de silence » :
+    // le visiteur entend la tonalité dès le clic et le micro se demande en même
+    // temps que le jeton part au serveur — plus rien n'attend rien.
+    const { call, states } = makeCall({ wsUrl: '' });
+    call.start();
+    await flush();
+
+    expect(states[0]).toBe(VOICE_STATES.CONNECTING);
+    expect(FakeAudioContext.rings).toBe(1);              // la sonnerie tourne
+    expect(FakeAudioContext.lastProcessor).toBeTruthy(); // le micro est demandé
+    expect(FakeWebSocket.instances.length).toBe(0);      // pas encore de session
+
+    await call.connect({ wsUrl: 'wss://exemple.test/live?access_token=JETON', setup: { setup: { model: 'models/x' } } });
+    const ws = FakeWebSocket.instances[0];
+    expect(ws.url).toContain('access_token=JETON');
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+    // …et la sonnerie s'arrête au PREMIER MOT de l'assistant, pas avant.
+    expect(FakeAudioContext.rings).toBe(1);
+    ws.emit({ serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(480)) } }] } } });
+    await flush();
+    expect(FakeAudioContext.played.length).toBe(1);
+    call.stop('client');
+  });
+
+  it('le client qui parle PAR-DESSUS l’assistant reprend la parole (sans perdre son début de phrase)', async () => {
+    const { call } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    // L'assistant parle.
+    ws.emit({ serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } } });
+    expect(call.getState()).toBe(VOICE_STATES.SPEAKING);
+    const avantBarge = ws.sent.length;
+
+    // Le client parle fort (0,5 d'amplitude ⇒ niveau 1) pendant ~400 ms : cinq
+    // morceaux de 85 ms. L'écho du haut-parleur, lui, ne suffit pas à déclencher.
+    const fort = { inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.5), sampleRate: 48000 } };
+    for (let i = 0; i < 5; i += 1) FakeAudioContext.lastProcessor.onaudioprocess(fort);
+
+    expect(call.getState()).toBe(VOICE_STATES.LISTENING); // l'assistant se tait
+    const trames = ws.sent.slice(avantBarge).map((raw) => JSON.parse(raw));
+    // Son début de phrase n'a pas été perdu : les morceaux gardés sont renvoyés.
+    expect(trames.filter((m) => m.realtimeInput)).toHaveLength(5);
+    call.stop('client');
+  });
+
+  it('un bruit court ne coupe PAS l’assistant (seule une voix tenue le fait)', async () => {
+    const { call } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+    ws.emit({ serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } } });
+    const avant = ws.sent.length;
+
+    // Une toux, un claquement de porte : fort mais COURT (1 morceau = 85 ms).
+    FakeAudioContext.lastProcessor.onaudioprocess({
+      inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.9), sampleRate: 48000 },
+    });
+    expect(call.getState()).toBe(VOICE_STATES.SPEAKING); // il continue sa phrase
+    expect(ws.sent.slice(avant).filter((raw) => JSON.parse(raw).realtimeInput)).toHaveLength(0);
+    call.stop('client');
   });
 });
 

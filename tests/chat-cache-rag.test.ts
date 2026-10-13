@@ -108,6 +108,117 @@ describe('/api/chat — mise en cache du contexte (gros compte)', () => {
   });
 });
 
+describe('/api/chat — étanchéité entre comptes (RAG multi-tenant)', () => {
+  it("les fiches d'un autre marchand n'entrent JAMAIS dans la conversation", async () => {
+    setKnowledge(4);
+    // Un DEUXIÈME compte, dans la MÊME table, avec une fiche qui parle du même sujet.
+    fx.supabase.seed('assistants', [
+      {
+        id: 'asst2',
+        user_id: 'u2',
+        business_name: 'Autre Boutique',
+        config: { plan: 'basic' },
+      },
+    ]);
+    fx.supabase.seed('knowledge_entries', [
+      {
+        id: 'k-other',
+        assistant_id: 'asst2',
+        title: 'Prix',
+        content: 'PRIX INTERNE DE L AUTRE MARCHAND.',
+        category: 'produits',
+        status: 'active',
+        enabled: true,
+      },
+    ]);
+
+    const gemini = new FakeGemini();
+    gemini.next(modelReply(textPart('L’article 1 est à 1 000 DA.')));
+    fx.external.handler = gemini.handler;
+
+    const res = await send('prix des articles', 'msg-iso-1', 'session-iso');
+    expect(res.status).toBe(200);
+
+    const payload = JSON.stringify(gemini.calls[0].body);
+    expect(payload).not.toContain('AUTRE MARCHAND');       // aucune fuite d'un autre compte
+    expect(payload).toContain('Article 1');                // …mais SA base est bien là
+    // Les instructions système ne portent QUE les règles : aucune fiche dedans.
+    const system = gemini.calls[0].body.systemInstruction.parts[0].text;
+    expect(system).not.toContain('Article 1');
+    // Et la base est lue AVEC le filtre du compte — jamais une table entière.
+    const lectures = fx.supabase.calls.filter((c) => c.path.includes('knowledge_entries'));
+    expect(lectures.length).toBeGreaterThan(0);
+    expect(lectures.every((c) => c.path.includes('assistant_id=eq.asst1'))).toBe(true);
+  });
+
+  it('une fiche mal étiquetée (metadata.assistantId d’un AUTRE compte) est rejetée', async () => {
+    setKnowledge(2, 1);
+    fx.supabase.seed('knowledge_entries', [
+      {
+        id: 'k-rogue',
+        assistant_id: 'asst1',
+        title: 'Fuite',
+        content: 'SECRET D UN AUTRE COMPTE.',
+        category: 'produits',
+        status: 'active',
+        enabled: true,
+        metadata: { assistantId: 'asst2' },   // ← contradiction : la ligne est écartée
+      },
+      {
+        id: 'k-mine',
+        assistant_id: 'asst1',
+        title: 'Coque Spiderman',
+        content: 'Coque Spiderman : 1 900 DA.',
+        category: 'produits',
+        status: 'active',
+        enabled: true,
+        metadata: { assistantId: 'asst1' },
+      },
+    ]);
+
+    const gemini = new FakeGemini();
+    gemini.next(modelReply(textPart('La coque Spiderman est à 1 900 DA.')));
+    fx.external.handler = gemini.handler;
+
+    const res = await send('coque spiderman ?', 'msg-rogue-1', 'session-rogue');
+    expect(res.status).toBe(200);
+    const payload = JSON.stringify(gemini.calls[0].body);
+    expect(payload).not.toContain('SECRET D UN AUTRE COMPTE');
+    expect(payload).toContain('Coque Spiderman');   // sa propre fiche, elle, passe
+  });
+});
+
+describe('/api/chat — les coordonnées du commerce voyagent AVEC le message', () => {
+  it('téléphone, adresse et horaires : dans le contexte du tour, jamais dans les instructions', async () => {
+    const row = fx.supabase.rows('assistants')[0];
+    row.config = {
+      ...row.config,
+      businessInfo: { phone: '0550 11 22 33', address: 'Cité 200 logements, Blida', hours: '9h-18h', closedDays: 'vendredi' },
+    };
+
+    const gemini = new FakeGemini();
+    gemini.next(modelReply(textPart('Notre numéro est le 0550 11 22 33.')));
+    fx.external.handler = gemini.handler;
+
+    const res = await send('c’est quoi votre numéro de téléphone ?', 'msg-facts-1', 'session-facts');
+    expect(res.status).toBe(200);
+
+    const body = gemini.calls[0].body;
+    // ✅ La donnée part avec CE message…
+    const contents = JSON.stringify(body.contents);
+    expect(contents).toContain('infosOfficielles');
+    expect(contents).toContain('0550 11 22 33');
+    expect(contents).toContain('9h-18h');
+    expect(contents).toContain('vendredi');
+    // 🚫 …et surtout PAS dans les instructions (stables, courtes, cacheables).
+    const system = body.systemInstruction.parts[0].text;
+    expect(system).not.toContain('0550 11 22 33');
+    expect(system).not.toContain('9h-18h');
+    expect(system).not.toContain('Cité 200 logements');
+    expect(system).toContain('infosOfficielles');   // la RÈGLE de citation reste, la donnée non
+  });
+});
+
 describe('/api/chat — RAG par tour (compte normal)', () => {
   it('ne tente aucun cache et n’envoie que les fiches utiles', async () => {
     const config = setKnowledge(8, 1);

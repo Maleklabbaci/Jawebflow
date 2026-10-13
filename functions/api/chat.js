@@ -22,7 +22,7 @@ import { fitPieces, cacheableText, estimateTokens, KB_CACHE_BUDGET_CHARS } from 
 /** Endpoint Gemini Vision (même modèle pas cher que le chat). */
 const geminiVisionUrl = (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/${'gemini-3.1-flash-lite'}:generateContent?key=${apiKey}`;
 import { supabaseGetPlanLimits, supabaseCountMonthlyConversations, supabaseLogConversation, LIMIT_BLOCK_FREE, limitBlockReached, monthlyCostBlock } from '../_shared/limits.ts';
-import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localPoliteReply, compactKnowledgeNotes, buildCacheKnowledgeBlock, selectKnowledgeDocuments, selectRelevantText } from '../_shared/prompt.ts';
+import { buildSalesSystemPrompt, buildBusinessContextText, businessInfoFacts, classifySmallTalk, localPoliteReply, compactKnowledgeNotes, buildCacheKnowledgeBlock, selectKnowledgeDocuments, selectRelevantText } from '../_shared/prompt.ts';
 import { runBackgroundLearning } from '../_shared/learning.ts';
 import { searchClientSite } from '../_shared/site-search.ts';
 import { notifyLead, notifyHumanTransfer, isHumanTransfer, HUMAN_TRANSFER_REPLY } from '../_shared/merchant-notify.ts';
@@ -668,6 +668,12 @@ export async function onRequestPost(context) {
         diagnostics.push('suivi prospect indisponible');
       }
     }
+
+    // 📇 Les coordonnées du commerce (téléphone, adresse, horaires) sont des
+    // DONNÉES : elles partent avec CE message, pas dans les instructions
+    // système (qui restent courtes, stables, donc cacheables).
+    const infosOfficielles = businessInfoFacts(config);
+    if (infosOfficielles) businessContext.infosOfficielles = infosOfficielles;
 
     // Insérer les données RAG dans le dernier tour utilisateur (pas dans le
     // prompt système mis en cache) après confirmation éventuelle du suivi.

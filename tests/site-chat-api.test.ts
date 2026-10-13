@@ -159,16 +159,54 @@ describe('le chatbot répond', () => {
     expect(res.status).toBe(200);
     expect(json.text).toContain('10 $ par mois');
 
-    // Le prompt envoyé contient bien la base de connaissance et son garde-fou.
+    // 🧩 ARCHITECTURE RAG MULTI-TENANT : les instructions système ne portent que
+    // les RÈGLES (identité, ton, langues, interdits) — aucune donnée du commerce.
     const sent = JSON.parse(String(fx.external.calls[0].init.body));
     const prompt = sent.systemInstruction.parts[0].text;
-    expect(prompt).toContain('BASE DE CONNAISSANCE');
-    expect(prompt).toContain("JAWEBFLOW — l'essentiel");
     expect(prompt).toContain("Tu n'inventes jamais un prix");
+    expect(prompt).toContain('RÈGLES ABSOLUES');
+    expect(prompt).not.toContain("JAWEBFLOW — l'essentiel"); // ← plus de base dans les instructions
+    expect(prompt).not.toMatch(/Basic.*10 \$/);
+    expect(prompt).not.toContain('BASE DE CONNAISSANCE');
     expect(sent.generationConfig.thinkingConfig.thinkingBudget).toBe(0);
+    // …et les données du client voyagent DANS LE MESSAGE, tour par tour.
+    const dernierTour = sent.contents[sent.contents.length - 1];
+    expect(dernierTour.role).toBe('user');
+    expect(dernierTour.parts[0].text).toContain('<contexte_client');
+    expect(dernierTour.parts[0].text).toContain("JAWEBFLOW — l'essentiel");
+    expect(dernierTour.parts[0].text).toContain('QUESTION DU VISITEUR');
+    // 📇 Le contact de l'équipe est une DONNÉE : elle voyage ici aussi…
+    expect(dernierTour.parts[0].text).toContain('contact@jawebflow.dz');
+    expect(prompt).not.toContain('contact@jawebflow.dz');   // …jamais dans les instructions
     // L'historique est transmis : le bot garde le fil de la discussion.
     expect(sent.contents.length).toBe(3);
     expect(sent.contents[0].role).toBe('user');
+  });
+
+  it('question hors base : le contexte le DIT (pas de trou silencieux dans le prompt)', async () => {
+    fx.external.handler = () =>
+      new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Je ne sais pas.' }] } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+
+    await post({ message: 'vous réparez les motos ?' }, { 'CF-Connecting-IP': '10.0.0.31' }, {
+      ...ENV,
+      GEMINI_API_KEY: 'GEMINI_TEST_KEY',
+    });
+
+    const sent = JSON.parse(String(fx.external.calls[0].init.body));
+    const contexte = sent.contents[sent.contents.length - 1].parts[0].text;
+    expect(contexte).toContain('<contexte_client');
+    expect(contexte).toContain('QUESTION DU VISITEUR');
+  });
+
+  it('base vide : le contexte le dit noir sur blanc (pas de prompt muet)', async () => {
+    const { buildSiteChatContext } = await import('../functions/_shared/site-chat');
+    const bloc = buildSiteChatContext('');
+    expect(bloc).toContain('<contexte_client');
+    expect(bloc).toContain('aucun extrait de notre base ne correspond');
+    expect(buildSiteChatContext('   ')).toContain('aucun extrait');
   });
 
   it('un visiteur ne peut pas vider le quota : au-delà de 20 messages, 429', async () => {

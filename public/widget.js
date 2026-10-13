@@ -76,7 +76,7 @@
   // Le moteur d'appel est mis en cache 24 h par le navigateur : on demande une
   // adresse versionnée pour qu'une correction du moteur arrive tout de suite
   // (incrémenter `v` à chaque changement de `public/cdn/voice.js`).
-  var VOICE_ENGINE = '/cdn/voice.js?v=12';
+  var VOICE_ENGINE = '/cdn/voice.js?v=13';
   // Le moteur, chargé D'AVANCE : c'est ce qui permet de débloquer le son dans
   // le clic du visiteur (règle Chrome/Safari : sans geste, la sortie audio
   // démarre « suspendue » et l'assistant reste muet, même s'il parle).
@@ -401,12 +401,16 @@
     if (!voiceTriedFallback) firstCallError = '';
     callActive = true; callState = 'connecting'; callError = '';
     callSpeaker = true;
-    loadVoiceEngine();
     callLines = []; callSeconds = 0; callMuted = false; callSession = null;
     voiceSetupDone = false;
     render();
 
-    fetch((apiOrigin || '') + '/api/voice/session', {
+    // ⏱️ TOUT PART EN MÊME TEMPS : le jeton au serveur, le moteur d'appel, la
+    // sonnerie et la demande de micro. Avant, on attendait le jeton (1 à 3 s)
+    // avant même de faire sonner, puis le moteur, puis le micro : l'appel
+    // sonnait 4 secondes et l'assistant ne parlait qu'à la 12e seconde. Ici,
+    // tout ce qui peut se faire en parallèle se fait en parallèle.
+    var sessionPromise = fetch((apiOrigin || '') + '/api/voice/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ assistantId: assistantId, origin: window.location.origin, sessionId: visitorId, fallback: voiceTriedFallback })
@@ -414,106 +418,130 @@
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {
         if (!data || !data.ok || !data.wsUrl) {
-          callState = 'error';
-          callError = (data && (data.error || data.message)) || VOICE_FALLBACK_ERROR;
-          render();
-          return null;
+          return {
+            ok: false,
+            blocked: !!(data && data.blocked),
+            error: (data && (data.error || data.message)) || VOICE_FALLBACK_ERROR
+          };
         }
-        return loadVoiceEngine().then(function (mod) {
-          callSession = mod.createVoiceCall({
-            wsUrl: data.wsUrl,
-            setup: data.setup,
-            greeting: data.greeting || voiceGreeting,
-            maxSeconds: data.maxSeconds || (voiceMaxMinutes * 60) || 300,
-            onState: function (state) {
-              if (state === 'listening' || state === 'speaking') voiceSetupDone = true;
-              callState = state; render();
-            },
-            onTranscript: function (t) { addCallLine(t.speaker, t.text); render(); },
-            onNotice: function (n) {
-              // Le navigateur a coupé la sortie : on le DIT au visiteur.
-              if (n && n.message) { callError = n.message; render(); }
-            },
-            onToolCall: function (call) {
-              // Deux outils : RECHERCHER une information (la base du commerçant
-              // n'est plus dans le prompt, elle est interrogée à la question)
-              // et NOTER la demande (nom, numéro, rendez-vous).
-              var toolName = (call && call.name) || '';
-              var toolArgs = (call && call.args) || {};
-              if (toolName === 'chercher_information') {
-                return fetch((apiOrigin || '') + '/api/voice/knowledge', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    assistantId: assistantId,
-                    origin: window.location.origin,
-                    question: toolArgs.question || '',
-                  }),
-                })
-                  .then(function (r) { return r.json().catch(function () { return null; }); })
-                  .then(function (data) {
-                    // `result` = les lignes trouvées (vide = il ne sait pas) :
-                    // c'est CE texte que l'agent a le droit de dire au client.
-                    return { result: (data && data.text) || '', found: !!(data && data.found) };
-                  })
-                  .catch(function () { return { result: '', found: false }; });
-              }
-              // 🎯 Sans réponse, Gemini attendrait — et l'appel deviendrait muet.
-              return fetch((apiOrigin || '') + '/api/voice/lead', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  assistantId: assistantId,
-                  origin: window.location.origin,
-                  sessionId: visitorId,
-                  args: toolArgs,
-                }),
-              })
-                .then(function (r) { return r.json().catch(function () { return null; }); })
-                .catch(function () { return null; });
-            },
-            onError: function (e) {
-              var msg = (e && e.message) || VOICE_FALLBACK_ERROR;
-              if (!firstCallError) firstCallError = msg;
-              callError = msg;
-              callState = 'error';
-              render();
-            },
-            onEnd: function (info) {
-              callSession = null;
-              if (callTimerId) { clearInterval(callTimerId); callTimerId = null; }
-              // Les DEUX essais ont echoue : la raison du premier est la plus
-              // utile (la seconde n'est souvent que la consequence).
-              if (callError && firstCallError && firstCallError !== callError) {
-                callError = firstCallError + '\n' + callError;
-              }
-              // Jamais demarre : une seconde chance, autre version d'API.
-              if (info && !info.setupDone && !voiceSetupDone && !voiceTriedFallback) {
-                voiceTriedFallback = true;
-                callActive = false; callState = ''; callError = '';
-                startVoice();
-                return;
-              }
-              callActive = false; callState = '';
-              reportCall(info);
-              render();
-            }
-          });
-          callSession.start();
-          if (callTimerId) clearInterval(callTimerId);
-          callTimerId = setInterval(function () {
-            callSeconds = callSession && callSession.getSeconds ? callSession.getSeconds() : callSeconds + 1;
-            var timerEl = shadow.querySelector('.jw-call-timer');
-            if (timerEl) timerEl.textContent = formatTimer(callSeconds);
-          }, 1000);
-          return null;
-        });
+        return { ok: true, data: data };
       })
       .catch(function () {
-        callState = 'error';
-        callError = VOICE_FALLBACK_ERROR;
-        render();
+        return { ok: false, blocked: false, error: VOICE_FALLBACK_ERROR };
       });
+
+    loadVoiceEngine().then(function (mod) {
+      callSession = mod.createVoiceCall({
+        greeting: voiceGreeting,
+        maxSeconds: (voiceMaxMinutes * 60) || 300,
+        onState: function (state) {
+          if (state === 'listening' || state === 'speaking') voiceSetupDone = true;
+          callState = state; render();
+        },
+        onTranscript: function (t) { addCallLine(t.speaker, t.text); render(); },
+        onNotice: function (n) {
+          // Le navigateur a coupé la sortie : on le DIT au visiteur.
+          if (n && n.message) { callError = n.message; render(); }
+        },
+        onToolCall: function (call) {
+          // Deux outils : RECHERCHER une information (la base du commerçant
+          // n'est plus dans le prompt, elle est interrogée à la question)
+          // et NOTER la demande (nom, numéro, rendez-vous).
+          var toolName = (call && call.name) || '';
+          var toolArgs = (call && call.args) || {};
+          if (toolName === 'chercher_information') {
+            return fetch((apiOrigin || '') + '/api/voice/knowledge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                assistantId: assistantId,
+                origin: window.location.origin,
+                question: toolArgs.question || '',
+              }),
+            })
+              .then(function (r) { return r.json().catch(function () { return null; }); })
+              .then(function (data) {
+                // `result` = les lignes trouvées (vide = il ne sait pas) :
+                // c'est CE texte que l'agent a le droit de dire au client.
+                return { result: (data && data.text) || '', found: !!(data && data.found) };
+              })
+              .catch(function () { return { result: '', found: false }; });
+          }
+          // 🎯 Sans réponse, Gemini attendrait — et l'appel deviendrait muet.
+          return fetch((apiOrigin || '') + '/api/voice/lead', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              assistantId: assistantId,
+              origin: window.location.origin,
+              sessionId: visitorId,
+              args: toolArgs,
+            }),
+          })
+            .then(function (r) { return r.json().catch(function () { return null; }); })
+            .catch(function () { return null; });
+        },
+        onError: function (e) {
+          var msg = (e && e.message) || VOICE_FALLBACK_ERROR;
+          if (!firstCallError) firstCallError = msg;
+          callError = msg;
+          callState = 'error';
+          render();
+        },
+        onEnd: function (info) {
+          callSession = null;
+          if (callTimerId) { clearInterval(callTimerId); callTimerId = null; }
+          // Les DEUX essais ont echoue : la raison du premier est la plus
+          // utile (la seconde n'est souvent que la consequence).
+          if (callError && firstCallError && firstCallError !== callError) {
+            callError = firstCallError + '\n' + callError;
+          }
+          // Jamais demarre : une seconde chance, autre version d'API — SAUF si
+          // le serveur a refuse (forfait, quota, voix coupee...) : la, insister
+          // ne sert a rien, on affiche la raison.
+          if (info && !info.setupDone && !voiceSetupDone && !voiceTriedFallback && info.reason !== 'no-session') {
+            voiceTriedFallback = true;
+            callActive = false; callState = ''; callError = '';
+            startVoice();
+            return;
+          }
+          callActive = false;
+          // La raison reste A L'ECRAN : elle ne doit pas etre effacee par le
+          // retour a l'ecran d'appel (c'etait un raccrochage muet).
+          callState = callError ? 'error' : '';
+          reportCall(info);
+          render();
+        }
+      });
+      // 🔔 La sonnerie demarre MAINTENANT (et le micro est demande tout de
+      // suite) : le visiteur n'attend pas le serveur en silence.
+      callSession.start();
+      if (callTimerId) clearInterval(callTimerId);
+      callTimerId = setInterval(function () {
+        callSeconds = callSession && callSession.getSeconds ? callSession.getSeconds() : callSeconds + 1;
+        var timerEl = shadow.querySelector('.jw-call-timer');
+        if (timerEl) timerEl.textContent = formatTimer(callSeconds);
+      }, 1000);
+      return sessionPromise.then(function (result) {
+        if (!callSession) return;
+        if (!result.ok) {
+          // Refus du serveur : on n'insiste pas ; simple pepin reseau : la
+          // seconde chance (repli d'API) est laissee au onEnd ci-dessus.
+          if (result.blocked) voiceTriedFallback = true;
+          callError = result.error;
+          callState = 'error';
+          render();
+          callSession.stop('no-session');
+          return;
+        }
+        callSession.connect({
+          wsUrl: result.data.wsUrl,
+          setup: result.data.setup,
+          greeting: result.data.greeting || voiceGreeting,
+          maxSeconds: result.data.maxSeconds || (voiceMaxMinutes * 60) || 300
+        });
+      });
+    });
   }
 
   function buildCallPanel() {

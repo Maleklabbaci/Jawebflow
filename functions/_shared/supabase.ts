@@ -196,13 +196,31 @@ export async function supabaseSyncKnowledgeNotes(env: SupabaseEnv, assistantId: 
 }
 
 /** Lit les fiches normalisées (y compris les demandes en attente de revue). */
+/**
+ * 🔒 ÉTANCHÉITÉ MULTI-TENANT — un compte ne lit QUE ses données.
+ *
+ * La requête filtre déjà sur `assistant_id`, mais on vérifie une seconde fois
+ * l'identité portée par la fiche elle-même : si `metadata.assistantId` (ou
+ * `metadata.assistant_id`) désigne un AUTRE compte, la ligne est rejetée au lieu
+ * d'être servie. Une donnée mal saisie ne doit jamais devenir une fuite.
+ */
+export function sameTenantMetadata(metadata: any, assistantId: string): boolean {
+  const tagged = String(metadata?.assistantId ?? metadata?.assistant_id ?? '').trim();
+  return !tagged || tagged === String(assistantId || '').trim();
+}
+
 export async function supabaseListKnowledgeEntries(env: SupabaseEnv, assistantId: string) {
   const res = await request(env, `knowledge_entries?assistant_id=eq.${encodeURIComponent(assistantId)}&select=id,title,content,category,source,source_url,enabled,status,metadata,created_at,updated_at&order=updated_at.desc&limit=500`);
   if (!res.ok) return { available: false, entries: [] as Record<string, any>[], error: await res.text() };
   const rows = await res.json() as Array<Record<string, any>>;
+  const mine = (Array.isArray(rows) ? rows : []).filter((row) => {
+    const ok = sameTenantMetadata(row?.metadata, assistantId);
+    if (!ok) console.warn('[supabase] fiche ignorée : elle appartient à un autre compte');
+    return ok;
+  });
   return {
     available: true,
-    entries: rows.map((row) => ({
+    entries: mine.map((row) => ({
       id: row.id,
       title: row.title || 'Information',
       content: row.content || '',
@@ -570,9 +588,12 @@ export async function supabaseSetChannelError(
 }
 
 export async function supabaseListKnowledge(env: SupabaseEnv, assistantId: string) {
-  const res = await request(env, `knowledge_documents?assistant_id=eq.${encodeURIComponent(assistantId)}&select=title,content,source_url&order=scanned_at.desc&limit=100`);
+  const res = await request(env, `knowledge_documents?assistant_id=eq.${encodeURIComponent(assistantId)}&select=title,content,source_url,metadata&order=scanned_at.desc&limit=100`);
   if (!res.ok) return [];
-  return await res.json() as Array<{ title?: string; content?: string; source_url?: string }>;
+  const rows = await res.json().catch(() => []);
+  return (Array.isArray(rows) ? rows : []).filter(
+    (row: any) => sameTenantMetadata(row?.metadata, assistantId),
+  ) as Array<{ title?: string; content?: string; source_url?: string }>;
 }
 
 // Reconstruit un objet "config" au même format que celui utilisé partout

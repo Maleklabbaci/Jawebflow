@@ -24,9 +24,11 @@ import { rateLimited } from '../../_shared/rate-limit.ts';
 import {
   supabaseGetPlanLimits,
   supabaseCountMonthlyConversations,
+  supabaseGetMonthlyCostUsd,
+  COST_CAP_USD_PER_PLAN,
+  costCapReachedMsg,
   LIMIT_BLOCK_FREE,
   limitBlockReached,
-  monthlyCostBlock,
 } from '../../_shared/limits.ts';
 import { buildVoiceSystemPrompt } from '../../_shared/voice/prompt.ts';
 import {
@@ -85,7 +87,16 @@ export async function onRequestPost(context: any) {
     }
 
     // 1. L'assistant + le droit du widget à être sur ce site.
-    const assistant = await supabaseGetAssistant(env, assistantId);
+    // ⏱️ Les quatre lectures partent ENSEMBLE : la durée d'un appel, c'est le
+    // temps du plus lent, pas la somme de quatre allers-retours Supabase. (Avant,
+    // l'assistant, les forfaits, le compteur du mois et la facture étaient lus
+    // l'un après l'autre : 300 à 500 ms de plus avant même de parler à Google.)
+    const [assistant, limits, used, costUsd] = await Promise.all([
+      supabaseGetAssistant(env, assistantId),
+      supabaseGetPlanLimits(env),
+      supabaseCountMonthlyConversations(env, assistantId),
+      supabaseGetMonthlyCostUsd(env, assistantId),
+    ]);
     const row = assistant?.data;
     if (!row) return json({ ok: false, error: 'Assistant introuvable' }, 404);
     const config = supabaseAssistantRowToConfig(row);
@@ -100,21 +111,21 @@ export async function onRequestPost(context: any) {
     // 2-4. Mêmes règles que le chat écrit : un appel vocal consomme le forfait
     //      ET le plafond de coût du mois, comme n'importe quelle réponse.
     const plan = String(config?.plan || 'basic').toLowerCase();
-    const limits = await supabaseGetPlanLimits(env);
     const limit = plan in limits ? limits[plan] : limits.free;
     if (limit === 0) return blocked(LIMIT_BLOCK_FREE, { plan, limitReached: true });
-    if (typeof limit === 'number' && limit > 0) {
-      const used = await supabaseCountMonthlyConversations(env, assistantId);
-      if (used >= limit) return blocked(limitBlockReached(plan, limit), { plan, used, limit, limitReached: true });
+    if (typeof limit === 'number' && limit > 0 && used >= limit) {
+      return blocked(limitBlockReached(plan, limit), { plan, used, limit, limitReached: true });
     }
-    const costCheck = await monthlyCostBlock(env, assistantId, plan);
-    if (costCheck.exceeded) {
-      return blocked(String(costCheck.msg), {
+    // Mêmes règles que le chat écrit : plafond de coût réel du mois (0 = pas de
+    // plafond, décision du 14/10/2026).
+    const costCap = COST_CAP_USD_PER_PLAN[plan] ?? COST_CAP_USD_PER_PLAN.free;
+    if (costCap && costUsd >= costCap) {
+      return blocked(costCapReachedMsg(plan, costUsd, costCap), {
         plan,
         limitReached: true,
         costReached: true,
-        costUsd: costCheck.cost,
-        costCap: costCheck.cap,
+        costUsd,
+        costCap,
       });
     }
 

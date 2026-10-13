@@ -35,6 +35,34 @@ export const VOICE_MESSAGES = {
     "Le son est bloqué par votre navigateur : touchez le bouton 🔊 ci-dessous pour l'activer.",
 };
 
+/**
+ * 🔇 « L'assistant ne s'écoute pas lui-même ».
+ *
+ * Le haut-parleur renvoie la voix de l'assistant dans le micro. Sans garde-fou,
+ * Gemini « entend » l'assistant et coupe sa propre phrase en plein milieu
+ * (« elle parle et ça coupe »), ou croit que le client n'arrête pas de parler.
+ *
+ * On garde donc le micro FERMÉ (rien n'est envoyé à Gemini) pendant que
+ * l'assistant parle — sauf si le CLIENT parle vraiment par-dessus : voix franche
+ * et tenue (MIC_BARGE_LEVEL pendant MIC_BARGE_MS) ⇒ l'assistant se tait, on
+ * renvoie les morceaux déjà captés (MIC_KEEP_FRAMES) et le client reprend la
+ * parole sans avoir perdu le début de sa phrase.
+ */
+export const MIC_BARGE_LEVEL = 0.55;
+export const MIC_BARGE_MS = 420;
+export const MIC_KEEP_FRAMES = 8;
+/**
+ * Sécurité : si l'assistant n'a pas dit un mot au bout de 6 secondes (modèle qui
+ * réfléchit, outil lent…), on rouvre le micro quand même — le client ne doit
+ * jamais se retrouver sans pouvoir parler.
+ */
+export const MIC_GATE_FAILSAFE_MS = 6000;
+/**
+ * Combien de temps on laisse sonner en attendant le jeton du serveur avant de
+ * prévenir le visiteur (au lieu de sonner dans le vide).
+ */
+export const SESSION_WAIT_MS = 20000;
+
 // ── Conversions audio (fonctions pures : testées une par une) ───────────────
 
 // ── Le haut-parleur ─────────────────────────────────────────────────────────
@@ -288,6 +316,27 @@ export function createVoiceCall(options) {
   let ringTimer = null;
   let ringNodes = null;
   let blockedWarned = false;
+  // 🔇 La porte du micro (voir MIC_BARGE_* plus haut) et le chronomètre des
+  // étapes du démarrage : c'est ce qui permet de dire OÙ passe le temps.
+  let pendingMic = [];
+  let bargeMs = 0;
+  let firstAudioPlayed = false;
+  let botTurnOpen = false;
+  let gateFailsafe = null;
+  let sessionTimeout = null;
+  let micReady = Promise.resolve(false);
+  const startedAt = Date.now();
+  const timings = { micMs: 0, wsMs: 0, setupMs: 0, firstAudioMs: 0 };
+  // Le serveur décide (jeton éphémère) ; le widget peut confier ces valeurs PLUS
+  // TARD, quand le serveur a répondu — la sonnerie et le micro, eux, démarrent
+  // tout de suite (c'est ce qui supprime le trou entre « ça sonne » et « il
+  // parle »).
+  const session = {
+    wsUrl: opts.wsUrl || '',
+    setup: opts.setup || {},
+    greeting: opts.greeting || '',
+    maxSeconds: Number(opts.maxSeconds) || 0,
+  };
 
   const emitState = (next) => {
     state = next;
@@ -322,6 +371,36 @@ export function createVoiceCall(options) {
   }
 
   /**
+   * La ligne est-elle occupée par l'assistant ?
+   *
+   * Vrai pendant qu'il parle (audio en cours), pendant qu'il prépare sa réponse
+   * (`botTurnOpen`), et au tout début — avant sa première phrase : le temps de la
+   * sonnerie, le micro reste fermé pour que Gemini n'entende ni la sonnerie ni
+   * l'écho du haut-parleur. C'est ce qui le faisait patienter (l'ancien silence
+   * de plusieurs secondes) puis couper sa phrase au milieu.
+   */
+  function lineBusy() {
+    if (!speakerOn) return false; // son coupé : le client peut parler
+    if (activeSources.length) return true;
+    if (botTurnOpen) return true;
+    return !firstAudioPlayed;
+  }
+
+  /** Renvoie au serveur les morceaux gardés : le client vient de reprendre la parole. */
+  function flushPendingMic() {
+    const frames = pendingMic.slice();
+    pendingMic.length = 0;
+    if (!frames.length || muted || !ws || ws.readyState !== 1) return;
+    for (const frame of frames) {
+      try {
+        ws.send(JSON.stringify(buildAudioMessage(frame)));
+      } catch {
+        /* trame perdue : la conversation continue */
+      }
+    }
+  }
+
+  /**
    * La sortie audio de CET appel. En production c'est le contexte partagé de la
    * page (débloqué par le geste du visiteur) ; en test, celui qu'on a injecté.
    */
@@ -341,6 +420,15 @@ export function createVoiceCall(options) {
   }
 
   function playChunk(base64) {
+    // 🔊 Le PREMIER mot de l'assistant : on arrête la sonnerie ici (et pas à la
+    // fin du « setup ») — le visiteur entend la tonalité jusqu'à ce que son
+    // interlocuteur parle vraiment. Et le micro reste fermé pendant qu'il parle.
+    if (!firstAudioPlayed) {
+      firstAudioPlayed = true;
+      timings.firstAudioMs = Date.now() - startedAt;
+      stopRingtone();
+    }
+    botTurnOpen = true;
     if (!speakerOn) return;
     const ctx = ensureOut();
     if (!ctx) return;
@@ -484,10 +572,10 @@ export function createVoiceCall(options) {
     if (msg.toolCall) runToolCalls(msg.toolCall);
     if (msg.setupComplete) {
       setupDone = true;
-      stopRingtone();
+      timings.setupMs = Date.now() - startedAt;
       emitState(VOICE_STATES.LISTENING);
       try {
-        ws.send(JSON.stringify(buildOpeningTurn(opts.greeting)));
+        ws.send(JSON.stringify(buildOpeningTurn(session.greeting)));
       } catch {
         /* l'ouverture a échoué : le visiteur peut parler, c'est l'essentiel */
       }
@@ -495,6 +583,8 @@ export function createVoiceCall(options) {
     }
     if (msg.interrupted) {
       stopAudioPlayback();
+      botTurnOpen = false;
+      pendingMic.length = 0; // on ne renvoie pas l'écho accumulé pendant sa phrase
       emitState(VOICE_STATES.LISTENING);
     }
     for (const chunk of msg.audioChunks) playChunk(chunk.data);
@@ -506,7 +596,13 @@ export function createVoiceCall(options) {
       opts.onTranscript({ speaker: 'bot', text: msg.botText, final: true });
       transcript += `Assistant : ${msg.botText}\n`;
     }
-    if (msg.turnComplete && !activeSources.length && state === VOICE_STATES.SPEAKING) emitState(VOICE_STATES.LISTENING);
+    if (msg.turnComplete) {
+      // Tour terminé : on jette l'écho accumulé (on ne le renvoie PAS à Gemini),
+      // et la porte du micro se rouvre dès que le dernier mot est joué.
+      botTurnOpen = false;
+      pendingMic.length = 0;
+      if (!activeSources.length && state === VOICE_STATES.SPEAKING) emitState(VOICE_STATES.LISTENING);
+    }
     if (msg.usage) {
       // Les compteurs de Gemini Live sont cumulatifs : on garde le maximum.
       tokensIn = Math.max(tokensIn, msg.usage.tokensIn || 0);
@@ -555,7 +651,19 @@ export function createVoiceCall(options) {
       fail(VOICE_MESSAGES.unsupported, 'unsupported');
       return Promise.resolve(false);
     }
-    return getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    // 🎙️ On demande DIRECTEMENT la forme attendue par Gemini : un seul canal,
+    // 16 kHz. Les navigateurs qui acceptent n'ont plus besoin d'être
+    // ré-échantillonnés (son plus net, moins de calcul) ; les autres gardent
+    // `downsampleBuffer`, donc rien ne casse.
+    return getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    })
       .then((micStream) => {
         stream = micStream;
         micContext = new AudioCtor();
@@ -569,14 +677,37 @@ export function createVoiceCall(options) {
           return false;
         }
         processor.onaudioprocess = (event) => {
-          if (muted || !ws || ws.readyState !== 1) return;
           const channel = event.inputBuffer.getChannelData(0);
-          if (typeof opts.onLevel === 'function') opts.onLevel(levelOf(channel));
+          const level = levelOf(channel);
+          if (typeof opts.onLevel === 'function') opts.onLevel(level);
+          if (muted || !ws || ws.readyState !== 1) return;
           const rate = event.inputBuffer.sampleRate || micContext.sampleRate || 48000;
-          const resampled = downsampleBuffer(channel, rate, 16000);
-          const pcm = floatTo16BitPCM(resampled);
+          const frameMs = (channel.length / rate) * 1000;
+          const pcm = floatTo16BitPCM(downsampleBuffer(channel, rate, 16000));
+          const frame = bytesToBase64(new Uint8Array(pcm.buffer));
+          if (lineBusy()) {
+            // L'assistant occupe la ligne : on N'ENVOIE PAS le son du micro
+            // (Gemini « entendrait » l'assistant dans le haut-parleur et
+            // couperait sa propre phrase). On garde les derniers morceaux…
+            pendingMic.push(frame);
+            if (pendingMic.length > MIC_KEEP_FRAMES) pendingMic.shift();
+            // …et si le client parle vraiment par-dessus (voix franche et
+            // tenue), l'assistant se tait et le client reprend la parole.
+            bargeMs = level >= MIC_BARGE_LEVEL ? bargeMs + frameMs : 0;
+            if (bargeMs >= MIC_BARGE_MS) {
+              bargeMs = 0;
+              firstAudioPlayed = true;
+              botTurnOpen = false;
+              stopAudioPlayback();
+              emitState(VOICE_STATES.LISTENING);
+              flushPendingMic();
+            }
+            return;
+          }
+          bargeMs = 0;
+          pendingMic.length = 0;
           try {
-            ws.send(JSON.stringify(buildAudioMessage(bytesToBase64(new Uint8Array(pcm.buffer)))));
+            ws.send(JSON.stringify(buildAudioMessage(frame)));
           } catch {
             /* trame perdue : la conversation continue */
           }
@@ -599,9 +730,14 @@ export function createVoiceCall(options) {
       });
   }
 
-  function start() {
-    if (state !== VOICE_STATES.IDLE && state !== VOICE_STATES.ERROR && state !== VOICE_STATES.ENDED) return;
-    if (!opts.wsUrl) {
+  /**
+   * Ouvre la connexion temps réel. Séparée de `start()` exprès : la sonnerie et
+   * la demande de micro ne doivent PAS attendre le jeton du serveur (1 à 3
+   * secondes de réseau) — c'était le trou entre « ça sonne » et « il parle ».
+   */
+  function openSocket() {
+    if (ended || ws) return;
+    if (!session.wsUrl) {
       fail(VOICE_MESSAGES.disconnected, 'no-url');
       return;
     }
@@ -609,58 +745,116 @@ export function createVoiceCall(options) {
       fail(VOICE_MESSAGES.unsupported, 'unsupported');
       return;
     }
+    const wsUrl = session.wsUrl;
+    try {
+      ws = new WebSocketCtor(wsUrl);
+    } catch (e) {
+      fail(VOICE_MESSAGES.disconnected, 'ws');
+      return;
+    }
+    ws.onopen = () => {
+      timings.wsMs = Date.now() - startedAt;
+      try {
+        ws.send(JSON.stringify(session.setup || {}));
+      } catch (e) {
+        fail(VOICE_MESSAGES.disconnected, 'setup');
+      }
+    };
+    ws.onmessage = (event) => handleMessage(event && event.data);
+    ws.onerror = () => abort('ws-error', VOICE_MESSAGES.disconnected, 'ws-error');
+    ws.onclose = (event) => {
+      if (ended) return;
+      // Anormal seulement si la session n'a JAMAIS démarré (Google a refermé
+      // juste après l'ouverture), ou si Google avait déjà signalé une faute.
+      if (!setupDone || lastServerMessage) {
+        // Fermeture AVANT que la session soit prête : on dit ce que Google a
+        // répondu, et s'il n'a rien dit, le code de fermeture.
+        const code = event && event.code ? `code ${event.code}` : 'sans code';
+        const why = [lastServerMessage, (event && event.reason) || '', code].filter(Boolean).join(' — ');
+        abort('closed', `La connexion a été fermée aussitôt (${why}).`, 'ws-close');
+        return;
+      }
+      // La session avait DÉMARRÉ : l'appel s'est interrompu en pleine
+      // conversation (réseau, durée côté Google). On le dit au visiteur —
+      // c'était le « ça coupe » sans aucune explication.
+      if (typeof opts.onNotice === 'function') {
+        opts.onNotice({ code: 'closed', message: VOICE_MESSAGES.disconnected });
+      }
+      abort('closed', '', 'ws-close');
+    };
+    timer = setInterval(() => {
+      seconds += 1;
+      const max = Number(session.maxSeconds) || 0;
+      if (max > 0 && seconds >= max) stop('max-duration');
+    }, 1000);
+  }
+
+  /**
+   * Prépare l'appel TOUT DE SUITE, dans le clic du visiteur : sortie audio
+   * débloquée (sinon le navigateur rend l'assistant muet), sonnerie, et demande
+   * du micro — le tout SANS attendre le serveur.
+   */
+  function start() {
+    if (state !== VOICE_STATES.IDLE && state !== VOICE_STATES.ERROR && state !== VOICE_STATES.ENDED) return micReady;
     ended = false;
     seconds = 0;
     emitState(VOICE_STATES.CONNECTING);
 
-    // TOUT DE SUITE (dans le clic du visiteur) : on débloque le haut-parleur et
-    // on fait sonner l'appel. Sans ça, le navigateur rend l'assistant muet.
+    // Dans le clic : on débloque le haut-parleur et l'appel sonne immédiatement.
     outContext = ensureOut();
     blockedWarned = false;
     startRingtone();
-
-    startMic().then((micOk) => {
-      if (!micOk) return;
-      try {
-        ws = new WebSocketCtor(opts.wsUrl);
-      } catch {
-        fail(VOICE_MESSAGES.disconnected, 'ws');
-        return;
+    // Filet de sécurité : sans premier mot de l'assistant au bout de 6 s, la
+    // sonnerie s'arrête et le micro s'ouvre (le client doit pouvoir parler).
+    gateFailsafe = setTimeout(() => {
+      if (!firstAudioPlayed) {
+        firstAudioPlayed = true;
+        stopRingtone();
       }
-      ws.onopen = () => {
-        try {
-          ws.send(JSON.stringify(opts.setup || {}));
-        } catch {
-          fail(VOICE_MESSAGES.disconnected, 'setup');
-        }
-      };
-      ws.onmessage = (event) => handleMessage(event && event.data);
-      ws.onerror = () => abort('ws-error', VOICE_MESSAGES.disconnected, 'ws-error');
-      ws.onclose = (event) => {
-        if (ended) return;
-        // Anormal seulement si la session n'a JAMAIS démarré (Google a refermé
-        // juste après l'ouverture), ou si Google avait déjà signalé une faute.
-        if (!setupDone || lastServerMessage) {
-          // Fermeture AVANT que la session soit prête : on dit ce que Google a
-          // répondu, et s'il n'a rien dit, le code de fermeture.
-          const code = event && event.code ? `code ${event.code}` : 'sans code';
-          const why = [
-            lastServerMessage,
-            (event && event.reason) || '',
-            code,
-          ]
-            .filter(Boolean)
-            .join(' — ');
-          abort('closed', `La connexion a été fermée aussitôt (${why}).`, 'ws-close');
-          return;
-        }
-        abort('closed', '', 'ws-close');
-      };
-      timer = setInterval(() => {
-        seconds += 1;
-        const max = Number(opts.maxSeconds) || 0;
-        if (max > 0 && seconds >= max) stop('max-duration');
-      }, 1000);
+    }, MIC_GATE_FAILSAFE_MS);
+
+    micReady = startMic().then((micOk) => {
+      timings.micMs = Date.now() - startedAt;
+      return micOk;
+    });
+
+    // Ancien usage (le widget avait déjà le jeton) : on enchaîne tout de suite.
+    if (session.wsUrl) {
+      return micReady.then((micOk) => {
+        if (micOk) openSocket();
+        return micOk;
+      });
+    }
+    // Sinon : on sonne et on attend le jeton ; s'il n'arrive jamais, on prévient
+    // au lieu de laisser sonner dans le vide.
+    sessionTimeout = setTimeout(() => {
+      abort('no-session', VOICE_MESSAGES.disconnected, 'no-url');
+    }, SESSION_WAIT_MS);
+    return micReady;
+  }
+
+  /**
+   * Le jeton du serveur vient d'arriver : on branche la session et on parle.
+   * (Rien n'est perdu si le navigateur a mis du temps : la sonnerie tournait.)
+   */
+  function connect(payload) {
+    const conf = payload || {};
+    if (conf.wsUrl) session.wsUrl = String(conf.wsUrl);
+    if (conf.setup) session.setup = conf.setup;
+    if (conf.greeting !== undefined) session.greeting = String(conf.greeting || '');
+    if (conf.maxSeconds) session.maxSeconds = Number(conf.maxSeconds) || 0;
+    return Promise.resolve(micReady).then(() => {
+      if (ended || state === VOICE_STATES.ERROR) return false;
+      if (!session.wsUrl) {
+        fail(VOICE_MESSAGES.disconnected, 'no-url');
+        return false;
+      }
+      if (sessionTimeout) {
+        clearTimeout(sessionTimeout);
+        sessionTimeout = null;
+      }
+      openSocket();
+      return true;
     });
   }
 
@@ -698,12 +892,27 @@ export function createVoiceCall(options) {
   function stop(reason) {
     if (ended) return;
     ended = true;
+    // La durée de parole réglée par le marchand est atteinte : on l'explique
+    // (sinon l'appel se terminait sans un mot, comme une coupure).
+    if (reason === 'max-duration' && typeof opts.onNotice === 'function') {
+      opts.onNotice({ code: 'max-duration', message: VOICE_MESSAGES.timeout });
+    }
     if (timer) {
       clearInterval(timer);
       timer = null;
     }
     stopAudioPlayback();
     stopRingtone();
+    pendingMic.length = 0;
+    bargeMs = 0;
+    if (gateFailsafe) {
+      clearTimeout(gateFailsafe);
+      gateFailsafe = null;
+    }
+    if (sessionTimeout) {
+      clearTimeout(sessionTimeout);
+      sessionTimeout = null;
+    }
     try {
       if (ws && ws.readyState === 1) ws.close(1000, 'client-stop');
     } catch {
@@ -726,12 +935,16 @@ export function createVoiceCall(options) {
         setupDone,
         serverMessage: lastServerMessage,
         transcript: transcript.trim().slice(0, 4000),
+        // ⏱️ Où est passé le temps : micro, connexion, setup, premier mot.
+        // C'est ce qui permet de diagnostiquer un appel lent SANS deviner.
+        timings: { ...timings, totalMs: Date.now() - startedAt },
       });
     }
   }
 
   return {
     start,
+    connect,
     stop,
     /** 🔇/🔊 : coupe ou remet le son de l'assistant (le micro n'est pas touché). */
     setSpeaker(on) {
@@ -739,6 +952,10 @@ export function createVoiceCall(options) {
       if (!speakerOn) {
         stopRingtone();
         stopAudioPlayback();
+        // Son coupé : l'assistant ne peut plus être entendu, donc on rouvre le
+        // micro (le client peut parler quand même).
+        botTurnOpen = false;
+        pendingMic.length = 0;
       } else {
         ensureOut();
       }

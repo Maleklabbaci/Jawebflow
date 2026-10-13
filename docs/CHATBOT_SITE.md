@@ -72,6 +72,21 @@ la vente quand le visiteur ne l'a pas demandé. **Aucun redéploiement** : on en
 Les **assistants des clients** ont exactement le même réglage, dans leur console : *Comportement* →
 **🎯 Qui mène la conversation ?** (il s'applique au chat du site **et** à Instagram).
 
+## 3 ter. 🧩 Le prompt de l'assistant ne contient AUCUNE donnée (15/10/2026)
+
+Le chatbot suit l'architecture « règles / données », la même que les assistants des
+marchands (voir `docs/ECONOMIES_CACHE_RAG.md`, § 2 ter) :
+
+| | |
+|---|---|
+| **Instructions système** (`buildSiteChatPrompt`) | identité, ton, langues, « qui mène la conversation », règles absolues. **Aucune ligne de la base**, **aucune coordonnée**. Texte identique d'un message à l'autre |
+| **Contexte du message** (`buildSiteChatContext`) | les extraits de la base du site **sélectionnés pour la question** (RAG, plafond dur) + l'e-mail/WhatsApp de l'équipe, dans un bloc `<contexte_client>` placé en tête du dernier message du visiteur |
+| **Base vide ou hors sujet** | le contexte le dit noir sur blanc (« aucun extrait de notre base ne correspond à cette question ») : l'assistant répond honnêtement au lieu d'inventer |
+
+Conséquences pratiques : le coût par message baisse (la base ne repart plus en entier),
+le cache Google est efficace (les consignes ne changent jamais), et un changement de
+base est pris en compte **au message suivant** — sans redéploiement.
+
 ## 4. Mise en route (une fois)
 
 1. Supabase → SQL Editor → `supabase/migration_site_chatbot.sql` → **Run**.

@@ -23,7 +23,7 @@
  *   • inventer : si rien ne correspond, elle répond `found: false` et l'agent
  *     dit honnêtement qu'il ne sait pas.
  */
-import { readSiteChatConfig, SITE_ASSISTANT_ID } from '../../_shared/site-chat.ts';
+import { readSiteChatConfig, siteContactFacts, SITE_ASSISTANT_ID } from '../../_shared/site-chat.ts';
 import {
   supabaseConfigured,
   supabaseGetAssistant,
@@ -32,7 +32,7 @@ import {
 } from '../../_shared/supabase.ts';
 import { evaluateWidgetAccess } from '../../_shared/widget-access.ts';
 import { rateLimited } from '../../_shared/rate-limit.ts';
-import { compactKnowledgeNotes, selectRelevantText } from '../../_shared/prompt.ts';
+import { businessInfoFacts, compactKnowledgeNotes, selectRelevantText } from '../../_shared/prompt.ts';
 import { selectKnowledgeSections, estimateTokens } from '../../_shared/rag.ts';
 
 const cors = {
@@ -48,6 +48,32 @@ export const VOICE_KB_ANSWER_CHARS = 900;
 
 /** Longueur maximale de la question acceptée (une question parlée est courte). */
 export const VOICE_KB_QUESTION_CHARS = 300;
+
+/**
+ * 📇 LES COORDONNÉES OFFICIELLES — la seule façon dont un fait du commerce
+ * arrive dans un appel. L'agent vocal n'a AUCUNE donnée client dans ses
+ * consignes : quand le client demande le numéro, l'adresse ou les horaires, il
+ * appelle cet outil et reçoit ces quelques lignes, filtrées par compte.
+ */
+const VITAL_FACTS_LABELS: Record<string, string> = {
+  telephone: 'Téléphone',
+  adresse: 'Adresse',
+  horaires: 'Horaires',
+  joursFermes: 'Jours fermés',
+  email: 'E-mail',
+  whatsapp: 'WhatsApp',
+};
+
+/** Une question qui appelle les coordonnées / horaires / la livraison. */
+const VITAL_FACTS_RE =
+  /horaire|adresse|telephone|téléphone|numero|numéro|contact|mail|whatsapp|livraison|ou etes|où etes|ou etre|ou se trouve|وقت|عنوان|رقم|هاتف|وين|فين|شحال/i;
+
+export function voiceFactsLine(facts: Record<string, string> | null | undefined): string {
+  const parts = Object.entries(facts || {})
+    .filter(([, value]) => String(value || '').trim())
+    .map(([key, value]) => `${VITAL_FACTS_LABELS[key] || key} : ${String(value).trim()}`);
+  return parts.length ? `INFOS OFFICIELLES DU COMMERCE (à citer exactement) : ${parts.join(' · ')}` : '';
+}
 
 const clientIp = (request: Request) =>
   request.headers.get('CF-Connecting-IP') ||
@@ -90,12 +116,18 @@ export async function onRequestPost(context: any) {
         // une réponse (sinon le bot répondrait les tarifs à une question de moto).
         minScore: 1,
       });
+      // 📇 Les coordonnées de l'équipe voyagent avec la réponse à l'outil, pas
+      // dans les consignes de l'agent.
+      const wantsFacts = VITAL_FACTS_RE.test(question);
+      const facts = wantsFacts ? voiceFactsLine(siteContactFacts(config)) : '';
+      const pieces = [facts, selection.text];
+      const text = pieces.filter(Boolean).join('\n').trim().slice(0, VOICE_KB_ANSWER_CHARS);
       return json({
         ok: true,
-        found: selection.chars > 0,
-        text: selection.text,
-        chars: selection.chars,
-        tokens: estimateTokens(selection.chars),
+        found: text.length > 0,
+        text,
+        chars: text.length,
+        tokens: estimateTokens(text.length),
         scope: 'site',
       });
     }
@@ -158,6 +190,14 @@ export async function onRequestPost(context: any) {
         found += 1;
       }
     }
+
+    // 📇 Même règle côté marchand : les coordonnées du compte courant sortent de
+    // sa propre fiche (`config.businessInfo`), et de nulle part ailleurs.
+    // Coordonnées demandées (numéro, adresse, horaires…) : elles sortent de la
+    // fiche du compte courant. Sinon on n'ajoute rien — une question sans
+    // réponse doit rester sans réponse, l'agent le dit honnêtement.
+    const facts = VITAL_FACTS_RE.test(question) ? voiceFactsLine(businessInfoFacts(config)) : '';
+    if (facts) parts.unshift(facts);
 
     const text = parts.join('\n').trim().slice(0, VOICE_KB_ANSWER_CHARS);
     return json({

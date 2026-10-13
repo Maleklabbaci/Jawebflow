@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBusinessContextText, buildSalesSystemPrompt, classifySmallTalk, compactKnowledgeNotes, localPoliteReply, selectRelevantText } from '../functions/_shared/prompt';
+import { buildBusinessContextText, buildSalesSystemPrompt, businessInfoFacts, classifySmallTalk, compactKnowledgeNotes, localPoliteReply, selectRelevantText } from '../functions/_shared/prompt';
 
 describe('prompt commercial partagé et RAG compact', () => {
   it('utilise les mêmes règles de vente et d’honnêteté sur tous les canaux', () => {
@@ -12,9 +12,18 @@ describe('prompt commercial partagé et RAG compact', () => {
     expect(system).toContain('Boutique Nour');
     expect(system).toContain('Vendre avec tact');
     expect(system).toContain('Ne jamais inventer un prix.');
-    expect(system).toContain('Téléphone : 0550123456');
     expect(system).toContain('le demande explicitement');
     expect(system).toContain('Canal Instagram : réponses courtes.');
+    // 🧩 Les instructions ne portent AUCUNE donnée du commerce : le téléphone
+    // n'est plus recopié ici (elles doivent rester stables, donc cacheables).
+    expect(system).not.toContain('0550123456');
+    expect(system).toContain('infosOfficielles'); // …elles arrivent avec le message
+    // …et la donnée vit dans le tour courant, avec le reste du contexte.
+    const facts = businessInfoFacts({ businessInfo: { phone: '0550123456' } });
+    expect(facts).toEqual({ telephone: '0550123456' });
+    const tour = buildBusinessContextText({ infosOfficielles: facts });
+    expect(tour).toContain('"telephone":"0550123456"');
+    expect(buildSalesSystemPrompt({ businessName: 'X' })).not.toContain('0550123456');
   });
 
   it('écrit dans le prompt QUI mène la conversation (réglage du marchand)', async () => {

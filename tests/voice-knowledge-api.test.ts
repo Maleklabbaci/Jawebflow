@@ -128,6 +128,86 @@ describe('/api/voice/knowledge — l’agent cherche au lieu de tout emporter', 
     expect(String(refused.error)).toMatch(/clé|domaine/i);
   });
 
+  it('étanchéité : deux comptes, la même question — chacun ne reçoit QUE sa fiche', async () => {
+    fx.supabase.seed('assistants', [
+      { id: 'asst2', user_id: 'u2', business_name: 'Autre Boutique', config: { plan: 'basic' } },
+    ]);
+    fx.supabase.seed('knowledge_entries', [
+      { id: 'p1', assistant_id: 'asst1', title: 'Coque Spiderman', content: 'Coque Spiderman : 1 900 DA chez Boutique Nour.', category: 'produits', status: 'active', enabled: true },
+      { id: 'p2', assistant_id: 'asst2', title: 'Coque Spiderman', content: 'Coque Spiderman : 7 400 DA chez Autre Boutique.', category: 'produits', status: 'active', enabled: true },
+    ]);
+
+    const a = (await (await ask({ assistantId: 'asst1', question: 'le prix de la coque spiderman ?' }, '30.0.0.20')).json()) as any;
+    const b = (await (await ask({ assistantId: 'asst2', question: 'le prix de la coque spiderman ?' }, '30.0.0.21')).json()) as any;
+
+    expect(a.found).toBe(true);
+    expect(a.scope).toBe('assistant');
+    expect(a.text).toContain('1 900 DA');
+    expect(a.text).not.toContain('7 400 DA');   // ← aucune fuite de l'autre compte
+    expect(b.found).toBe(true);
+    expect(b.text).toContain('7 400 DA');
+    expect(b.text).not.toContain('1 900 DA');
+  });
+
+  it('les coordonnées du commerce arrivent par l’outil quand on les demande', async () => {
+    fx.supabase.tables['assistants'] = [
+      ...fx.supabase.rows('assistants').filter((row) => row.id !== 'asst1'),
+      {
+        id: 'asst1',
+        user_id: 'u1',
+        business_name: 'Boutique Nour',
+        config: {
+          plan: 'basic',
+          businessInfo: { phone: '0550 11 22 33', address: 'Cité 200 logements, Blida', hours: '9h-18h', closedDays: 'vendredi' },
+        },
+      },
+    ];
+
+    const res = await ask({ assistantId: 'asst1', question: 'votre numéro de téléphone ?' }, '30.0.0.50');
+    const json = (await res.json()) as any;
+    expect(json.found).toBe(true);
+    expect(json.text).toContain('Téléphone : 0550 11 22 33');
+    expect(json.text).toContain('Adresse : Cité 200 logements, Blida');
+    expect(json.text).toContain('Horaires : 9h-18h');
+    expect(json.text).toContain('Jours fermés : vendredi');
+    expect(json.chars).toBeLessThanOrEqual(900);   // le plafond dur tient toujours
+
+    // …mais une question sans rapport ne les reçoit PAS : pas de réponse « à côté ».
+    const autre = await (await ask({ assistantId: 'asst1', question: 'vous réparez les motos ?' }, '30.0.0.51')).json() as any;
+    expect(autre.text).not.toContain('0550 11 22 33');
+    expect(autre.found).toBe(false);
+  });
+
+  it('chaque compte ne reçoit QUE ses propres coordonnées', async () => {
+    const seedInfo = (id: string, phone: string, name: string) => {
+      fx.supabase.tables['assistants'] = [
+        ...fx.supabase.rows('assistants').filter((row) => row.id !== id),
+        { id, user_id: `u-${id}`, business_name: name, config: { plan: 'basic', businessInfo: { phone } } },
+      ];
+    };
+    seedInfo('asst1', '0550 11 22 33', 'Boutique Nour');
+    seedInfo('asst2', '0770 99 88 77', 'Autre Boutique');
+
+    const a = (await (await ask({ assistantId: 'asst1', question: 'votre numéro ?' }, '30.0.0.52')).json()) as any;
+    const b = (await (await ask({ assistantId: 'asst2', question: 'votre numéro ?' }, '30.0.0.53')).json()) as any;
+    expect(a.text).toContain('0550 11 22 33');
+    expect(a.text).not.toContain('0770 99 88 77');
+    expect(b.text).toContain('0770 99 88 77');
+    expect(b.text).not.toContain('0550 11 22 33');
+  });
+
+  it('site vitrine : le contact de l’équipe est donné quand on le demande, et seulement alors', async () => {
+    seedSite("JAWEBFLOW — l'essentiel\n• Installation : une ligne de code à coller avant </body>.");
+
+    const demande = (await (await ask({ site: true, question: 'votre e-mail de contact ?' }, '30.0.0.54')).json()) as any;
+    expect(demande.found).toBe(true);
+    expect(demande.text).toContain('contact@jawebflow.dz');
+
+    const autre = (await (await ask({ site: true, question: 'vous réparez les motos ?' }, '30.0.0.55')).json()) as any;
+    expect(autre.text).not.toContain('contact@jawebflow.dz');
+    expect(autre.found).toBe(false);
+  });
+
   it('assistant inconnu : refus clair (jamais une base vide silencieuse)', async () => {
     const json = (await (await ask({ assistantId: 'inconnu', question: 'le prix ?' }, '30.0.0.7')).json()) as any;
     expect(json.ok).toBe(false);

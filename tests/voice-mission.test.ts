@@ -137,6 +137,11 @@ describe('le site vitrine : son CTA et ses langues', () => {
     expect(prompt).toContain('Créer son assistant gratuitement');
     expect(prompt).toContain(LEAD_TOOL_NAME);
     expect(prompt).toContain(LANGUAGE_LABELS.darija);
+    // 🧩 Aucune donnée du site dans les consignes de l'appel : ni la base, ni
+    // les coordonnées. Les unes et les autres passent par l'outil de recherche.
+    expect(prompt).toContain('chercher_information');
+    expect(prompt).not.toContain('contact@jawebflow.dz');
+    expect(prompt).not.toContain('BASE DE CONNAISSANCE DE');
   });
 
   it('les réglages du site gardent les langues et la mission (assainis)', () => {

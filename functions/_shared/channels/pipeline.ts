@@ -33,7 +33,7 @@ import {
   limitBlockReached,
   LIMIT_BLOCK_FREE,
 } from '../limits.ts';
-import { buildSalesSystemPrompt, buildBusinessContextText, compactKnowledgeNotes } from '../prompt.ts';
+import { buildSalesSystemPrompt, buildBusinessContextText, businessInfoFacts, compactKnowledgeNotes } from '../prompt.ts';
 import { supabaseListKnowledgeEntries } from '../supabase.ts';
 import { splitForLimit, type ChannelAdapter, type InboundMessage, type SendResult } from './types.ts';
 import { channelCostsMoney } from './registry.ts';
@@ -326,6 +326,9 @@ export async function handleInbound(
     if (relevant) businessContext.knowledge = relevant.slice(0, 7_000);
   }
   if ((assistant as any).faqText) businessContext.faq = String((assistant as any).faqText).slice(0, 900);
+  // 📇 Coordonnées du compte courant — données du tour, pas des instructions.
+  const infosOfficielles = businessInfoFacts(assistant);
+  if (infosOfficielles) businessContext.infosOfficielles = infosOfficielles;
 
   // ── Mémoire de la conversation ─────────────────────────────────────────
   const history = await recentHistory(env, assistantId, adapter.id, message.contactId);

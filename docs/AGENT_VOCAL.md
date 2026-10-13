@@ -66,7 +66,7 @@ connaissance du compte.**
 
 | | |
 |---|---|
-| **Ce qu'il reçoit** | Ses consignes de conversation (règles téléphone + langues + mission). **La base de connaissance n'est plus recopiée dans le prompt** : il la CHERCHE à la question, avec l'outil `chercher_information` |
+| **Ce qu'il reçoit** | Ses consignes de conversation (règles téléphone + langues + mission). **La base de connaissance n'est plus recopiée dans le prompt** : il la CHERCHE à la question, avec l'outil `chercher_information`. Et **aucun fait du commerce dans les consignes** — ni téléphone, ni adresse, ni horaires : l'outil les renvoie quand le client les demande |
 | **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucune mémoire d'un autre commerce. **Deux outils, et pas plus** : celui qui CHERCHE dans la base du compte, et celui qui NOTE la demande du client |
 | **Si l'info n'est pas dans les fiches** | La recherche ne renvoie rien ⇒ il dit qu'il ne sait pas (« je ne sais pas » / « ما نعرفش » / « ma3raftech ») et propose de prendre le numéro. Il ne répond jamais « à côté » |
 | **Si la base est vide** | Chaque recherche revient vide : il ne sait **rien** et le dit honnêtement. Il n'invente jamais un prix, un stock, un délai ou une adresse |
@@ -86,6 +86,12 @@ Maintenant :
    (~225 jetons) — jamais le catalogue ;
 3. s'il ne trouve rien, il le dit et prend le numéro : **jamais d'invention**, et
    aucune réponse « à côté » (une question de moto ne reçoit pas les tarifs).
+
+Les **coordonnées du commerce** (téléphone, adresse, horaires, jours fermés) suivent
+la même règle : elles sortent de la fiche du compte (`businessInfo`, ou l'e-mail/WhatsApp
+de l'équipe pour le site vitrine) et sont renvoyées **par l'outil**, uniquement quand la
+question les demande (« c'est quoi votre numéro ? »). Une question sans rapport ne les
+reçoit pas — pas de réponse « à côté ».
 
 Un tour de politesse (« bonjour », « ok », « merci ») ne déclenche **aucune
 recherche** : le prompt reste seul, l'appel ne coûte presque rien.
@@ -142,6 +148,57 @@ Fichiers : `functions/_shared/voice/mission.ts` (mission, langues, déclaration 
 l'outil), `functions/api/voice/lead.ts` (l'enregistrement), `public/cdn/voice.js`
 (le dialogue outil ↔ modèle), `src/components/WidgetCustomizer.tsx` (les
 réglages).
+
+---
+
+## 2 quater. ⏱️ Il décroche vite, et il ne se coupe plus (15/10/2026)
+
+Deux vrais bugs d'appel, et ce qui les corrige.
+
+**« Ça sonne 4-5 secondes, puis il ne parle qu'à la 12ᵉ seconde. »**
+
+Avant, le navigateur faisait tout **l'un après l'autre** : demander le jeton au serveur (1 à 3 s)
+→ charger le moteur → demander le micro → ouvrir la session Google → dire bonjour. Chaque étape
+attendait la précédente, et la sonnerie ne démarrait qu'à la troisième.
+
+Maintenant **tout part en même temps, dès le clic** :
+
+1. la sortie audio est débloquée dans le geste du visiteur (sinon le navigateur rend l'assistant muet) ;
+2. **la sonnerie démarre immédiatement** — et elle tourne jusqu'au premier mot de l'assistant ;
+3. le micro est demandé au navigateur **pendant** que le jeton part au serveur ;
+4. le jeton, l'assistant, le forfait, le compteur du mois et la facture sont lus **en parallèle**
+   (quatre lectures simultanées au lieu de quatre à la suite) ;
+5. dès que le jeton arrive : connexion à Google → `setupComplete` → l'assistant parle.
+
+Si l'assistant n'a pas dit un mot au bout de **6 secondes** (modèle lent, outil en cours), la
+sonnerie s'arrête et le micro s'ouvre quand même : le client ne reste jamais sans pouvoir parler.
+
+**« Son micro se coupe / elle parle et ça coupe. »**
+
+Le micro du client entendait **l'assistant dans le haut-parleur**. Gemini croyait alors que le
+client parlait : il attendait (d'où le silence avant le premier mot) ou coupait sa propre phrase.
+
+Le moteur applique maintenant la règle d'un vrai téléphone :
+
+- **pendant que l'assistant parle, aucun son du micro ne part vers Gemini** (l'écho accumulé est
+  jeté, jamais renvoyé) ;
+- **si le client parle vraiment par-dessus** (voix franche tenue ~0,4 s), la porte s'ouvre :
+  l'assistant se tait et les derniers morceaux captés (≈ 0,7 s) sont envoyés — le début de sa
+  phrase n'est pas perdu ;
+- un bruit court (toux, porte, écho résiduel) **ne coupe plus** l'assistant ;
+- côté Google, la détection de parole est moins nerveuse
+  (`startOfSpeechSensitivity: START_SENSITIVITY_LOW`) et le tour se termine plus vite
+  (`silenceDurationMs: 600`) : la réponse arrive plus tôt après la phrase du client.
+
+**📝 En plus : la conversation s'écrit en direct.** Les deux transcriptions sont activées
+(`inputAudioTranscription` / `outputAudioTranscription`) : le panneau d'appel affiche
+« Vous : … » / « *(le commerce)* : … », et le marchand garde une trace écrite de l'appel. Le texte
+transcrit se paie au tarif **texte** (≈ 2 % d'un appel vocal), pas au tarif audio.
+
+⚠️ Ces réglages voyagent dans le **jeton** (autoritaire côté Google). Si Google refuse un champ
+optionnel (erreur 400), le serveur redemande aussitôt un jeton **sans les finitions** : l'appel
+démarre quand même, simplement sans elles. Un appel qui marche vaut mieux qu'un appel parfait qui
+ne démarre pas.
 
 ---
 
@@ -216,9 +273,11 @@ activé »* — et rien n'est facturé.
 | `functions/_shared/voice/live.ts` | jeton éphémère, consignes « au téléphone », assainissement des réglages |
 | `functions/api/voice/session.ts` | ouvre l'appel (forfait, quota, anti-abus) |
 | `functions/api/voice/report.ts` | relevé de fin d'appel → `conversation_contexts` (canal `voice`) |
-| `public/cdn/voice.js` | moteur navigateur : micro 16 kHz, lecture 24 kHz, interruptions, transcription |
+| `public/cdn/voice.js` | moteur navigateur : sonnerie immédiate, micro 16 kHz (demi-duplexe : il ne s'écoute pas), lecture 24 kHz, interruptions, transcription |
 | `public/widget.js` | bouton micro + écran d'appel (Shadow DOM, `data-jw-call`) |
 | `src/components/WidgetCustomizer.tsx` | onglet « 5. Voix » (marchand) |
 
-**Tests :** `tests/voice-engine.test.ts` (conversions audio, protocole, fin d'appel propre) et
-`tests/voice-session.test.ts` (garde-fous, jeton, non-fuite des consignes, bornes du relevé).
+**Tests :** `tests/voice-engine.test.ts` (conversions audio, protocole, porte du micro : ni écho ni
+coupure, reprise de parole par-dessus l'assistant, fin d'appel propre), `tests/voice-model.test.ts`
+(réglages fins du jeton, repli s'ils sont refusés) et `tests/voice-session.test.ts` (garde-fous,
+jeton, non-fuite des consignes, bornes du relevé).

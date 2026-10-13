@@ -107,12 +107,21 @@ describe('sélection RAG', () => {
     expect(selection.dropped.length).toBeGreaterThan(0);
   });
 
-  it('réduit réellement le prompt du site quand la base est grosse', () => {
+  it('réduit réellement ce qui part à chaque message quand la base est grosse', () => {
     const big = `${DEFAULT_SITE_KNOWLEDGE}\n\n${DEFAULT_SITE_KNOWLEDGE.replace('JAWEBFLOW — l’essentiel', 'CATALOGUE DÉTAILLÉ')}\n\n${'DIVERS\n' + 'Information de remplissage. '.repeat(60)}`;
     const selection = selectKnowledgeSections(big, 'combien ça coûte ?', { budgetChars: 2_600 });
     const grandChat = { ...DEFAULT_SITE_CHAT, ai: { ...DEFAULT_SITE_CHAT.ai, knowledge: big } };
-    const before = buildSiteChatPrompt(grandChat).length;
-    const trimmed = buildSiteChatPrompt(grandChat, selection.text).length;
+    // 🧩 Les instructions système ne portent QUE les règles : elles ne changent
+    // plus avec la base (c'est le contexte du tour qui la transporte).
+    const regles = buildSiteChatPrompt(grandChat);
+    expect(regles).not.toContain('BASIC');           // aucune donnée du commerce dans les règles
+    // Un prompt de RÈGLES seulement : ~1 000 jetons, et surtout il ne bouge
+    // plus d'un message à l'autre (donc cacheable tel quel).
+    expect(regles.length).toBeLessThan(4_500);
+
+    // Ce qui part réellement chez Google à chaque message = règles + contexte du tour.
+    const before = regles.length + big.length;                     // avant : la base entière
+    const trimmed = regles.length + selection.text.length;          // maintenant : la sélection
     expect(selection.chars).toBeLessThanOrEqual(2_600);
     expect(before).toBeGreaterThan(8_000);           // la base entière envoyée à chaque message…
     expect(trimmed).toBeLessThan(before);            // …contre la sélection utile seulement

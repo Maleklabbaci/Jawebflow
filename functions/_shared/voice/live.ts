@@ -146,15 +146,42 @@ export function buildClientSetup(model: string, voice: string) {
 }
 
 /**
+ * ⏱️ Les réglages fins de la session temps réel (15/10/2026).
+ *
+ * Le client (`public/cdn/voice.js`) ferme déjà son micro pendant que l'assistant
+ * parle, donc Google ne peut plus « entendre » l'assistant dans le haut-parleur.
+ * Ces deux réglages finissent le travail :
+ *
+ *   • `startOfSpeechSensitivity: LOW` = un bruit (ventilateur, rue, écho résiduel)
+ *     ne compte plus comme une prise de parole. Avant, c'était la coupure en
+ *     plein milieu d'une phrase : Google croyait que le client parlait, et
+ *     coupait l'assistant.
+ *   • `silenceDurationMs: 600` = on répond plus vite après la fin de la phrase du
+ *     client (au lieu d'attendre ~1 seconde de silence).
+ */
+export const LIVE_REALTIME_INPUT_CONFIG = {
+  automaticActivityDetection: {
+    startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+    silenceDurationMs: 600,
+  },
+} as const;
+
+/**
  * Configuration imposée par le jeton (autoritaire côté Google) : le marchand
  * garde la main sur le comportement, le visiteur ne peut rien changer.
+ *
+ * `finitions: false` = le strict minimum (modèle, voix, consignes, outils). On
+ * s'en sert en secours si Google refuse les réglages optionnels ci-dessous :
+ * un appel qui marche vaut mieux qu'un appel parfait qui ne démarre pas.
  */
 export function buildTokenSetup(
   model: string,
   voice: string,
   systemInstruction: string,
   tools: unknown[] = [],
+  options: { finitions?: boolean } = {},
 ) {
+  const finitions = options.finitions !== false;
   return {
     model: `models/${model}`,
     generationConfig: {
@@ -166,6 +193,17 @@ export function buildTokenSetup(
     // le jeton est autoritaire, donc le navigateur ne peut ni retirer l'outil
     // ni en ajouter un autre.
     ...(Array.isArray(tools) && tools.length ? { tools } : {}),
+    ...(finitions
+      ? {
+          realtimeInputConfig: LIVE_REALTIME_INPUT_CONFIG,
+          // 📝 Les deux transcriptions : le panneau d'appel affiche ce que le
+          // client dit ET ce que l'assistant répond (« Vous : … » / « … : … »),
+          // et le marchand garde une trace écrite de l'appel dans ses fiches.
+          // Coût : le texte transcrit se paie au tarif TEXTE, ~2 % de l'appel.
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        }
+      : {}),
   };
 }
 
@@ -234,50 +272,66 @@ export async function createLiveToken(
     let dernier: LiveSessionResult | null = null;
     for (const version of [TOKEN_API_VERSION, TOKEN_API_VERSION_FALLBACK]) {
       const url = `https://generativelanguage.googleapis.com/${version}/auth_tokens`;
-      let res: Response;
-      try {
-        res = await doFetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify({
-            uses: 1, // un seul appel par jeton : impossible de le revendre
-            expireTime,
-            newSessionExpireTime: expireTime,
-            bidiGenerateContentSetup: buildTokenSetup(modelName, voice, opts.systemInstruction, opts.tools),
-          }),
-        });
-      } catch (e) {
-        dernier = {
-          ok: false,
-          error: "L'appel vocal est momentanément indisponible. Écrivez-nous, nous répondons tout de suite.",
-          detail: `réseau (jeton ${version}) : ${(e as Error)?.message || e}`,
-        };
-        continue;
-      }
+      // 1ᵉʳ essai : avec les RÉGLAGES FINS (micro moins sensible aux bruits +
+      // transcriptions). Si Google refuse un champ optionnel (400), on refait la
+      // demande SANS eux, sur la même version : un appel qui marche vaut mieux
+      // qu'un appel parfait qui ne démarre pas. Jamais d'échec pour ça.
+      for (const finitions of [true, false]) {
+        let res: Response;
+        try {
+          res = await doFetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({
+              uses: 1, // un seul appel par jeton : impossible de le revendre
+              expireTime,
+              newSessionExpireTime: expireTime,
+              bidiGenerateContentSetup: buildTokenSetup(
+                modelName,
+                voice,
+                opts.systemInstruction,
+                opts.tools,
+                { finitions },
+              ),
+            }),
+          });
+        } catch (e) {
+          dernier = {
+            ok: false,
+            error: "L'appel vocal est momentanément indisponible. Écrivez-nous, nous répondons tout de suite.",
+            detail: `réseau (jeton ${version}) : ${(e as Error)?.message || e}`,
+          };
+          break; // réseau : inutile de réessayer sans les finitions
+        }
 
-      const data: any = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const apiMsg = String(data?.error?.message || data?.error || res.status);
-        dernier = {
-          ok: false,
-          error: apiMsg.includes('API key')
-            ? "L'appel vocal n'est pas encore activé (clé Gemini refusée). Notre équipe est prévenue."
-            : "L'appel vocal n'est pas disponible pour le moment. Écrivez-nous, nous répondons tout de suite.",
-          detail: `jeton ${version} → ${res.status} : ${apiMsg.slice(0, 300)}`,
-        };
-        continue;
-      }
+        const data: any = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const apiMsg = String(data?.error?.message || data?.error || res.status);
+          dernier = {
+            ok: false,
+            error: apiMsg.includes('API key')
+              ? "L'appel vocal n'est pas encore activé (clé Gemini refusée). Notre équipe est prévenue."
+              : "L'appel vocal n'est pas disponible pour le moment. Écrivez-nous, nous répondons tout de suite.",
+            detail: `jeton ${version}${finitions ? '' : ' (réglages fins retirés)'} → ${res.status} : ${apiMsg.slice(0, 300)}`,
+          };
+          // Champ optionnel refusé : on retente la même version sans les
+          // finitions au lieu d'abandonner l'appel.
+          if (finitions && res.status === 400) continue;
+          break;
+        }
 
-      const token = tokenFromAuthTokenName(data?.name || data?.token);
-      if (!token) {
-        dernier = {
-          ok: false,
-          error: "L'appel vocal n'a pas pu démarrer. Réessayez, ou écrivez-nous dans le chat.",
-          detail: `jeton ${version} → réponse inattendue : ${JSON.stringify(data).slice(0, 200)}`,
-        };
-        continue;
+        const token = tokenFromAuthTokenName(data?.name || data?.token);
+        if (!token) {
+          dernier = {
+            ok: false,
+            error: "L'appel vocal n'a pas pu démarrer. Réessayez, ou écrivez-nous dans le chat.",
+            detail: `jeton ${version} → réponse inattendue : ${JSON.stringify(data).slice(0, 200)}`,
+          };
+          break;
+        }
+        if (!finitions) console.warn('[voice/live] jeton créé SANS les réglages fins (transcriptions, sensibilité micro).');
+        return { ok: true, token, version };
       }
-      return { ok: true, token, version };
     }
     return { ok: false, result: dernier || { ok: false, error: "L'appel vocal n'est pas disponible pour le moment." } };
   };

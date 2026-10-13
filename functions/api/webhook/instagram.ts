@@ -36,7 +36,7 @@ import {
   supabaseUpsertProspect,
   supabaseRequest,
 } from "../../_shared/supabase.ts";
-import { buildSalesSystemPrompt, buildBusinessContextText, classifySmallTalk, localGreeting, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
+import { buildSalesSystemPrompt, buildBusinessContextText, businessInfoFacts, classifySmallTalk, localGreeting, localPoliteReply, compactKnowledgeNotes, selectKnowledgeDocuments, selectRelevantText } from "../../_shared/prompt.ts";
 import { extractLeadFacts } from "../../_shared/lead-facts.ts";
 import { detectSalesIntent, buildLeadFollowUp, isAffirmative, isExplicitOrderConfirmation, createPendingOrderRequest, detectConfirmedDealKind, detectConfirmationQuestionKind, buildDealCreatedContext, extractClientName } from "../../_shared/sales-intent.ts";
 import { buildRelances } from "../../_shared/relances.ts";
@@ -853,6 +853,10 @@ async function handleDirectMessage(env: Env, event: any, waitUntil?: (promise: P
       }));
     }
   }
+  // 📇 Coordonnées officielles du compte dont vient le message : données du
+  // tour courant (jamais des instructions, jamais celles d'un autre compte).
+  const infosOfficielles = businessInfoFacts(config);
+  if (infosOfficielles) businessContext.infosOfficielles = infosOfficielles;
   const relevantFaq = selectRelevantText(config?.faqText, groupedText, 4, 900);
   if (relevantFaq) businessContext.faq = relevantFaq;
   const relevantPricing = selectRelevantText(config?.pricingServicesText, groupedText, 5, 1_200);

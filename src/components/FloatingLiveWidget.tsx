@@ -255,7 +255,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   // les navigateurs (surtout iOS) gardent la sortie « suspendue » : le modèle
   // parle, le visiteur n'entend rien — c'était le « j'écoute rien ».
   const engineRef = useRef<any>(null);
-  const engineUrl = '/cdn/voice.js?v=12';
+  const engineUrl = '/cdn/voice.js?v=13';
 
   useEffect(() => {
     let alive = true;
@@ -280,28 +280,43 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     }
   };
 
-  const openSession = async (fallback: boolean) => {
+  // ⏱️ Le jeton part au serveur TOUT DE SUITE, en parallèle du moteur d'appel,
+  // de la sonnerie et du micro : c'est ce qui supprime le silence de plusieurs
+  // secondes entre « ça sonne » et la première phrase de l'assistant.
+  const openSession = (fallback: boolean) => {
     const sessionId = `site_${Date.now().toString(36)}`;
-    try {
-      const res = await fetch('/api/site-voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, fallback }),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.ok || !data.wsUrl) {
-        throw new Error(data?.error || data?.message || "L'appel n'est pas disponible pour le moment.");
-      }
-      // On réutilise le moteur chargé d'avance (déjà « débloqué » côté son) ;
-      // au pire on l'importe maintenant. Le `?v=` évite qu'un navigateur serve
-      // l'ancien moteur pendant des heures après une correction (incrémenter à
-      // chaque changement de `public/cdn/voice.js`).
-      const mod: any = engineRef.current || (await import(/* @vite-ignore */ engineUrl));
-      const session = mod.createVoiceCall({
-        wsUrl: data.wsUrl,
-        setup: data.setup,
-        greeting: data.greeting,
-        maxSeconds: data.maxSeconds,
+    const sessionPromise = fetch('/api/site-voice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, fallback }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.ok || !data.wsUrl) {
+          return {
+            ok: false as const,
+            blocked: Boolean(data?.blocked),
+            error: data?.error || data?.message || "L'appel n'est pas disponible pour le moment.",
+          };
+        }
+        return { ok: true as const, data };
+      })
+      .catch(() => ({
+        ok: false as const,
+        blocked: false,
+        error: "L'appel n'est pas disponible pour le moment.",
+      }));
+
+    // On réutilise le moteur chargé d'avance (déjà « débloqué » côté son) ; au
+    // pire on l'importe maintenant. Le `?v=` évite qu'un navigateur serve
+    // l'ancien moteur pendant des heures après une correction (incrémenter à
+    // chaque changement de `public/cdn/voice.js`).
+    return Promise.resolve(engineRef.current || import(/* @vite-ignore */ engineUrl))
+      .then((mod: any) => {
+        const session = mod.createVoiceCall({
+        // ⚠️ Pas de `wsUrl` ici : le jeton n'est pas encore arrivé. La session
+        // démarre sans lui (sonnerie + micro tout de suite) et reçoit
+        // `connect({ wsUrl… })` dès que le serveur répond.
         onState: (state: string) => {
           // « listening » = Google a accepté la session (setupComplete reçu).
           if (state === 'listening' || state === 'speaking') attemptRef.current.setupDone = true;
@@ -354,8 +369,10 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
         },
         onEnd: (info: any) => {
           callRef.current = null;
-          // La session n'a JAMAIS démarré : on retente une fois sur le repli.
-          if (!attemptRef.current.setupDone && !attemptRef.current.fallback) {
+          // La session n'a JAMAIS démarré : on retente une fois sur le repli —
+          // SAUF si le serveur a refusé (forfait, quota, appel coupé) : là,
+          // insister ne sert à rien et le visiteur doit lire la raison.
+          if (!attemptRef.current.setupDone && !attemptRef.current.fallback && info?.reason !== 'no-session') {
             attemptRef.current.fallback = true;
             setCall((c) => ({ ...c, active: true, state: 'connecting', error: '', seconds: 0, lines: [] }));
             openSession(true);
@@ -369,13 +386,36 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
             return { ...c, active: Boolean(reason), state: reason ? 'error' : '', error: reason };
           });
           reportCall(info, sessionId);
-        },
+        },        });
+        callRef.current = session;
+        // 🔔 La sonnerie démarre MAINTENANT (et le micro est demandé tout de
+        // suite) : le visiteur n'attend pas le serveur en silence.
+        session.start();
+        return sessionPromise.then((result) => {
+          if (!result.ok) {
+            // Refus du serveur : insister ne sert à rien (la seconde chance est
+            // réservée aux sessions mortes avant le premier mot).
+            if (result.blocked) attemptRef.current.fallback = true;
+            setCall((c) => ({ ...c, state: 'error', error: result.error }));
+            session.stop('no-session');
+            return;
+          }
+          session.connect({
+            wsUrl: result.data.wsUrl,
+            setup: result.data.setup,
+            greeting: result.data.greeting,
+            maxSeconds: result.data.maxSeconds,
+          });
+        });
+      })
+      .catch((e: any) => {
+        setCall((c) => ({
+          ...c,
+          active: false,
+          state: 'error',
+          error: e?.message || "L'appel n'a pas pu démarrer.",
+        }));
       });
-      callRef.current = session;
-      session.start();
-    } catch (e: any) {
-      setCall((c) => ({ ...c, active: false, state: 'error', error: e?.message || "L'appel n'a pas pu démarrer." }));
-    }
   };
 
   const startCall = async () => {
@@ -387,7 +427,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     setIsOpen(true);
     attemptRef.current = { fallback: false, setupDone: false, firstError: '' };
     setCall({ active: true, state: 'connecting', error: '', seconds: 0, lines: [], muted: false, speaker: true });
-    await openSession(false);
+    openSession(false);
   };
 
   const hangUp = () => {
