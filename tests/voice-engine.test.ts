@@ -23,6 +23,7 @@ import {
   levelOf,
   parseLiveMessage,
   pcm16ToFloat32,
+  unlockVoiceAudio,
 } from '../public/cdn/voice.js';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -385,5 +386,125 @@ describe('l’appel, de bout en bout (faux navigateur)', () => {
     await flush();
     expect(call.getState()).toBe(VOICE_STATES.ERROR);
     expect(errors[0].message).toBe(VOICE_MESSAGES.disconnected);
+  });
+});
+
+describe('les messages binaires de Gemini Live', () => {
+  it('comprend un message envoyé en Blob (la vraie forme en production)', async () => {
+    const { call } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    await flush();
+
+    // ⚠️ Google n'envoie PAS du texte : il envoie du binaire. Ne pas décoder
+    // ces trames, c'était le bot muet — aucun `setupComplete`, aucun audio joué.
+    ws.onmessage?.({ data: new Blob([JSON.stringify({ setupComplete: {} })]) } as any);
+    await flush();
+    await flush();
+    expect(call.getState()).toBe(VOICE_STATES.LISTENING);
+
+    ws.onmessage?.({
+      data: new Blob([
+        JSON.stringify({
+          serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } },
+        }),
+      ]),
+    } as any);
+    await flush();
+    await flush();
+    expect(FakeAudioContext.played.length).toBe(1);
+    call.stop('client');
+  });
+
+  it('comprend aussi un ArrayBuffer (autres navigateurs)', async () => {
+    const { call, transcripts } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    const charge = new TextEncoder().encode(
+      JSON.stringify({ serverContent: { outputTranscription: { text: 'Salam, ça coûte dix dinars.' }, turnComplete: true } }),
+    );
+    ws.onmessage?.({ data: charge.buffer } as any);
+    await flush();
+    await flush();
+
+    expect(transcripts[0]).toMatchObject({ speaker: 'bot', text: 'Salam, ça coûte dix dinars.' });
+    call.stop('client');
+  });
+});
+
+describe('le son de l’appel (haut-parleur)', () => {
+  it('le module expose de quoi débloquer le son dans un clic', () => {
+    // Indispensable : sans geste de l'utilisateur, les navigateurs créent une
+    // sortie audio « suspendue » et l'assistant reste muet.
+    expect(typeof unlockVoiceAudio).toBe('function');
+  });
+
+  it('le son est actif par défaut, et le bouton le coupe puis le remet', async () => {
+    const { call } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    expect(call.isSpeakerOn()).toBe(true);
+
+    const morceau = { serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } } };
+    ws.emit(morceau);
+    expect(FakeAudioContext.played.length).toBe(1);
+
+    // Son coupé : plus rien n'est joué, mais l'appel continue.
+    expect(call.setSpeaker(false)).toBe(false);
+    expect(call.isSpeakerOn()).toBe(false);
+    ws.emit(morceau);
+    expect(FakeAudioContext.played.length).toBe(1);
+
+    // Remis : le son repart.
+    expect(call.setSpeaker(true)).toBe(true);
+    ws.emit(morceau);
+    expect(FakeAudioContext.played.length).toBe(2);
+    call.stop('client');
+  });
+
+  it('navigateur qui bloque le son : on le DIT au lieu de laisser muet', async () => {
+    class BlockedAudioContext extends FakeAudioContext {
+      state = 'suspended';
+      resumed = 0;
+      resume() {
+        this.resumed += 1;
+        return Promise.resolve();
+      }
+    }
+    const notices: Array<{ code: string; message: string }> = [];
+    const { call } = makeCall({
+      deps: { WebSocket: FakeWebSocket, getUserMedia: fakeMic, AudioContext: BlockedAudioContext },
+      onNotice: (n: any) => notices.push(n),
+    });
+
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    // Deux morceaux : l'avis n'est donné qu'UNE fois, puis on retente en silence.
+    const morceau = { serverContent: { modelTurn: { parts: [{ inlineData: { data: bytesToBase64(new Uint8Array(960)) } }] } } };
+    ws.emit(morceau);
+    ws.emit(morceau);
+    await flush();
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0].code).toBe('audio-blocked');
+    expect(notices[0].message).toMatch(/son est bloqué|🔊/);
+    call.stop('client');
   });
 });

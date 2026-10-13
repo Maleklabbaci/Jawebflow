@@ -23,18 +23,29 @@
 /** Modèle temps réel par défaut (surchargeable par `GEMINI_LIVE_MODEL`). */
 export const DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
 
-/** Version d'API des jetons éphémères (surchargeable par `GEMINI_LIVE_API_VERSION`). */
+/**
+ * Version d'API de la CONNEXION temps réel (surchargeable par
+ * `GEMINI_LIVE_API_VERSION`). C'est celle de la porte des jetons :
+ * `…v1beta.GenerativeService.BidiGenerateContentConstrained`.
+ */
 export const DEFAULT_LIVE_API_VERSION = 'v1beta';
 
 /**
- * Repli automatique : si Google refuse le modèle par défaut (nom pas encore
- * ouvert sur ce projet, version d'API différente…), on retente UNE fois avec le
- * couple historique. Un appel qui fonctionne vaut mieux qu'un appel parfait qui
- * échoue — et ça évite de laisser le visiteur devant un message d'erreur.
- * Le repli ne s'applique QUE si le marchand n'a rien forcé par variable
- * d'environnement.
+ * Version d'API du SERVICE DES JETONS (`AuthTokenService.CreateToken`).
+ * ⚠️ Ce service n'est pas ouvert sur v1beta : demander un jeton là-bas répond
+ * 404 — et c'est ce qui nous a fait croire que la clé était en cause. On essaie
+ * donc v1alpha d'abord, puis v1beta (certains projets sont l'inverse).
  */
-export const LEGACY_LIVE_FALLBACK = { model: 'gemini-2.0-flash-live-001', apiVersion: 'v1alpha' } as const;
+export const TOKEN_API_VERSION = 'v1alpha';
+export const TOKEN_API_VERSION_FALLBACK = 'v1beta';
+
+/**
+ * Deuxième chance : la MÊME porte (`Constrained`), seulement l'autre version
+ * d'API. On ne retente JAMAIS la porte sans « Constrained » : un jeton
+ * éphémère n'y a pas d'identité, Google répond « Method doesn't allow
+ * unregistered callers … use API Key » et referme aussitôt.
+ */
+export const FALLBACK_LIVE_API_VERSION = 'v1alpha';
 
 /** Voix proposées au marchand (Google en fournit d'autres : cette liste est un garde-fou). */
 export const LIVE_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr'] as const;
@@ -150,7 +161,12 @@ export interface LiveSessionResult {
   token?: string;
   wsUrl?: string;
   model?: string;
+  /** Version d'API de la connexion (celle de `wsUrl`). */
   apiVersion?: string;
+  /** Version d'API du service des jetons (v1alpha en général). */
+  tokenApiVersion?: string;
+  /** Porte d'entrée réellement utilisée. */
+  method?: string;
   expiresAt?: string;
   /** Message français prêt à afficher, en cas d'échec. */
   error?: string;
@@ -194,86 +210,86 @@ export async function createLiveToken(
 
   const doFetch = opts.fetchImpl || fetch;
 
-  /** Une tentative complète (modèle + version d'API + porte d'entrée). */
-  const attempt = async (
-    modelName: string,
-    version: string,
-    constrained: boolean,
-  ): Promise<LiveSessionResult> => {
-    const url = `https://generativelanguage.googleapis.com/${version}/auth_tokens`;
-    let res: Response;
-    try {
-      res = await doFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({
-          uses: 1, // un seul appel par jeton : impossible de le revendre
-          expireTime,
-          newSessionExpireTime: expireTime,
-          bidiGenerateContentSetup: buildTokenSetup(modelName, voice, opts.systemInstruction),
-        }),
-      });
-    } catch (e) {
-      return {
-        ok: false,
-        error: "L'appel vocal est momentanément indisponible. Écrivez-nous, nous répondons tout de suite.",
-        detail: `réseau : ${(e as Error)?.message || e}`,
-      };
-    }
+  /**
+   * Demande un jeton éphémère. Le service vit sur une seule version d'API :
+   * on essaie `TOKEN_API_VERSION` puis l'autre, et on retient la réponse
+   * utile (message de Google compris) pour pouvoir la MONTRER.
+   */
+  const createToken = async (modelName: string): Promise<{ ok: boolean; token?: string; version?: string; result?: LiveSessionResult }> => {
+    let dernier: LiveSessionResult | null = null;
+    for (const version of [TOKEN_API_VERSION, TOKEN_API_VERSION_FALLBACK]) {
+      const url = `https://generativelanguage.googleapis.com/${version}/auth_tokens`;
+      let res: Response;
+      try {
+        res = await doFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            uses: 1, // un seul appel par jeton : impossible de le revendre
+            expireTime,
+            newSessionExpireTime: expireTime,
+            bidiGenerateContentSetup: buildTokenSetup(modelName, voice, opts.systemInstruction),
+          }),
+        });
+      } catch (e) {
+        dernier = {
+          ok: false,
+          error: "L'appel vocal est momentanément indisponible. Écrivez-nous, nous répondons tout de suite.",
+          detail: `réseau (jeton ${version}) : ${(e as Error)?.message || e}`,
+        };
+        continue;
+      }
 
-    const data: any = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const apiMsg = String(data?.error?.message || data?.error || res.status);
-      return {
-        ok: false,
-        error: apiMsg.includes('API key')
-          ? "L'appel vocal n'est pas encore activé (clé Gemini refusée). Notre équipe est prévenue."
-          : "L'appel vocal n'est pas disponible pour le moment. Écrivez-nous, nous répondons tout de suite.",
-        detail: `${res.status} : ${apiMsg.slice(0, 300)}`,
-      };
-    }
+      const data: any = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const apiMsg = String(data?.error?.message || data?.error || res.status);
+        dernier = {
+          ok: false,
+          error: apiMsg.includes('API key')
+            ? "L'appel vocal n'est pas encore activé (clé Gemini refusée). Notre équipe est prévenue."
+            : "L'appel vocal n'est pas disponible pour le moment. Écrivez-nous, nous répondons tout de suite.",
+          detail: `jeton ${version} → ${res.status} : ${apiMsg.slice(0, 300)}`,
+        };
+        continue;
+      }
 
-    const token = tokenFromAuthTokenName(data?.name || data?.token);
-    if (!token) {
-      return {
-        ok: false,
-        error: "L'appel vocal n'a pas pu démarrer. Réessayez, ou écrivez-nous dans le chat.",
-        detail: `réponse inattendue : ${JSON.stringify(data).slice(0, 200)}`,
-      };
+      const token = tokenFromAuthTokenName(data?.name || data?.token);
+      if (!token) {
+        dernier = {
+          ok: false,
+          error: "L'appel vocal n'a pas pu démarrer. Réessayez, ou écrivez-nous dans le chat.",
+          detail: `jeton ${version} → réponse inattendue : ${JSON.stringify(data).slice(0, 200)}`,
+        };
+        continue;
+      }
+      return { ok: true, token, version };
     }
+    return { ok: false, result: dernier || { ok: false, error: "L'appel vocal n'est pas disponible pour le moment." } };
+  };
+
+  /** Une tentative complète : un jeton + la porte `Constrained` sur `connectVersion`. */
+  const attempt = async (modelName: string, connectVersion: string): Promise<LiveSessionResult> => {
+    const tokenRes = await createToken(modelName);
+    if (!tokenRes.ok || !tokenRes.token) return tokenRes.result as LiveSessionResult;
 
     return {
       ok: true,
-      token,
-      wsUrl: liveWebSocketUrl(version, token, constrained),
+      token: tokenRes.token,
+      tokenApiVersion: tokenRes.version,
+      wsUrl: liveWebSocketUrl(connectVersion, tokenRes.token, true),
+      method: 'BidiGenerateContentConstrained',
       model: modelName,
-      apiVersion: version,
-      expiresAt: String(data?.expireTime || expireTime),
+      apiVersion: connectVersion,
+      expiresAt: expireTime,
     };
   };
 
-  // Un navigateur qui vient de se faire fermer la session redemande un jeton en
-  // précisant `legacy: true` : inutile de lui redonner le même couple.
-  if (opts.legacy) {
-    return attempt(LEGACY_LIVE_FALLBACK.model, LEGACY_LIVE_FALLBACK.apiVersion, false);
-  }
-
-  const premier = await attempt(model, apiVersion, true);
-  if (premier.ok) return premier;
-
-  // Repli : seulement si le marchand n'a rien forcé lui-même.
-  const modeleForce = Boolean(opts.model || env?.GEMINI_LIVE_MODEL);
-  const versionForcee = Boolean(opts.apiVersion || env?.GEMINI_LIVE_API_VERSION);
-  const dejaLeRepli =
-    model === LEGACY_LIVE_FALLBACK.model && apiVersion === LEGACY_LIVE_FALLBACK.apiVersion;
-  if (modeleForce || versionForcee || dejaLeRepli) return premier;
-
-  const repli = await attempt(LEGACY_LIVE_FALLBACK.model, LEGACY_LIVE_FALLBACK.apiVersion, false);
-  if (!repli.ok) return premier; // on montre l'erreur du modèle demandé
-  return {
-    ...repli,
-    detail: `repli sur ${LEGACY_LIVE_FALLBACK.model} après « ${String(premier.detail || '').slice(0, 160)} »`,
-  };
+  // Le serveur ne voit PAS ce qui se passe sur la WebSocket : c'est le
+  // navigateur qui redemande un jeton (`legacy: true`) quand la session meurt
+  // avant le premier mot, et on lui donne alors la MÊME porte sur l'autre
+  // version d'API. Aucun essai n'est gaspillé : un jeton = un appel.
+  const connectVersion = opts.legacy ? FALLBACK_LIVE_API_VERSION : apiVersion;
+  return attempt(model, connectVersion);
 }
 
 /** Message français quand le forfait du marchand ne permet pas l'appel vocal. */

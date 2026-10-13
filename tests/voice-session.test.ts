@@ -131,11 +131,15 @@ describe('ouvrir un appel vocal', () => {
 
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(json.model).not.toBe('gemini-test-live');
+    // Même modèle (il vit dans le jeton), seulement l'autre version d'API…
+    expect(json.model).toBe('gemini-test-live');
     expect(json.apiVersion).toBe('v1alpha');
-    expect(json.wsUrl).not.toContain('Constrained');
+    expect(json.wsUrl).toContain('.v1alpha.GenerativeService.BidiGenerateContentConstrained');
+    // …et JAMAIS la porte sans « Constrained » : un jeton n'y a pas d'identité.
+    expect(json.wsUrl).not.toContain('GenerativeService.BidiGenerateContent?');
     // Un seul aller-retour chez Google : on ne rejoue pas ce qui vient d'échouer.
     expect(geminiCalls).toHaveLength(1);
+    expect(geminiCalls[0].url).toContain('/v1alpha/auth_tokens');
     expect(json.setup.setup.model).toBe(`models/${json.model}`);
   });
 

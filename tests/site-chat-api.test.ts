@@ -377,16 +377,19 @@ describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', 
     };
 
     // Le widget du site a déjà été fermé une fois : il redemande un jeton en
-    // précisant `fallback`. On ne rejoue pas le couple qui vient d'échouer.
+    // précisant `fallback`. On lui donne la MÊME porte, sur l'autre version.
     const res = await call({ fallback: true }, withKey, '20.0.0.6');
     const json = (await res.json()) as any;
 
     expect(res.status).toBe(200);
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toContain('/v1alpha/');
-    expect(json.wsUrl).not.toContain('Constrained');
+    expect(seen[0]).toContain('/v1alpha/auth_tokens');
+    // ⚠️ Jamais la porte sans « Constrained » : un jeton éphémère n'y a pas
+    // d'identité (« Method doesn't allow unregistered callers »).
+    expect(json.wsUrl).toContain('BidiGenerateContentConstrained');
+    expect(json.wsUrl).toContain('.v1alpha.GenerativeService.');
     expect(json.setup.setup.model).toBe(`models/${json.model}`);
-    expect(json.model).not.toBe('gemini-3.8-live');
+    expect(json.model).toBe('gemini-3.8-live');
   });
 
   it('anti-abus : 6 appels par IP et par 10 minutes, pas plus', async () => {

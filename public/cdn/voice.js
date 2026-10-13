@@ -31,9 +31,62 @@ export const VOICE_MESSAGES = {
   disconnected: "L'appel s'est interrompu. Vous pouvez réessayer, ou continuer par écrit.",
   noMic: "Aucun micro n'a été trouvé sur cet appareil. Écrivez-nous dans le chat.",
   timeout: 'Temps de parole écoulé pour cet appel. Merci ! Vous pouvez rappeler si besoin.',
+  audioBlocked:
+    "Le son est bloqué par votre navigateur : touchez le bouton 🔊 ci-dessous pour l'activer.",
 };
 
 // ── Conversions audio (fonctions pures : testées une par une) ───────────────
+
+// ── Le haut-parleur ─────────────────────────────────────────────────────────
+
+/**
+ * Un SEUL contexte audio pour toute la page, créé au premier geste du visiteur.
+ *
+ * ⚠️ C'est la règle des navigateurs (Chrome, Safari, et surtout iOS) : un
+ * contexte audio créé SANS geste de l'utilisateur démarre « suspendu », et
+ * tout ce qu'on lui fait jouer reste MUET. Comme notre appel démarre après un
+ * `fetch` (donc hors du clic), le contexte naissait suspendu : le modèle parlait,
+ * et le visiteur n'entendait rien — ni sur PC, ni sur téléphone.
+ *
+ * Le widget appelle `unlockVoiceAudio()` DANS le clic (📞 / 🔊), et le contexte
+ * débloqué sert ensuite à tout l'appel.
+ */
+let sharedOut = null;
+
+function audioCtor() {
+  if (typeof AudioContext !== 'undefined') return AudioContext;
+  const g = typeof globalThis !== 'undefined' ? globalThis : {};
+  return g.webkitAudioContext || null;
+}
+
+/** À appeler dans un clic : crée/réveille la sortie audio. Renvoie le contexte. */
+export function unlockVoiceAudio() {
+  const Ctor = audioCtor();
+  if (!Ctor) return null;
+  if (!sharedOut) {
+    try {
+      sharedOut = new Ctor();
+    } catch {
+      return null;
+    }
+  }
+  try {
+    if (sharedOut.state === 'suspended' && sharedOut.resume) sharedOut.resume();
+  } catch {
+    /* certains navigateurs n'ont pas besoin de resume */
+  }
+  // Un échantillon silencieux : c'est ce qui « ouvre » vraiment la sortie sur iOS.
+  try {
+    const buffer = sharedOut.createBuffer(1, 1, sharedOut.sampleRate || 48000);
+    const node = sharedOut.createBufferSource();
+    node.buffer = buffer;
+    node.connect(sharedOut.destination);
+    node.start(0);
+  } catch {
+    /* sans importance : la sortie reste utilisable */
+  }
+  return sharedOut;
+}
 
 /** Float32 [-1,1] → PCM 16 bits signé (ce que Gemini attend). */
 export function floatTo16BitPCM(input) {
@@ -227,6 +280,11 @@ export function createVoiceCall(options) {
   let transcript = '';
   // Dernier mot de Google : sert à expliquer une fermeture inattendue.
   let lastServerMessage = '';
+  // Haut-parleur : allumé par défaut (le client entend son assistant).
+  let speakerOn = true;
+  let ringTimer = null;
+  let ringNodes = null;
+  let blockedWarned = false;
 
   const emitState = (next) => {
     state = next;
@@ -260,17 +318,52 @@ export function createVoiceCall(options) {
     playHead = 0;
   }
 
+  /**
+   * La sortie audio de CET appel. En production c'est le contexte partagé de la
+   * page (débloqué par le geste du visiteur) ; en test, celui qu'on a injecté.
+   */
+  function ensureOut() {
+    if (deps.AudioContext) {
+      if (!outContext) {
+        try {
+          outContext = new deps.AudioContext();
+        } catch {
+          outContext = null;
+        }
+      }
+      return outContext;
+    }
+    outContext = unlockVoiceAudio();
+    return outContext;
+  }
+
   function playChunk(base64) {
-    if (!outContext) return;
+    if (!speakerOn) return;
+    const ctx = ensureOut();
+    if (!ctx) return;
+    outContext = ctx;
+    if (ctx.state === 'suspended') {
+      // Le navigateur a re-suspendu la sortie : on prévient, sinon le visiteur
+      // croit que l'assistant ne parle pas.
+      if (!blockedWarned && typeof opts.onNotice === 'function') {
+        blockedWarned = true;
+        opts.onNotice({ code: 'audio-blocked', message: VOICE_MESSAGES.audioBlocked });
+      }
+      try {
+        ctx.resume();
+      } catch {
+        /* on retente au morceau suivant */
+      }
+    }
     try {
       const bytes = base64ToBytes(base64);
       const floats = pcm16ToFloat32(bytes);
-      const buffer = outContext.createBuffer(1, floats.length, 24000);
+      const buffer = ctx.createBuffer(1, floats.length, 24000);
       buffer.copyToChannel(floats, 0);
-      const node = outContext.createBufferSource();
+      const node = ctx.createBufferSource();
       node.buffer = buffer;
-      node.connect(outContext.destination);
-      const now = outContext.currentTime;
+      node.connect(ctx.destination);
+      const now = ctx.currentTime;
       const startAt = Math.max(now, playHead);
       node.start(startAt);
       playHead = startAt + buffer.duration;
@@ -285,8 +378,99 @@ export function createVoiceCall(options) {
     }
   }
 
+  /** Tonalité d'appel : le visiteur entend que ça sonne pendant la connexion. */
+  function startRingtone() {
+    if (!speakerOn) return;
+    const ctx = ensureOut();
+    if (!ctx || typeof ctx.createOscillator !== 'function') return;
+    stopRingtone();
+    try {
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      gain.connect(ctx.destination);
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      osc.connect(gain);
+      osc.start();
+      ringNodes = { osc, gain };
+      const beat = () => {
+        if (!ringNodes) return;
+        const t = ctx.currentTime;
+        try {
+          ringNodes.gain.gain.cancelScheduledValues(t);
+          ringNodes.gain.gain.setValueAtTime(0, t);
+          ringNodes.gain.gain.linearRampToValueAtTime(0.05, t + 0.04);
+          ringNodes.gain.gain.setValueAtTime(0.05, t + 0.7);
+          ringNodes.gain.gain.linearRampToValueAtTime(0, t + 0.78);
+        } catch {
+          /* fin d'appel : la tonalité s'arrête de toute façon */
+        }
+      };
+      beat();
+      ringTimer = setInterval(beat, 3000);
+    } catch {
+      /* pas de tonalité : l'appel continue */
+    }
+  }
+
+  function stopRingtone() {
+    if (ringTimer) {
+      clearInterval(ringTimer);
+      ringTimer = null;
+    }
+    if (ringNodes) {
+      try {
+        ringNodes.osc.stop();
+      } catch {
+        /* déjà arrêtée */
+      }
+      try {
+        ringNodes.osc.disconnect();
+        ringNodes.gain.disconnect();
+      } catch {
+        /* ignore */
+      }
+      ringNodes = null;
+    }
+  }
+
+  /**
+   * ⚠️ Gemini Live envoie ses messages en **binaire** (Blob / ArrayBuffer), pas
+   * en texte. Sans cette conversion, `setupComplete` n'arrivait jamais et l'audio
+   * n'était jamais joué : le modèle parlait… dans le vide. C'était LE « je
+   * n'entends rien, ni sur PC ni sur téléphone ».
+   */
+  function decodeBytes(view) {
+    try {
+      return new TextDecoder().decode(new Uint8Array(view));
+    } catch {
+      return '';
+    }
+  }
+
+  function toText(raw) {
+    if (raw === null || raw === undefined) return '';
+    if (typeof raw === 'string') return raw;
+    if (typeof ArrayBuffer !== 'undefined' && raw instanceof ArrayBuffer) return decodeBytes(raw);
+    if (raw && raw.buffer instanceof ArrayBuffer) return decodeBytes(raw.buffer);
+    if (raw && typeof raw.text === 'function') return raw.text();
+    return raw;
+  }
+
   function handleMessage(raw) {
-    const msg = parseLiveMessage(raw);
+    const text = toText(raw);
+    // Un Blob (`raw.text()`) arrive une micro-tâche plus tard : on attend juste
+    // ce cas-là, le reste est traité sans délai.
+    if (text && typeof text.then === 'function') {
+      text.then((resolved) => consumeLiveMessage(String(resolved)), () => {});
+      return;
+    }
+    consumeLiveMessage(String(text));
+  }
+
+  function consumeLiveMessage(text) {
+    const msg = parseLiveMessage(text);
     if (msg.error) {
       // « invalid argument », « model not found », quota… — la vraie raison.
       const detail = msg.error.message || msg.error.status || 'refus de Google';
@@ -296,6 +480,7 @@ export function createVoiceCall(options) {
     }
     if (msg.setupComplete) {
       setupDone = true;
+      stopRingtone();
       emitState(VOICE_STATES.LISTENING);
       try {
         ws.send(JSON.stringify(buildOpeningTurn(opts.greeting)));
@@ -388,13 +573,14 @@ export function createVoiceCall(options) {
     seconds = 0;
     emitState(VOICE_STATES.CONNECTING);
 
+    // TOUT DE SUITE (dans le clic du visiteur) : on débloque le haut-parleur et
+    // on fait sonner l'appel. Sans ça, le navigateur rend l'assistant muet.
+    outContext = ensureOut();
+    blockedWarned = false;
+    startRingtone();
+
     startMic().then((micOk) => {
       if (!micOk) return;
-      try {
-        outContext = AudioCtor ? new AudioCtor({ sampleRate: 24000 }) : null;
-      } catch {
-        outContext = null;
-      }
       try {
         ws = new WebSocketCtor(opts.wsUrl);
       } catch {
@@ -459,16 +645,14 @@ export function createVoiceCall(options) {
     } catch {
       /* ignore */
     }
-    try {
-      if (outContext && outContext.close) outContext.close();
-    } catch {
-      /* ignore */
-    }
     processor = null;
     source = null;
     stream = null;
     micContext = null;
-    outContext = null;
+    // ⚠️ On NE ferme PAS la sortie audio : c'est le contexte partagé de la page,
+    // déjà « débloqué » par le geste du visiteur. Le fermer obligerait à
+    // redemander un geste (et iOS rendrait l'appel suivant muet).
+    outContext = sharedOut;
   }
 
   function stop(reason) {
@@ -479,6 +663,7 @@ export function createVoiceCall(options) {
       timer = null;
     }
     stopAudioPlayback();
+    stopRingtone();
     try {
       if (ws && ws.readyState === 1) ws.close(1000, 'client-stop');
     } catch {
@@ -508,6 +693,24 @@ export function createVoiceCall(options) {
   return {
     start,
     stop,
+    /** 🔇/🔊 : coupe ou remet le son de l'assistant (le micro n'est pas touché). */
+    setSpeaker(on) {
+      speakerOn = on !== false;
+      if (!speakerOn) {
+        stopRingtone();
+        stopAudioPlayback();
+      } else {
+        ensureOut();
+      }
+      return speakerOn;
+    },
+    isSpeakerOn() {
+      return speakerOn;
+    },
+    /** Réveille la sortie audio (à appeler dans un clic, ex. bouton 🔊). */
+    unlockAudio() {
+      return Boolean(ensureOut());
+    },
     /** Coupe le micro sans raccrocher : le visiteur continue d'écouter. */
     setMuted(value) {
       muted = Boolean(value);

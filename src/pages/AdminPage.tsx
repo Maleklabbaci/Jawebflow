@@ -668,12 +668,25 @@ export function AdminPage() {
         body: JSON.stringify({ sessionId: `admin_${Date.now().toString(36)}` }),
       });
       const data = await res.json().catch(() => ({} as any));
-      if (res.ok && data?.ok) {
+      if (res.ok && data?.ok && data?.wsUrl) {
+        // Le jeton est prêt : on ouvre la vraie connexion pour savoir si Google
+        // l'accepte (c'est là que se jouait le « ça raccroche »).
+        const porte = `${data.method || 'BidiGenerateContentConstrained'} ${data.apiVersion || ''}`.trim();
+        const verdict = await probeLiveSocket(data.wsUrl, data.setup);
         const minutes = Math.max(1, Math.round(Number(data.maxSeconds || 300) / 60));
-        setCallTest({
-          state: 'ok',
-          message: `L'appel est prêt : voix « ${data.voice || 'Puck'} », ${minutes} min max, modèle ${data.model || 'Gemini Live'}. Le téléphone du site fonctionne.`,
-        });
+        if (verdict.ok) {
+          setCallTest({
+            state: 'ok',
+            message: `Gemini a ACCEPTÉ la session (${porte}, modèle ${data.model}, voix « ${data.voice || 'Puck'} », ${minutes} min max, jeton ${data.tokenApiVersion || 'v1alpha'}). Le téléphone du site fonctionne — testez depuis la bulle.`,
+          });
+        } else {
+          setCallTest({
+            state: 'error',
+            message: `${verdict.reason} — porte ${porte}, jeton ${data.tokenApiVersion || '?'}, modèle ${data.model || '?'}.`,
+          });
+        }
+      } else if (res.ok && data?.ok) {
+        setCallTest({ state: 'ok', message: "L'appel est prêt côté serveur, mais la réponse ne contient pas d'adresse de connexion." });
       } else {
         setCallTest({
           state: 'error',
@@ -686,6 +699,72 @@ export function AdminPage() {
       setCallTest({ state: 'error', message: err?.message || 'Réseau injoignable.' });
     }
   };
+
+  /**
+   * 🎙️ Ouvre VRAIMENT la connexion à Gemini Live et rapporte ce que Google
+   * répond. C'est le seul moyen de savoir pourquoi un appel échoue : le message
+   * exact ("unregistered callers", "model not found", code de fermeture…)
+   * remonte ici, dans la console, au lieu d'être perdu chez le visiteur.
+   */
+  const probeLiveSocket = (wsUrl: string, setup: any, timeoutMs = 12000) =>
+    new Promise<{ ok: boolean; reason: string }>((resolve) => {
+      let done = false;
+      let ws: WebSocket | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (ok: boolean, reason: string) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        try {
+          ws?.close();
+        } catch {
+          /* déjà fermée */
+        }
+        resolve({ ok, reason });
+      };
+
+      if (typeof WebSocket === 'undefined') {
+        resolve({ ok: false, reason: "Ce navigateur n'accepte pas les appels directs (WebSocket indisponible)." });
+        return;
+      }
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (e: any) {
+        resolve({ ok: false, reason: e?.message || "adresse d'appel refusée par le navigateur" });
+        return;
+      }
+
+      timer = setTimeout(() => finish(false, "Google n'a rien répondu en 12 secondes"), timeoutMs);
+      ws.onopen = () => {
+        try {
+          ws?.send(JSON.stringify(setup || {}));
+        } catch (e: any) {
+          finish(false, `envoi du setup impossible : ${e?.message || e}`);
+        }
+      };
+      ws.onmessage = (event: any) => {
+        try {
+          const msg = JSON.parse(String(event?.data ?? ''));
+          if (msg?.setupComplete) {
+            // Google a accepté le jeton : la session est ouverte.
+            finish(true, 'setupComplete');
+          } else if (msg?.error) {
+            finish(false, String(msg.error?.message || msg.error?.status || 'refus de Google'));
+          }
+        } catch {
+          /* message non-JSON : on attend le suivant */
+        }
+      };
+      ws.onerror = () => finish(false, 'connexion refusée (réseau, porte ou jeton)');
+      ws.onclose = (event: any) => {
+        finish(
+          false,
+          `Google a fermé la connexion aussitôt (code ${event?.code ?? '?'}${
+            event?.reason ? ` : ${event.reason}` : ''
+          })`,
+        );
+      };
+    });
 
   // 🌐 Qui est branché sur quoi : un appel, une réponse prête à lire.
   const loadSites = async () => {
@@ -2538,9 +2617,9 @@ export function AdminPage() {
                           <Phone className="w-4 h-4 text-purple-600" /> Tester l'appel tout de suite
                         </h3>
                         <p className="text-[11px] text-slate-500 mt-1">
-                          Un clic : le serveur demande un vrai jeton d'appel et répond si la voix est prête
-                          (ou la raison exacte si elle ne l'est pas). Rien n'est facturé tant qu'un visiteur
-                          ne parle pas.
+                          Un clic : le serveur demande un vrai jeton, <strong>puis la console ouvre réellement
+                          la connexion à Gemini</strong> et affiche sa réponse — « accepté » ✅ ou la raison exacte
+                          ⚠️ (porte utilisée, version du jeton, modèle). Rien n'est facturé : personne ne parle.
                         </p>
                       </div>
                       <button
@@ -2550,7 +2629,7 @@ export function AdminPage() {
                         data-testid="site-chat-test-call"
                         className="shrink-0 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 disabled:opacity-60 transition-colors cursor-pointer"
                       >
-                        {callTest.state === 'loading' ? "Préparation de l'appel…" : "Tester l'appel"}
+                        {callTest.state === 'loading' ? 'Connexion à Gemini…' : 'Tester la connexion à Gemini'}
                       </button>
                     </div>
                     {callTest.message && (

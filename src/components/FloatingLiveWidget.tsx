@@ -16,6 +16,8 @@ import {
   PhoneOff,
   Mic,
   MicOff,
+  Volume2,
+  VolumeX,
   Loader2,
 } from 'lucide-react';
 import { renderMessageContent } from '../utils/renderMessageContent';
@@ -137,7 +139,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   ]);
 
   // 🎙️ L'appel en cours : état, durée, transcription, micro coupé.
-  const [call, setCall] = useState<{ active: boolean; state: string; error: string; seconds: number; lines: Array<{ speaker: string; text: string }>; muted: boolean }>({
+  const [call, setCall] = useState<{ active: boolean; state: string; error: string; seconds: number; lines: Array<{ speaker: string; text: string }>; muted: boolean; speaker: boolean }>({
     active: false, state: '', error: '', seconds: 0, lines: [], muted: false,
   });
   const callRef = useRef<any>(null);
@@ -245,7 +247,37 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   // Une SEULE seconde chance : si Google ferme la session avant même qu'elle
   // démarre (setup refusé, jeton coincé), on redemande un jeton en demandant le
   // couple historique — inutile de retenter exactement ce qui vient d'échouer.
-  const attemptRef = useRef({ fallback: false, setupDone: false });
+  const attemptRef = useRef({ fallback: false, setupDone: false, firstError: '' });
+
+  // Le moteur d'appel est chargé d'AVANCE : au moment du clic il est déjà là, et
+  // on peut réveiller la sortie audio DANS le geste de l'utilisateur. Sans ça,
+  // les navigateurs (surtout iOS) gardent la sortie « suspendue » : le modèle
+  // parle, le visiteur n'entend rien — c'était le « j'écoute rien ».
+  const engineRef = useRef<any>(null);
+  const engineUrl = '/cdn/voice.js?v=11';
+
+  useEffect(() => {
+    let alive = true;
+    import(/* @vite-ignore */ engineUrl)
+      .then((mod: any) => {
+        if (alive) engineRef.current = mod;
+      })
+      .catch(() => {
+        /* le moteur se rechargera au moment de l'appel */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [engineUrl]);
+
+  /** Réveille la sortie audio (à appeler dans le clic, avant tout `fetch`). */
+  const unlockAudio = () => {
+    try {
+      engineRef.current?.unlockVoiceAudio?.();
+    } catch {
+      /* le bouton « Son » reste là pour ça */
+    }
+  };
 
   const openSession = async (fallback: boolean) => {
     const sessionId = `site_${Date.now().toString(36)}`;
@@ -259,13 +291,11 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       if (!res.ok || !data?.ok || !data.wsUrl) {
         throw new Error(data?.error || data?.message || "L'appel n'est pas disponible pour le moment.");
       }
-      // Variable (et non littéral) : TypeScript ne cherche pas à résoudre un
-      // module qui n'existe qu'au moment de l'exécution, dans le navigateur.
-      // `?v=` : le moteur est mis en cache 24 h, on force donc une adresse
-      // neuve après chaque correction (incrémenter à chaque changement de
-      // `public/cdn/voice.js`).
-      const voiceModuleUrl: string = '/cdn/voice.js?v=9';
-      const mod: any = await import(/* @vite-ignore */ voiceModuleUrl);
+      // On réutilise le moteur chargé d'avance (déjà « débloqué » côté son) ;
+      // au pire on l'importe maintenant. Le `?v=` évite qu'un navigateur serve
+      // l'ancien moteur pendant des heures après une correction (incrémenter à
+      // chaque changement de `public/cdn/voice.js`).
+      const mod: any = engineRef.current || (await import(/* @vite-ignore */ engineUrl));
       const session = mod.createVoiceCall({
         wsUrl: data.wsUrl,
         setup: data.setup,
@@ -284,7 +314,15 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
             else lines.push({ speaker: t?.speaker || 'model', text: String(t?.text || '') });
             return { ...c, lines };
           }),
-        onError: (e: any) => setCall((c) => ({ ...c, state: 'error', error: e?.message || "L'appel a échoué." })),
+        onNotice: (n: any) => {
+          // Le navigateur a coupé la sortie audio : on le DIT au visiteur.
+          if (n?.message) setCall((c) => ({ ...c, error: String(n.message) }));
+        },
+        onError: (e: any) => {
+          const message = e?.message || "L'appel a échoué.";
+          attemptRef.current.firstError = attemptRef.current.firstError || message;
+          setCall((c) => ({ ...c, state: 'error', error: message }));
+        },
         onEnd: (info: any) => {
           callRef.current = null;
           // La session n'a JAMAIS démarré : on retente une fois sur le repli.
@@ -294,8 +332,13 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
             openSession(true);
             return;
           }
-          // Erreur : on garde l'écran d'appel ouvert pour que la raison soit LUE.
-          setCall((c) => ({ ...c, active: Boolean(c.error), state: c.error ? 'error' : '' }));
+          // Erreur : on garde l'écran d'appel ouvert pour que la raison soit LUE
+          // (si les deux essais ont échoué, on montre d'abord la cause première).
+          const first = attemptRef.current.firstError;
+          setCall((c) => {
+            const reason = c.error && first && first !== c.error ? `${first}\n${c.error}` : c.error || first;
+            return { ...c, active: Boolean(reason), state: reason ? 'error' : '', error: reason };
+          });
           reportCall(info, sessionId);
         },
       });
@@ -308,11 +351,13 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
 
   const startCall = async () => {
     if (call.active) return;
+    // DANS le clic : on réveille la sortie audio (sinon l'assistant est muet).
+    unlockAudio();
     setShowTeaser(false);
     setHasUnread(false);
     setIsOpen(true);
-    attemptRef.current = { fallback: false, setupDone: false };
-    setCall({ active: true, state: 'connecting', error: '', seconds: 0, lines: [], muted: false });
+    attemptRef.current = { fallback: false, setupDone: false, firstError: '' };
+    setCall({ active: true, state: 'connecting', error: '', seconds: 0, lines: [], muted: false, speaker: true });
     await openSession(false);
   };
 
@@ -324,6 +369,14 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     }
     callRef.current = null;
     setCall((c) => ({ ...c, active: false, state: '', error: '' }));
+  };
+
+  /** 🔊 / 🔇 — le son de l'assistant (le micro n'est pas touché par ce bouton). */
+  const toggleSpeaker = () => {
+    const on = !call.speaker;
+    const applied = callRef.current?.setSpeaker?.(on);
+    if (on) unlockAudio();
+    setCall((c) => ({ ...c, speaker: applied === undefined ? on : !!applied }));
   };
 
   const toggleMute = () => {
@@ -543,7 +596,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                 )}
               </div>
               <p className="text-sm font-semibold">{widget?.headerTitle || 'Assistant JawebFlow'}</p>
-              <p className={`text-xs ${call.state === 'error' ? 'text-red-400' : 'opacity-70'}`}>{callStatus}</p>
+              <p className={`whitespace-pre-line text-xs ${call.state === 'error' ? 'text-red-400' : 'opacity-70'}`}>{callStatus}</p>
               <p data-testid="site-call-timer" className="text-2xl font-bold tabular-nums">{callClock(call.seconds)}</p>
 
               {call.lines.length > 0 && (
@@ -570,6 +623,18 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
               )}
 
               <div className="mt-auto flex flex-wrap items-center justify-center gap-2 pt-3">
+                {call.active && (
+                  <button
+                    type="button"
+                    onClick={toggleSpeaker}
+                    data-testid="site-call-speaker"
+                    aria-pressed={call.speaker}
+                    className={`flex cursor-pointer items-center gap-2 rounded-full px-3.5 py-2 text-[12.5px] font-medium ${light ? 'bg-black/[0.06] text-neutral-700' : 'bg-white/[0.08] text-neutral-200'}`}
+                  >
+                    {call.speaker ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                    {call.speaker ? 'Son actif' : 'Son coupé'}
+                  </button>
+                )}
                 {call.active && (
                   <button
                     type="button"

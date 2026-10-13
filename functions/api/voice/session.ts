@@ -150,6 +150,10 @@ export async function onRequestPost(context: any) {
       wsUrl: live.wsUrl,
       model: live.model,
       apiVersion: live.apiVersion,
+      // De quoi diagnostiquer sans deviner : la porte d'entrée réellement
+      // utilisée (les jetons n'en ont qu'une).
+      tokenApiVersion: live.tokenApiVersion,
+      method: live.method,
       voice: voice.voice,
       expiresAt: live.expiresAt,
       maxSeconds: voice.maxSeconds,

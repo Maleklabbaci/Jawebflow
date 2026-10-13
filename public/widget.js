@@ -76,11 +76,35 @@
   // Le moteur d'appel est mis en cache 24 h par le navigateur : on demande une
   // adresse versionnée pour qu'une correction du moteur arrive tout de suite
   // (incrémenter `v` à chaque changement de `public/cdn/voice.js`).
-  var VOICE_ENGINE = '/cdn/voice.js?v=9';
+  var VOICE_ENGINE = '/cdn/voice.js?v=11';
+  // Le moteur, chargé D'AVANCE : c'est ce qui permet de débloquer le son dans
+  // le clic du visiteur (règle Chrome/Safari : sans geste, la sortie audio
+  // démarre « suspendue » et l'assistant reste muet, même s'il parle).
+  var engineModule = null;
+  var enginePromise = null;
+  function loadVoiceEngine() {
+    if (!enginePromise) {
+      enginePromise = import((apiOrigin || '') + VOICE_ENGINE).then(function (mod) {
+        engineModule = mod;
+        return mod;
+      });
+    }
+    return enginePromise;
+  }
+  // À appeler EN PREMIER dans le clic, avant tout `fetch`.
+  function unlockAudio() {
+    try {
+      if (engineModule && engineModule.unlockVoiceAudio) engineModule.unlockVoiceAudio();
+    } catch (e) {
+      /* le bouton « Son » reste là pour ça */
+    }
+  }
   // Une seule seconde chance : si Google ferme la session avant le moindre mot
   // (setup refuse), on redemande un jeton sur le couple historique.
   var voiceSetupDone = false;
   var voiceTriedFallback = false;
+  var callSpeaker = true;      // le son de l'assistant : allume par defaut
+  var firstCallError = '';     // la raison du PREMIER essai (la plus utile)
   var callTimerId = null;
 
   var namedColors = {
@@ -210,7 +234,7 @@
     '.jw-call-btn svg{width:16px;height:16px;}' +
     '.jw-call-mute{background:rgba(127,127,127,.18);color:inherit;}' +
     '.jw-call-hang{background:#e11d48;color:#fff;}' +
-    '.jw-call-error{font-size:12.5px;line-height:1.5;color:#e11d48;max-width:280px;}' +
+    '.jw-call-error{font-size:12.5px;line-height:1.5;color:#e11d48;max-width:280px;white-space:pre-line;}' +
     '.jw-call-start{background:#10b981;color:#fff;font-size:15px;padding:14px 28px;}' +
     '.jw-bubble-pulse::before{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--primary);opacity:.5;animation:jwBubblePulse 2.4s infinite;z-index:-1;}' +
     '.jw-bubble-btn{position:relative;}' +
@@ -343,7 +367,13 @@
 
   function startVoice() {
     if (callActive) return;
+    // DANS le clic : on réveille la sortie audio, sinon le navigateur rend
+    // l'assistant muet (c'était le « j'écoute rien »).
+    unlockAudio();
+    if (!voiceTriedFallback) firstCallError = '';
     callActive = true; callState = 'connecting'; callError = '';
+    callSpeaker = true;
+    loadVoiceEngine();
     callLines = []; callSeconds = 0; callMuted = false; callSession = null;
     voiceSetupDone = false;
     render();
@@ -361,7 +391,7 @@
           render();
           return null;
         }
-        return import((apiOrigin || '') + VOICE_ENGINE).then(function (mod) {
+        return loadVoiceEngine().then(function (mod) {
           callSession = mod.createVoiceCall({
             wsUrl: data.wsUrl,
             setup: data.setup,
@@ -372,11 +402,26 @@
               callState = state; render();
             },
             onTranscript: function (t) { addCallLine(t.speaker, t.text); render(); },
-            onError: function (e) { callError = (e && e.message) || VOICE_FALLBACK_ERROR; callState = 'error'; render(); },
+            onNotice: function (n) {
+              // Le navigateur a coupé la sortie : on le DIT au visiteur.
+              if (n && n.message) { callError = n.message; render(); }
+            },
+            onError: function (e) {
+              var msg = (e && e.message) || VOICE_FALLBACK_ERROR;
+              if (!firstCallError) firstCallError = msg;
+              callError = msg;
+              callState = 'error';
+              render();
+            },
             onEnd: function (info) {
               callSession = null;
               if (callTimerId) { clearInterval(callTimerId); callTimerId = null; }
-              // Jamais demarre : une seconde chance avec le jeton de repli.
+              // Les DEUX essais ont echoue : la raison du premier est la plus
+              // utile (la seconde n'est souvent que la consequence).
+              if (callError && firstCallError && firstCallError !== callError) {
+                callError = firstCallError + '\n' + callError;
+              }
+              // Jamais demarre : une seconde chance, autre version d'API.
               if (info && !info.setupDone && !voiceSetupDone && !voiceTriedFallback) {
                 voiceTriedFallback = true;
                 callActive = false; callState = ''; callError = '';
@@ -491,6 +536,18 @@
       write.onclick = function () { callState = ''; callError = ''; callActive = false; render(); };
       actions.appendChild(write);
     } else {
+      var speaker = document.createElement('button');
+      speaker.type = 'button';
+      speaker.className = 'jw-call-btn jw-call-mute';
+      speaker.textContent = callSpeaker ? 'Son actif' : 'Son coupe';
+      speaker.onclick = function () {
+        callSpeaker = !callSpeaker;
+        if (callSession && callSession.setSpeaker) callSpeaker = callSession.setSpeaker(callSpeaker);
+        if (callSpeaker) unlockAudio();
+        render();
+      };
+      actions.appendChild(speaker);
+
       var mute = document.createElement('button');
       mute.type = 'button';
       mute.className = 'jw-call-btn jw-call-mute';
@@ -825,6 +882,10 @@
         if (c.voice.greeting) voiceGreeting = String(c.voice.greeting);
         if (c.voice.maxMinutes) voiceMaxMinutes = Number(c.voice.maxMinutes) || voiceMaxMinutes;
       }
+      // L'appel est disponible : on charge le moteur TOUT DE SUITE. C'est ce qui
+      // permet de réveiller la sortie audio dans le clic du visiteur — sans ça,
+      // le premier appel peut rester muet (le temps que le moteur arrive).
+      if (voiceEnabled && widgetMode !== 'chat') loadVoiceEngine();
       var s = shadow.querySelector('#jawebflow-widget-styles') || styleEl;
       s.textContent = s.textContent
         .replace(/--primary:\s*[^;]+/g, '--primary: ' + primaryColor)
