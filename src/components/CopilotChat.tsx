@@ -10,7 +10,7 @@
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ArrowUp, BarChart3, Check, Database, ExternalLink, Instagram, Loader2, Mic, Phone, Plus, RotateCcw, Send, SlidersHorizontal, Sparkles, Undo2, Users, X, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ArrowUp, BarChart3, Check, Code2, Database, ExternalLink, Instagram, Loader2, Lock, Mic, Phone, Plus, RotateCcw, Send, Share2, SlidersHorizontal, Sparkles, Undo2, Users, X, Zap } from 'lucide-react';
 import { ApiError, copilotApi } from '../lib/copilot-api';
 import type { CopilotAction, CopilotMessage, CopilotStatePatch } from '../lib/copilot-api';
 
@@ -227,6 +227,12 @@ export interface CopilotChatProps {
   summary?: { online: boolean; leads: number; notes: number };
   /** Étapes restantes : petites pastilles cliquables (page d'accueil). */
   todo?: Array<{ label: string; onClick: () => void }>;
+  /**
+   * LES DEUX ESPACES DU PRODUIT, tout en haut de l'Accueil :
+   *   • le chatbot à intégrer dans le site web ;
+   *   • les réseaux sociaux (cadenassés tant que l'équipe ne les a pas ouverts).
+   */
+  spaces?: { socialLocked: boolean; onEnter: (space: 'web' | 'social') => void };
   /** Alerte importante au-dessus du titre (ex. limite atteinte). */
   notice?: { text: string; tone: 'warn' | 'danger'; actionLabel: string; onAction: () => void } | null;
   open: boolean;
@@ -579,6 +585,38 @@ export const CopilotChat: React.FC<CopilotChatProps> = (props) => {
         {empty && (
           <div className="flex-1 overflow-y-auto px-4 pb-8">
             <div className="mx-auto w-full max-w-2xl text-center">
+              {props.spaces && (
+                <div className="mb-5 grid gap-3 text-left sm:grid-cols-2" data-testid="space-chooser">
+                  <button
+                    type="button"
+                    onClick={() => props.spaces!.onEnter('web')}
+                    data-testid="space-web"
+                    className="group rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-purple-300 hover:bg-purple-50/40 cursor-pointer"
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-purple-600"><Code2 className="h-5 w-5" /></span>
+                    <p className="mt-3 text-sm font-bold text-slate-900">Chatbot du site web</p>
+                    <p className="mt-1 text-xs text-slate-500">La bulle qui répond à vos visiteurs : informations, apparence, installation sur votre site.</p>
+                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-purple-600">Entrer <ArrowRight className="h-3.5 w-3.5" /></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.spaces!.onEnter('social')}
+                    data-testid="space-social"
+                    className="group rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-amber-300 hover:bg-amber-50/40 cursor-pointer"
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600"><Share2 className="h-5 w-5" /></span>
+                    <p className="mt-3 text-sm font-bold text-slate-900">Réseaux sociaux</p>
+                    <p className="mt-1 text-xs text-slate-500">Instagram, Messenger, WhatsApp, Telegram et TikTok, branchés sur votre assistant.</p>
+                    {props.spaces.socialLocked ? (
+                      <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-amber-700" data-testid="space-social-locked">
+                        <Lock className="h-3.5 w-3.5" /> Prochainement
+                      </span>
+                    ) : (
+                      <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-amber-700">Entrer <ArrowRight className="h-3.5 w-3.5" /></span>
+                    )}
+                  </button>
+                </div>
+              )}
               <div className="flex flex-wrap justify-center gap-2">
                 {HOME_PROMPTS.map((p) => {
                   const Icon = HOME_ICONS[p.icon];

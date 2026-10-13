@@ -67,6 +67,9 @@ async function fetchProfile(uid: string): Promise<UserProfile | null> {
     photoURL: data.photo_url || undefined,
     role: data.role,
     plan: data.plan || undefined,
+    // 🔒 Module Réseaux sociaux : sans cette ligne, le tableau de bord ne peut
+    // pas savoir que le cadenas est fermé… et laisse donc tout ouvert.
+    socialEnabled: data.social_enabled === true,
   };
 }
 

@@ -1,7 +1,7 @@
 # Développer le bot JawebFlow — guide pratique
 
 > Objectif : savoir **où** toucher, **comment** vérifier, **comment** déployer.
-> État vérifié le 13 octobre 2026 : `npm test` → **47 fichiers / 763 tests OK**,
+> État vérifié le 13 octobre 2026 : `npm test` → **47 fichiers / 768 tests OK**,
 > `npm run lint` (tsc) → 0 erreur.
 
 ---
@@ -57,7 +57,7 @@ précis. Si vous voulez une nouvelle action, elle passe par le code.
 ## 2. Le cycle de travail
 
 ```bash
-npm test          # 763 tests, 47 fichiers — doit rester à 0 échec
+npm test          # 768 tests, 47 fichiers — doit rester à 0 échec
 npm run lint      # = tsc --noEmit — 0 erreur
 npm run dev       # serveur local (server.ts) avec un .env → site + widget réels
 npm run deploy:cloudflare   # build vite + wrangler pages deploy dist
@@ -69,7 +69,7 @@ npm run deploy:cloudflare   # build vite + wrangler pages deploy dist
   (`FakeGraph` pour Messenger/WhatsApp, `FakeTelegram`, `FakeTikTok`). C'est le filet
   de sécurité : `fx.other` doit rester vide, sinon un test échoue.
 - **Un changement de comportement = une fonction pure + un test.** C'est comme ça
-  que les 763 tests sont construits ; ne mettez jamais la logique directement dans
+  que les 768 tests sont construits ; ne mettez jamais la logique directement dans
   le handler HTTP.
 - `npm run deploy:cloudflare` déploie le site ; les `functions/` sont servies
   automatiquement par Cloudflare Pages (pas de `wrangler.toml`).

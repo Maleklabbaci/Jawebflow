@@ -29,7 +29,7 @@ vi.mock('../src/lib/supabase', () => ({
 // Objet STABLE (comme dans la vraie application) : un objet neuf à chaque rendu relancerait le chargement en boucle.
 const AUTH = vi.hoisted(() => ({
   user: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz', displayName: 'Nour' },
-  profile: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz', displayName: 'Nour', companyName: 'Boutique Nour', role: 'user', plan: 'basic' },
+  profile: { uid: '11111111-1111-4111-8111-111111111111', email: 'nour@test.dz', displayName: 'Nour', companyName: 'Boutique Nour', role: 'user', plan: 'basic', socialEnabled: true },
   loading: false,
   logout: async () => undefined,
 }));
@@ -63,6 +63,13 @@ beforeEach(() => {
   gemini = new FakeGemini();
   be.external.handler = (url, init) => { hoisted.order.push('gemini'); return gemini.handler(url, init); };
   seedMerchant(be.supabase);
+  // Un compte RÉELLEMENT complet a aussi branché sa première messagerie : sans
+  // elle, l'accueil propose (à juste titre) l'étape « Brancher ma première
+  // messagerie ». Le cas « aucune messagerie » est testé plus bas.
+  be.supabase.seed('channel_integrations', [{
+    id: 'int_ms_home', user_id: USER, assistant_id: 'asst1', channel: 'messenger',
+    account_id: 'PAGE_778899', access_token: 'PAGE_TOKEN_1', connected: true,
+  }]);
   // La base lue par le serveur est la même que celle que le tableau de bord vient de charger.
   Object.assign(be.supabase.rows('assistants')[0], { business_name: 'Boutique Nour', knowledge_notes: [NOTE_1], config: { behavior: hoisted.assistants[0].behavior } });
   for (const p of ['/api/chat', '/api/learning', '/api/leads', '/api/usage', '/api/ai-usage', '/api/plan', '/api/instagram/notify-setup']) {
@@ -243,5 +250,15 @@ describe('Accueil : rien n’est perdu', () => {
   it('pas d’urgence : aucune alerte sur l’Accueil', async () => {
     await openChat();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('messageries — découverte depuis l’accueil', () => {
+  it('sans aucune messagerie branchée, l’accueil propose de brancher la première', async () => {
+    be.supabase.rows('channel_integrations').length = 0; // rien de branché
+    await openChat();
+    await waitFor(() => expect(
+      screen.getByText('Brancher ma première messagerie (Messenger, Instagram, TikTok)')
+    ).toBeTruthy());
   });
 });

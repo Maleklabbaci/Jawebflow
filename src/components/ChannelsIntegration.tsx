@@ -55,6 +55,10 @@ interface Props {
    * Vide = les quatre d'un coup.
    */
   channel?: string;
+  /** « Voir les formules » quand le canal n'est pas dans le forfait du marchand. */
+  onUpgrade?: () => void;
+  /** Prévient le tableau de bord qu'un canal vient d'être branché ou coupé. */
+  onChanged?: () => void;
 }
 
 const CHANNEL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -64,12 +68,51 @@ const CHANNEL_ICONS: Record<string, React.ComponentType<{ className?: string }>>
   tiktok: Music2,
 };
 
+/**
+ * « Comment savoir que ça marche ? » : le marchand vient de brancher un canal,
+ * il doit pouvoir vérifier seul en trente secondes — sans nous appeler.
+ */
+const TEST_STEPS: Record<string, { intro: string; steps: string[] }> = {
+  messenger: {
+    intro: 'Depuis un autre compte Facebook que celui qui gère la page :',
+    steps: [
+      'Ouvrez votre page, puis cliquez sur « Message ».',
+      'Écrivez par exemple : « Bonjour, vous livrez à Blida ? »',
+      'La réponse arrive en quelques secondes, signée par votre assistant.',
+    ],
+  },
+  whatsapp: {
+    intro: 'Depuis un autre téléphone que celui du numéro Business :',
+    steps: [
+      'Enregistrez votre numéro WhatsApp Business dans les contacts.',
+      'Écrivez-lui : « Bonjour, vous êtes ouverts ? »',
+      'La réponse arrive en quelques secondes (elle compte dans votre forfait).',
+    ],
+  },
+  telegram: {
+    intro: 'Le test le plus rapide — trente secondes, aucune validation à attendre :',
+    steps: [
+      'Cherchez le nom de votre bot dans Telegram et ouvrez la conversation.',
+      'Appuyez sur « Démarrer », puis écrivez « Bonjour ».',
+      'Votre assistant répond immédiatement.',
+    ],
+  },
+  tiktok: {
+    intro: 'Depuis un autre compte TikTok :',
+    steps: [
+      'Ouvrez votre profil, puis appuyez sur « Message ».',
+      'Écrivez « Bonjour ».',
+      'La réponse arrive dans la conversation.',
+    ],
+  },
+};
+
 const card = 'rounded-[28px] bg-white p-6 sm:p-7 shadow-[0_1px_2px_rgba(27,22,71,0.04)]';
 const field = 'mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[#5a2cff]';
 const primary = 'inline-flex items-center gap-2 rounded-full bg-[#1b1647] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 cursor-pointer';
 const ghost = 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer';
 
-export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channel }) => {
+export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channel, onUpgrade, onChanged }) => {
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [usage, setUsage] = useState<WaUsage | null>(null);
@@ -79,6 +122,7 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [form, setForm] = useState<Record<string, { accountId: string; token: string; phoneNumber: string }>>({});
   const [copied, setCopied] = useState<string | null>(null);
+  const [serverPlan, setServerPlan] = useState<string>('');
 
   const authHeader = useCallback(async (): Promise<Record<string, string>> => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -97,6 +141,7 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
       setIntegrations(data.integrations || []);
       setUsage(data.whatsapp || null);
       setSetupRequired(Boolean(data.setupRequired));
+      setServerPlan(String(data.plan || ''));
     } catch {
       setNotice({ type: 'error', text: 'Serveur injoignable. Réessayez dans un instant.' });
     } finally {
@@ -109,6 +154,14 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
   // Un onglet du menu = un canal : on ne montre que le sien.
   const visibleChannels = channel ? channels.filter((c) => c.id === channel) : channels;
   const single = channel ? channels.find((c) => c.id === channel) : undefined;
+
+  // WhatsApp est le seul canal dont les réponses sont payantes chez Meta : il
+  // n'est donc pas dans toutes les formules. Le serveur fait foi (lui seul
+  // connaît le forfait réellement enregistré) ; la formule affichée sert de
+  // repli quand la base n'a pas répondu.
+  const effectivePlan = String(serverPlan || plan || '').toLowerCase();
+  const waTotal = usage ? usage.quota + (usage.purchased || 0) : 0;
+  const waIncluded = waTotal > 0 || effectivePlan === 'pro' || effectivePlan === 'enterprise';
 
   const integrationOf = (id: string) => integrations.find((i) => i.channel === id);
   const formOf = (id: string) => form[id] || { accountId: '', token: '', phoneNumber: '' };
@@ -151,6 +204,7 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
         text: data.verified === false ? data.message : `Connecté. ${data.message}`,
       });
       patchForm(id, { token: '' }); // on ne garde aucun jeton à l'écran
+      onChanged?.();
       await load();
     } catch {
       setNotice({ type: 'error', text: 'Serveur injoignable. Réessayez dans un instant.' });
@@ -173,6 +227,7 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
         return;
       }
       setNotice({ type: 'info', text: 'Canal déconnecté. Les messages ne seront plus traités.' });
+      onChanged?.();
       await load();
     } finally {
       setBusy(null);
@@ -200,9 +255,21 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
 
       {setupRequired && (
         <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900" data-testid="channels-setup-required">
-          <strong>Une étape technique manque.</strong> La base de données n’a pas encore ses tables de canaux :
-          exécutez <code className="rounded bg-white px-1.5 py-0.5">supabase/migration_channels.sql</code> dans
-          Supabase (SQL Editor), puis rechargez cette page.
+          <strong>Cette partie n’est pas encore ouverte sur votre compte.</strong> Vos messageries sont prêtes,
+          mais leur activation se fait de notre côté : écrivez-nous à{' '}
+          <a href="mailto:contact@jawebflow.dz?subject=Activer%20mes%20messageries" className="font-semibold underline">
+            contact@jawebflow.dz
+          </a>{' '}
+          et nous l’activons dans la journée. Le reste de votre tableau de bord fonctionne normalement.
+          <details className="mt-3">
+            <summary className="cursor-pointer font-semibold">Détail technique (pour l’équipe JawebFlow)</summary>
+            <p className="mt-2 text-xs">
+              La base n’a pas encore ses tables de canaux : exécuter{' '}
+              <code className="rounded bg-white px-1.5 py-0.5">supabase/migration_channels.sql</code> dans Supabase
+              (SQL Editor), puis recharger la page. L’état complet de la configuration est sur{' '}
+              <code className="rounded bg-white px-1.5 py-0.5">/api/health</code>.
+            </p>
+          </details>
         </div>
       )}
 
@@ -292,8 +359,13 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
                         ? `WhatsApp n’est pas inclus dans votre formule${plan ? ` (${plan})` : ''} : passez à Pro pour l’activer.`
                         : usage.remaining > 0
                           ? `Il vous reste ${usage.remaining} réponses ce mois-ci. Un message n’est compté que lorsque Meta confirme sa livraison.`
-                          : 'Forfait épuisé : les réponses WhatsApp reprennent le 1ᵉʳ du mois, ou rechargez dès maintenant.'}
+                          : 'Forfait épuisé : les réponses WhatsApp reprennent le 1ᵉʳ du mois. Besoin de plus tout de suite ? Écrivez-nous, nous rechargeons votre forfait à l’unité.'}
                     </p>
+                    {!waIncluded && onUpgrade ? (
+                      <button type="button" onClick={onUpgrade} className={primary} data-testid="whatsapp-upgrade-cta-connected">
+                        Passer à la formule Pro
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -316,6 +388,43 @@ export const ChannelsIntegration: React.FC<Props> = ({ assistantId, plan, channe
                   <button type="button" onClick={() => disconnect(ch.id)} disabled={isBusy} className={ghost} data-testid={`disconnect-${ch.id}`}>
                     <Unplug className="h-4 w-4" /> Déconnecter
                   </button>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4" data-testid={`channel-test-${ch.id}`}>
+                  <p className="text-sm font-semibold text-[#1b1647]">Comment savoir que ça marche ?</p>
+                  <p className="mt-1 text-xs text-slate-600">{TEST_STEPS[ch.id]?.intro}</p>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-600">
+                    {(TEST_STEPS[ch.id]?.steps || []).map((step) => <li key={step}>{step}</li>)}
+                  </ol>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Rien ne se passe ? Vérifiez que votre formule est active et qu’au moins une information est
+                    enregistrée dans « Mes informations ». Sinon, écrivez-nous : contact@jawebflow.dz.
+                  </p>
+                </div>
+              </div>
+            ) : ch.id === 'whatsapp' && !waIncluded ? (
+              /* ── WhatsApp hors formule : dire la vérité plutôt que de laisser
+                    brancher un canal qui ne pourra pas répondre. ─────────── */
+              <div className="mt-6" data-testid="whatsapp-upgrade">
+                <div className="rounded-2xl border border-[#5a2cff]/20 bg-[#f6f7fd] p-5">
+                  <p className="text-sm font-semibold text-[#1b1647]">
+                    WhatsApp est inclus à partir de la formule Pro.
+                  </p>
+                  <p className="mt-1.5 text-sm text-slate-600">
+                    C’est le seul canal dont les réponses sont facturées par Meta : votre formule couvre alors
+                    1 000 réponses par mois (Pro) ou 5 000 (Enterprise), puis une recharge à l’unité.
+                    Instagram, Messenger et TikTok restent inclus dans toutes les formules payantes.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {onUpgrade ? (
+                      <button type="button" onClick={onUpgrade} className={primary} data-testid="whatsapp-upgrade-cta">
+                        Voir les formules et passer à Pro
+                      </button>
+                    ) : null}
+                    <a href="mailto:contact@jawebflow.dz?subject=Activer%20WhatsApp" className={ghost}>
+                      Nous écrire
+                    </a>
+                  </div>
                 </div>
               </div>
             ) : (

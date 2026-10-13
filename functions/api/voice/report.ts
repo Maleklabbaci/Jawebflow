@@ -22,6 +22,7 @@ import { supabaseConfigured, supabaseGetAssistant } from '../../_shared/supabase
 import { rateLimited } from '../../_shared/rate-limit.ts';
 import { supabaseLogConversation } from '../../_shared/limits.ts';
 import { MAX_SESSION_SECONDS } from '../../_shared/voice/live.ts';
+import { SITE_ASSISTANT_ID } from '../../_shared/site-chat.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 const json = (body: unknown, status = 200) =>
@@ -60,6 +61,15 @@ export async function onRequestPost(context: any) {
       'inconnue';
     if (rateLimited(`voice-report:${ip}`, { max: 30, windowMs: 10 * 60_000 })) {
       return json({ ok: false, error: 'Trop de relevés' }, 429);
+    }
+
+    // 🏠 L'appel du SITE VITRINE n'a pas de marchand derrière lui : aucun quota
+    // à décompter, aucune conversation à facturer. On garde seulement la trace
+    // dans les logs (durée) pour pouvoir regarder la consommation réelle.
+    if (assistantId === SITE_ASSISTANT_ID) {
+      const siteSeconds = clampInt(body.seconds, 0, MAX_SESSION_SECONDS);
+      console.log('[voice/report] appel du site vitrine :', siteSeconds, 's');
+      return json({ ok: true, site: true, seconds: siteSeconds });
     }
 
     const assistant = await supabaseGetAssistant(env, assistantId);

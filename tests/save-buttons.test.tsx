@@ -25,7 +25,7 @@ vi.mock('../src/lib/supabase', () => ({
 vi.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({
     user: { uid: '11111111-1111-4111-8111-111111111111', email: 'n@t.dz', displayName: 'Nour' },
-    profile: { uid: 'x', role: 'user', plan: 'basic', companyName: 'Boutique Nour' },
+    profile: { uid: 'x', role: 'user', plan: 'basic', companyName: 'Boutique Nour', socialEnabled: true },
     loading: false,
     logout: async () => undefined,
   }),
