@@ -373,7 +373,8 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenAssistantModal
               <p className="lux-sub mx-auto max-w-xl text-[0.88rem]">
                 Pas besoin de développeur : une seule ligne de code suffit pour afficher la bulle sur
                 votre site. Vos messageries — Instagram, Messenger, TikTok et WhatsApp — se branchent
-                ensuite depuis votre tableau de bord, en collant deux informations.
+                ensuite depuis votre tableau de bord, en collant deux informations. Ce module Réseaux
+                sociaux s’active sur demande depuis votre espace client.
               </p>
             </div>
 

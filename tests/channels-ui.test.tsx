@@ -69,7 +69,7 @@ afterEach(async () => {
 /** Ouvre l'onglet d'UN canal de messagerie et attend qu'il soit chargé. */
 async function openChannels(channel: 'messenger' | 'whatsapp' | 'telegram' | 'tiktok' = 'messenger') {
   render(<DashboardPlatform />);
-  await waitFor(() => expect(document.getElementById('nav-integration')).toBeTruthy(), { timeout: 5000 });
+  await waitFor(() => expect(document.getElementById('nav-instagram')).toBeTruthy(), { timeout: 5000 });
   goTo(channel);
   await screen.findByTestId('channels-integration', {}, { timeout: 5000 });
 }

@@ -106,15 +106,15 @@ async function say(text: string) {
 const TITLES: Array<{ id: string; nav: string; title: string }> = [
   { id: 'overview', nav: 'Accueil', title: 'Accueil' },
   { id: 'summary', nav: 'Résumé', title: 'Résumé' },
-  { id: 'knowledge', nav: 'Mon assistant', title: 'Mes informations' },
-  { id: 'crawler', nav: 'Mon assistant', title: 'Mon site web' },
-  { id: 'behavior', nav: 'Mon assistant', title: 'Comportement' },
-  { id: 'widget', nav: 'Mon assistant', title: 'Apparence' },
-  { id: 'learning', nav: 'Mon assistant', title: 'Apprentissage' },
+  { id: 'knowledge', nav: 'Mon assistant web', title: 'Mes informations' },
+  { id: 'crawler', nav: 'Mon assistant web', title: 'Mon site web' },
+  { id: 'behavior', nav: 'Mon assistant web', title: 'Comportement' },
+  { id: 'widget', nav: 'Mon assistant web', title: 'Apparence' },
+  { id: 'learning', nav: 'Mon assistant web', title: 'Apprentissage' },
   { id: 'simulator', nav: 'Tester', title: 'Tester mon assistant' },
-  { id: 'integration', nav: 'Canaux', title: 'Mon site' },
-  { id: 'instagram', nav: 'Canaux', title: 'Instagram' },
-  { id: 'automations', nav: 'Canaux', title: 'Automatisations' },
+  { id: 'integration', nav: 'Mon assistant web', title: 'Mon site' },
+  { id: 'instagram', nav: 'Réseaux sociaux', title: 'Instagram' },
+  { id: 'automations', nav: 'Réseaux sociaux', title: 'Automatisations' },
   { id: 'leads', nav: 'Clients', title: "Vue d'ensemble" },
   { id: 'orders', nav: 'Commandes & RDV', title: 'Commandes & RDV' },
   { id: 'billing', nav: 'Abonnement & factures', title: 'Abonnement & factures' },
@@ -161,24 +161,33 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  it('Canaux ouvre un sous-menu animé et permet de changer de canal', async () => {
+  it('les DEUX espaces (Mon assistant web / Réseaux sociaux) ouvrent leur sous-menu', async () => {
     render(<DashboardPlatform initialSection="overview" />);
     await settle();
-    const channels = document.getElementById('nav-integration')!;
-    fireEvent.click(channels);
+
+    // ESPACE 1 — le chatbot à intégrer dans le site (toujours ouvert).
+    const web = document.getElementById('nav-knowledge')!;
+    fireEvent.click(web);
     await settle(40);
-    expect(channels.getAttribute('aria-expanded')).toBe('true');
-    expect(document.getElementById('submenu-channels')!.className).toContain('grid-rows-[1fr]');
+    expect(web.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('submenu-assistant')!.className).toContain('grid-rows-[1fr]');
     // Cliquer sur un groupe ouvre son sous-menu sans détourner immédiatement l’écran courant.
     expect(document.querySelector('header h1')!.textContent).toBe('Accueil');
-    expect(screen.getByRole('button', { name: 'Instagram' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Mon site' })).toBeTruthy();
+
+    // ESPACE 2 — les réseaux sociaux : un onglet par réseau.
+    const social = document.getElementById('nav-instagram')!;
+    fireEvent.click(social);
+    await settle(40);
+    expect(social.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('submenu-social')!.className).toContain('grid-rows-[1fr]');
+    expect(screen.getByRole('button', { name: 'Instagram' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Automatisations' })).toBeTruthy();
 
     fireEvent.click(document.querySelector('[data-tab="instagram"]')!);
     await settle(50);
     expect(document.querySelector('[data-tab="instagram"]')!.getAttribute('aria-current')).toBe('page');
-    expect(document.getElementById('nav-integration')!.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('nav-instagram')!.getAttribute('aria-expanded')).toBe('true');
     expect(document.querySelector('header h1')!.textContent).toBe('Instagram');
   });
 

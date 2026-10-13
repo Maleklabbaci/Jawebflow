@@ -59,6 +59,11 @@ export interface UserProfile {
   photoURL?: string;
   role?: string;
   plan?: string;
+  /**
+   * 🔒 Module réseaux sociaux (Instagram, Messenger, WhatsApp, Telegram, TikTok)
+   * débloqué pour ce compte par le propriétaire. Absent ou false = verrouillé.
+   */
+  socialEnabled?: boolean;
   createdAt?: any;
   updatedAt?: any;
 }

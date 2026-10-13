@@ -5,6 +5,7 @@
  */
 import { vi } from 'vitest';
 import * as channels from '../../functions/api/channels/integrations';
+import * as requestAccess from '../../functions/api/channels/request-access';
 import * as copilot from '../../functions/api/copilot';
 import * as quickAdd from '../../functions/api/knowledge/quick-add';
 import * as automations from '../../functions/api/instagram/automations';
@@ -28,6 +29,8 @@ const ROUTES: Record<string, Handlers> = {
   '/api/instagram/subscribe': { POST: subscribe.onRequestPost },
   // Branchement des messageries (Messenger, WhatsApp, Telegram, TikTok).
   '/api/channels/integrations': { GET: channels.onRequestGet, POST: channels.onRequestPost, DELETE: channels.onRequestDelete },
+  // « Demander l'activation » du module Réseaux sociaux (cadenas du tableau de bord).
+  '/api/channels/request-access': { POST: requestAccess.onRequestPost },
 };
 
 export interface UiBackend extends ReturnType<typeof installFakes> {

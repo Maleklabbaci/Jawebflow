@@ -66,6 +66,30 @@ export async function supabaseGetAssistant(env: SupabaseEnv, assistantId: string
   return { ok: true, status: 200, data: rows[0] };
 }
 
+/**
+ * 🔒 État commercial du COMPTE (et non de son assistant) : rôle + accès au
+ * module réseaux sociaux. Tolérant par construction : une fiche illisible
+ * renvoie `null`, et c'est l'appelant qui décide quoi en faire.
+ */
+export async function supabaseGetAccountFlags(
+  env: SupabaseEnv,
+  uid: string,
+): Promise<{ role: string; socialEnabled: boolean } | null> {
+  if (!uid) return null;
+  try {
+    const res = await request(env, `users?id=eq.${encodeURIComponent(uid)}&select=role,social_enabled&limit=1`);
+    if (!res.ok) return null;
+    const rows = (await res.json()) as any[];
+    if (!rows?.length) return null;
+    return {
+      role: String(rows[0].role || 'user').toLowerCase(),
+      socialEnabled: rows[0].social_enabled === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function supabasePatchAssistant(env: SupabaseEnv, assistantId: string, patch: Record<string, any>) {
   const configPatch = { ...patch };
   const mapped: Record<string, any> = { id: assistantId, updated_at: new Date().toISOString() };

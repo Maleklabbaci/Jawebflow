@@ -125,7 +125,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
     },
     {
       q: 'Sur quels canaux mon assistant répond-il ?',
-      a: 'Le widget de votre site, Instagram, Facebook Messenger et TikTok sont inclus dans toutes les formules payantes. WhatsApp est inclus à partir de la formule Pro — 1 000 réponses par mois, 5 000 en Enterprise — car c’est le seul canal dont les réponses sont facturées par Meta. Le branchement se fait depuis votre tableau de bord, en collant deux informations.'
+      a: 'Le widget de votre site, Instagram, Facebook Messenger et TikTok sont inclus dans toutes les formules payantes. WhatsApp est inclus à partir de la formule Pro — 1 000 réponses par mois, 5 000 en Enterprise — car c’est le seul canal dont les réponses sont facturées par Meta. Le branchement se fait depuis votre tableau de bord, en collant deux informations. Les réseaux sociaux forment un module à part : vous demandez son activation depuis votre tableau de bord (« Demander l’activation ») et nous vous répondons avec les conditions.'
     },
     {
       q: 'Puis-je commencer en Basic et passer en Pro ensuite ?',

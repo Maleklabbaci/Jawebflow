@@ -60,6 +60,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
+import { SocialModuleLocked } from './SocialModuleLocked';
 import { resolveTeamRole, roleCan, type TeamRole } from '../lib/roles';
 import { buildCoachPlan, coachHeadline } from '../../functions/_shared/bot-coach';
 import { WidgetCustomizer } from './WidgetCustomizer';
@@ -115,27 +116,30 @@ type NavItem = { id: DashboardSectionId; label: string; icon: React.ComponentTyp
  * « Mon assistant » et « Canaux » regroupent plusieurs écrans, affichés en petits onglets.
  */
 const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: DashboardSectionId; label: string }> }> = {
+  // ESPACE 1 — LE CHATBOT DU SITE WEB : ce que le marchand installe sur son site.
   assistant: {
-    title: 'Mon assistant',
+    title: 'Mon assistant web',
     tabs: [
       { id: 'knowledge', label: 'Mes informations' },
       { id: 'crawler', label: 'Mon site web' },
       { id: 'behavior', label: 'Comportement' },
       { id: 'widget', label: 'Apparence' },
       { id: 'learning', label: 'Apprentissage' },
+      { id: 'integration', label: 'Mon site' },
     ],
   },
-  channels: {
-    title: 'Canaux',
+  // ESPACE 2 — LES RÉSEAUX SOCIAUX : un module à part, ouvert client par
+  // client par l'équipe (cadenas + « Demander l'activation » tant qu'il est
+  // fermé). Un canal = une entrée, pour que le marchand voie d'un coup d'œil
+  // ce qui est branché — sans le chercher dans une page fourre-tout.
+  social: {
+    title: 'Réseaux sociaux',
     tabs: [
-      // Un canal = une entrée : le marchand voit tout de suite où il en est,
-      // sans avoir à chercher son canal dans une page fourre-tout.
       { id: 'instagram', label: 'Instagram' },
       { id: 'messenger', label: 'Messenger' },
       { id: 'whatsapp', label: 'WhatsApp' },
       { id: 'telegram', label: 'Telegram' },
       { id: 'tiktok', label: 'TikTok' },
-      { id: 'integration', label: 'Mon site' },
       { id: 'automations', label: 'Automatisations' },
     ],
   },
@@ -149,15 +153,22 @@ const menuGroupOf = (id: DashboardSectionId): string | null => groupOf(id) || (i
 /** Les écrans qui affichent la connexion d'UN canal de messagerie. */
 const MESSAGING_SECTIONS: DashboardSectionId[] = ['messenger', 'whatsapp', 'telegram', 'tiktok'];
 
+/**
+ * TOUT ce qui appartient au module « Réseaux sociaux » : les cinq réseaux et
+ * les automatisations Instagram. Le reste (informations, site web, apparence,
+ * installation, test) fait partie du chatbot à intégrer — toujours ouvert.
+ */
+const SOCIAL_SECTIONS: DashboardSectionId[] = ['instagram', ...MESSAGING_SECTIONS, 'automations'];
+
 /** Un ancien lien (/dashboard/channels) doit continuer de mener quelque part. */
 const LEGACY_SECTIONS: Record<string, DashboardSectionId> = { channels: 'messenger' };
 
 const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
   { id: 'summary', label: 'Résumé', icon: TrendingUp },
-  { id: 'knowledge', label: 'Mon assistant', icon: Bot, group: 'assistant' },
+  { id: 'knowledge', label: 'Mon assistant web', icon: Bot, group: 'assistant' },
   { id: 'simulator', label: 'Tester', icon: MessageSquare, pro: true },
-  { id: 'integration', label: 'Canaux', icon: Share2, group: 'channels' },
+  { id: 'instagram', label: 'Réseaux sociaux', icon: Share2, group: 'social' },
   { id: 'leads', label: 'Clients', icon: BarChart3, pro: true, group: 'clients' },
   { id: 'orders', label: 'Commandes & RDV', icon: ShoppingCart, pro: true },
 ];
@@ -440,6 +451,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   // les RÉPONSES de l'IA sont bloquées, côté serveur. Plus de pages verrouillées.
   const showLockedGates = false;
   const isFreePlan = activePlan === 'free';
+
+  // 🔒 MODULE RÉSEAUX SOCIAUX : produit à part, ouvert client par client par
+  // l'équipe (console admin → Clients → bouton « Réseaux sociaux »).
+  // Tolérance voulue quand `socialEnabled` est absent : colonne pas encore
+  // créée en base ou profil pas encore chargé → on n'affiche pas un faux
+  // cadenas. Le serveur reste la référence (403 + message explicite).
+  const socialLocked = !isUserAdmin(profile) && profile?.socialEnabled === false;
+  const refreshAccount = () => {
+    try { window.location.reload(); } catch { /* environnement de test */ }
+  };
   
   const [billingViewMode, setBillingViewMode] = useState<'overview' | 'checkout'>(() => {
     if (typeof window !== 'undefined' && (window.location.pathname === '/checkout' || window.location.search.includes('plan='))) {
@@ -1626,12 +1647,12 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                   : item.id === 'orders' && orderCount > 0
                     ? String(orderCount)
                     : null;
-                const subItems: Array<{ key: string; label: string; selected: boolean; onSelect: () => void }> = !group ? [] : group === 'clients'
+                const subItems: Array<{ key: string; label: string; selected: boolean; onSelect: () => void; locked?: boolean }> = !group ? [] : group === 'clients'
                   ? [
                       { key: 'analytics', label: "Vue d'ensemble", selected: currentSection === 'leads' && insightsTab === 'analytics', onSelect: () => { setInsightsTab('analytics'); handleSectionChange('leads'); } },
                       { key: 'prospects', label: 'Mes clients', selected: currentSection === 'leads' && insightsTab === 'prospects', onSelect: () => { setInsightsTab('prospects'); handleSectionChange('leads'); } },
                     ]
-                  : SECTION_GROUPS[group].tabs.map((tab) => ({ key: tab.id, label: tab.label, selected: currentSection === tab.id, onSelect: () => handleSectionChange(tab.id) }));
+                  : SECTION_GROUPS[group].tabs.map((tab) => ({ key: tab.id, label: tab.label, selected: currentSection === tab.id, locked: socialLocked && SOCIAL_SECTIONS.includes(tab.id), onSelect: () => handleSectionChange(tab.id) }));
                 return (
                   <div key={item.id}>
                     <button
@@ -1654,6 +1675,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                       <Icon className={`h-[19px] w-[19px] shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-purple-600'}`} />
                       <span className="flex-1 truncate text-left">{item.label}</span>
                       {item.pro && showLockedGates && <Lock className="w-3 h-3 text-amber-500" />}
+                      {item.group === 'social' && socialLocked && (
+                        <Lock className="w-3 h-3 text-amber-500" aria-label="Module à activer" />
+                      )}
                       {badge && (
                         <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${isActive ? 'bg-white/25 text-white' : 'bg-[#efe9ff] text-[#5a2cff]'}`}>
                           {badge}
@@ -1680,7 +1704,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                 className={`flex h-9 w-full items-center rounded-full px-[11px] text-left text-[13px] outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#a23dff]/40 ${sub.selected ? 'bg-[#f1ecff] font-semibold text-[#5a2cff]' : 'text-slate-500 hover:bg-[#f7f5ff] hover:text-slate-900'}`}
                                 style={{ transitionDelay: isOpen ? `${index * 35}ms` : '0ms', transform: isOpen ? 'translateY(0)' : 'translateY(-4px)' }}
                               >
-                                <span className="truncate">{sub.label}</span>
+                                <span className="flex-1 truncate">{sub.label}</span>
+                                {sub.locked && <Lock className="h-3 w-3 shrink-0 text-amber-500" aria-label="Module à activer" />}
                               </button>
                             ))}
                           </div>
@@ -2659,7 +2684,14 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: MESSAGERIES (Messenger, WhatsApp, Telegram, TikTok)
               ================================================================= */}
-          {MESSAGING_SECTIONS.includes(currentSection) && (
+          {/* =================================================================
+              SECTION: LE CADENAS DES RÉSEAUX SOCIAUX (module vendu à part)
+              ================================================================= */}
+          {socialLocked && SOCIAL_SECTIONS.includes(currentSection) && (
+            <SocialModuleLocked channel={currentSection} onUnlocked={refreshAccount} />
+          )}
+
+          {!socialLocked && MESSAGING_SECTIONS.includes(currentSection) && (
             <div className="animate-in fade-in duration-200">
               <ChannelsIntegration
                 assistantId={assistantId || currentWidgetId || ''}
@@ -2689,7 +2721,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: INSTAGRAM INTEGRATION (supabase OAUTH & DM MANAGEMENT)
               ================================================================= */}
-          {currentSection === 'instagram' && (
+          {!socialLocked && currentSection === 'instagram' && (
             <>
             {isFreePlan && (
               <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -2734,7 +2766,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
           {/* =================================================================
               SECTION: AUTOMATISATIONS INSTAGRAM (commentaires → message privé, mots-clés, stories)
               ================================================================= */}
-          {currentSection === 'automations' && (
+          {!socialLocked && currentSection === 'automations' && (
             <InstagramAutomations
               key={`automations-${automationsVersion}`}
               businessName={businessName}

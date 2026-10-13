@@ -127,6 +127,10 @@ begin
   -- console, repris par defaut par tous ses assistants (futurs compris).
   alter table public.users add column if not exists plan text;
 
+  -- 🔒 Module Réseaux sociaux : verrouillé par défaut. Le propriétaire ouvre
+  -- le module client par client depuis l'onglet Clients de cette console.
+  alter table public.users add column if not exists social_enabled boolean not null default false;
+
   execute $fn$
     create or replace function public.protect_user_profile()
     returns trigger language plpgsql security definer set search_path = public
@@ -143,6 +147,11 @@ begin
       if new.email is distinct from old.email then raise exception 'Changement d''email interdit depuis le client.'; end if;
       if new.role is distinct from old.role and not public.is_superadmin() then
         raise exception 'Changement de role reserve au superadmin.';
+      end if;
+      -- Anti-contournement : un client ne peut pas s'ouvrir le module
+      -- Réseaux sociaux tout seul depuis son navigateur.
+      if new.social_enabled is distinct from old.social_enabled and not public.is_superadmin() then
+        raise exception 'Module Reseaux sociaux : activation reservee a JawebFlow.';
       end if;
       return new;
     end;
@@ -191,7 +200,7 @@ end $console$;`;
 // ---------------------------------------------------------------------------
 interface NormUser {
   uid: string; email: string; displayName: string; companyName?: string;
-  phoneNumber?: string; role: string; plan?: string; createdAt?: any; _raw: any;
+  phoneNumber?: string; role: string; plan?: string; socialEnabled: boolean; createdAt?: any; _raw: any;
 }
 function normUser(d: any): NormUser {
   return {
@@ -202,6 +211,7 @@ function normUser(d: any): NormUser {
     phoneNumber: d.phone_number || d.phoneNumber || undefined,
     role: d.role || 'user',
     plan: d.plan || undefined,
+    socialEnabled: d.social_enabled === true,
     createdAt: d.created_at || d.createdAt,
     _raw: d,
   };
@@ -312,6 +322,9 @@ export function AdminPage() {
 
   // Données plateforme
   const [usersList, setUsersList] = useState<NormUser[]>([]);
+  // Demandes d'activation du module Réseaux sociaux (bouton « Demander
+  // l'activation » côté client) : affichées à côté du cadenas de la ligne.
+  const [socialRequests, setSocialRequests] = useState<Record<string, string>>({});
   const [assistantsList, setAssistantsList] = useState<NormAssistant[]>([]);
   const [prospectsList, setProspectsList] = useState<NormLead[]>([]);
   const [invoicesList, setInvoicesList] = useState<AdminInvoice[]>([]);
@@ -490,13 +503,15 @@ export function AdminPage() {
   const fetchAllPlatformData = async () => {
     setLoadingData(true);
     try {
-      const [usersRes, asstRes, prosRes, invRes, convRes, settingsRes] = await Promise.all([
+      const [usersRes, asstRes, prosRes, invRes, convRes, settingsRes, socialRes] = await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('assistants').select('*'),
         supabase.from('prospects').select('*'),
         supabase.from('invoices').select('*').order('createdAt', { ascending: false }),
         supabase.from('conversation_contexts').select('assistant_id, created_at').gte('created_at', monthStartIso()),
         supabase.from('platform_settings').select('*').eq('id', 'global').maybeSingle(),
+        // Table absente (SQL pas encore exécuté) => on dégrade sans casser.
+        supabase.from('social_requests').select('user_id, created_at, status').eq('status', 'pending'),
       ]);
 
       if (usersRes.error) throw usersRes.error;
@@ -522,6 +537,16 @@ export function AdminPage() {
         setSqlReady(false);
       }
       setUsageByAssistant(usage);
+
+      // Qui a demandé l'ouverture du module Réseaux sociaux : l'admin agit
+      // sans chercher la demande dans sa boîte e-mail.
+      const requests: Record<string, string> = {};
+      if (!(socialRes as any)?.error && Array.isArray((socialRes as any)?.data)) {
+        for (const r of (socialRes as any).data as any[]) {
+          if (r?.user_id) requests[r.user_id] = r.created_at || '';
+        }
+      }
+      setSocialRequests(requests);
 
       const settingsRaw = (settingsRes as any)?.data;
       const merged = { ...DEFAULT_PLAN_LIMITS, ...(settingsRaw?.settings?.planLimits || {}) };
@@ -615,6 +640,32 @@ export function AdminPage() {
       await fetchAllPlatformData();
     } catch (err: any) {
       notify('Changement de plan refusé : ' + (err.message || 'erreur — exécute le SQL à jour (onglet Système)'), 'error');
+    }
+  };
+
+  /**
+   * 🔒 Module réseaux sociaux : ouvre ou referme l'espace « Réseaux sociaux »
+   * d'UN client. Décision indépendante du plan : le plan fixe le volume IA,
+   * ceci fixe l'accès aux messageries (produit vendu à part).
+   */
+  const applySocialUnlock = async (u: NormUser, enabled: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ social_enabled: enabled, updated_at: new Date().toISOString() })
+        .eq('id', u.uid);
+      if (error) throw error;
+      notify(
+        enabled
+          ? `Module Réseaux sociaux DÉBLOQUÉ pour « ${u.displayName} ».`
+          : `Module Réseaux sociaux verrouillé pour « ${u.displayName} ».`
+      );
+      await fetchAllPlatformData();
+    } catch (err: any) {
+      notify(
+        'Verrouillage refusé : ' + (err.message || 'exécute le SQL à jour (onglet Système)'),
+        'error'
+      );
     }
   };
 
@@ -1367,6 +1418,24 @@ export function AdminPage() {
                         <td className="px-4 py-3 text-slate-600">{u.companyName ? <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5 text-slate-400" />{u.companyName}</span> : '—'}</td>
                         <td className="px-4 py-3 text-slate-600">{u.phoneNumber || '—'}</td>
                         <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => applySocialUnlock(u, !u.socialEnabled)}
+                            data-testid={`social-toggle-${u.uid}`}
+                            title={u.socialEnabled ? 'Refermer le module réseaux sociaux pour ce client' : 'Ouvrir le module réseaux sociaux pour ce client'}
+                            className={`mb-1.5 w-full text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${
+                              u.socialEnabled
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {u.socialEnabled ? '🔓 Réseaux sociaux ouverts' : '🔒 Réseaux sociaux verrouillés'}
+                          </button>
+                          {socialRequests[u.uid] && (
+                            <p className="mt-1 text-[11px] font-medium text-amber-700" data-testid={`social-request-${u.uid}`}>
+                              ⏳ Activation demandée le {fmtDate(socialRequests[u.uid])}
+                            </p>
+                          )}
                           <select
                             value={clientPlanOf(u)}
                             onChange={(e) => setPendingPlan({ kind: 'user', user: u, plan: e.target.value })}

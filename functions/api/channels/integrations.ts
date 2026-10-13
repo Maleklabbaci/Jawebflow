@@ -23,9 +23,32 @@ import {
   supabaseSetChannelConnected,
   supabaseUpsertChannelIntegration,
 } from '../../_shared/supabase.ts';
+import { supabaseGetAccountFlags } from '../../_shared/supabase.ts';
 import { verifyChannelCredentials, webhookUrl } from '../../_shared/channels/credentials.ts';
 import { whatsappUsage } from '../../_shared/channels/metering.ts';
 import { channelLabel, getChannel } from '../../_shared/channels/registry.ts';
+
+/** Ce que le marchand lit quand le module n'est pas ouvert sur son compte. */
+const SOCIAL_LOCKED_MSG =
+  "Le module Réseaux sociaux n'est pas activé sur votre compte. Vous pouvez en faire la demande depuis votre tableau de bord (espace « Réseaux sociaux ») — nous l'activons rapidement.";
+
+/**
+ * 🔒 Le module réseaux sociaux est-il fermé pour ce compte ?
+ *
+ * Trois règles, dans cet ordre :
+ *   1. fiche client illisible (base pas encore migrée) → on LAISSE PASSER : il
+ *      vaut mieux un module ouvert pour un client existant qu'un module cassé
+ *      pour tout le monde ;
+ *   2. admin/superadmin → jamais bloqués, sinon impossible de tester ou de
+ *      dépanner un marchand ;
+ *   3. sinon, c'est `social_enabled` qui décide — et son défaut est « fermé ».
+ */
+async function socialModuleLocked(env: any, uid: string): Promise<boolean> {
+  const flags = await supabaseGetAccountFlags(env, uid);
+  if (!flags) return false;
+  if (flags.role === 'admin' || flags.role === 'superadmin') return false;
+  return !flags.socialEnabled;
+}
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -69,6 +92,9 @@ export async function onRequestGet(context: any) {
   try {
     const caller = await verifySupabaseIdToken(env, context.request.headers.get('Authorization'));
     if (!caller) return json({ error: 'Authentification requise' }, 401);
+    if (await socialModuleLocked(env, caller.uid)) {
+      return json({ error: SOCIAL_LOCKED_MSG, socialLocked: true }, 403);
+    }
 
     // L'assistant du marchand (le premier) : c'est lui qui répond sur les canaux.
     const url = new URL(context.request.url);
@@ -107,6 +133,9 @@ export async function onRequestPost(context: any) {
   try {
     const caller = await verifySupabaseIdToken(env, context.request.headers.get('Authorization'));
     if (!caller) return json({ error: 'Authentification requise' }, 401);
+    if (await socialModuleLocked(env, caller.uid)) {
+      return json({ error: SOCIAL_LOCKED_MSG, socialLocked: true }, 403);
+    }
 
     const body = await context.request.json().catch(() => ({}));
     const channel = String(body.channel || '').toLowerCase();
