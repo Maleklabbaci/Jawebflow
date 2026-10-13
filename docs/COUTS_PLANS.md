@@ -275,3 +275,54 @@ node scripts/couts-plans.mjs --marge-cible=70   # autre objectif de marge
 
 **Tarif Gemini vérifié le 7 octobre 2026** : `gemini-3.1-flash-lite` = 0,25 $/M entrée,
 1,50 $/M sortie, 0,025 $/M entrée en cache, stockage 1,00 $/M tokens/heure.
+
+---
+
+## Le chatbot web : le message ET l'appel
+
+Un seul assistant, deux façons de parler au visiteur : il **écrit** (petit modèle
+texte, quasi gratuit) ou il **appelle** (Gemini Live, audio bidirectionnel — 40×
+plus cher à la seconde). Les deux dépensent le **même plafond** du pack.
+
+| | Coût réel | À 270 DA | À 260 DA |
+|---|---|---|---|
+| 1 échange écrit (question + réponse) | 0,00138 $ | **0,37 DA** | **0,36 DA** |
+| 1 conversation commerciale (8 échanges) | 0,011 $ | **2,97 DA** | **2,87 DA** |
+| 1 conversation, contexte en cache | 0,0047 $ | 1,27 DA | 1,22 DA |
+| 1 minute d'appel — pire cas | 0,02376 $ | **6,42 DA** | **6,18 DA** |
+| 1 minute d'appel — réaliste (l'agent parle ~40 %) | 0,01296 $ | **3,50 DA** | **3,37 DA** |
+
+*Pire cas = le client parle toute la minute (1 920 tokens × 3 $/M) **et** l'agent
+répond toute la minute (1 500 tokens × 12 $/M). Réaliste = l'agent parle 40 % du
+temps, ce qui est le cas normal puisqu'il se tait pendant que le client parle.*
+
+Repères : **1 minute d'appel (pire cas) = 17 échanges écrits**, 1 minute réaliste
+= 9 échanges. Le barème « 1 min = 10 conversations » facture donc 10 unités de
+quota pour un coût réel de ~2,2 conversations : il est **généreux côté client**,
+mais c'est un choix commercial, pas un problème.
+
+```bash
+node scripts/couts-vocal.mjs --change=260
+```
+
+### ⚠️ Le barème vocal ne tient pas dans le plafond, pour Pro et Enterprise
+
+Le barème et les plafonds ont été décidés séparément — en pire cas (6,42 DA/min
+à 270 DA), voilà ce que chaque plafond finance réellement :
+
+| Pack | Quota vendu | Minutes promises | Coût des minutes | Plafond | Verdict |
+|---|---|---|---|---|---|
+| Basic | 1 000 conv. | 100 min | 618 DA | 810 DA | ✅ tient |
+| Pro | 5 000 conv. | 500 min | 3 210 DA | 2 430 DA | ❌ coupé à **378 min** |
+| Enterprise | illimité | 2 000 min (proposé) | 12 840 DA | 8 100 DA | ❌ coupé à **1 262 min** |
+
+Deux sorties possibles :
+
+1. **baisser les minutes vendues** — Pro 380 min, Enterprise 1 200 min (le
+   plafond actuel suffit alors tel quel) ; ou
+2. **monter les plafonds** — Pro 12 $, Enterprise 48 $ (et donc les coûts max du
+   tableau plus haut).
+
+Le pire cas est une borne haute : en usage réaliste (3,50 DA/min), 500 minutes
+coûtent 1 750 DA et tiennent dans les 9 $ de Pro. Mais un client qui laisse
+l'assistant parler beaucoup peut atteindre la borne — c'est elle qui décide.
