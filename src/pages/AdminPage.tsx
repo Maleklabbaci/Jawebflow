@@ -55,6 +55,20 @@ export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'sites' | 'si
 /** Réglages du chatbot du site + l'état de la lecture (table absente ?). */
 type SiteChatAdminState = SiteChatConfig & { available?: boolean; stored?: boolean };
 
+/** 🎯 Une demande notée par l'assistant du site pendant un appel (onglet Chatbot). */
+type SiteLeadRow = {
+  id: string;
+  createdAt: string;
+  status: 'nouveau' | 'traite';
+  kind?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  city?: string;
+  need?: string;
+  date?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Quotas des plans (alignés sur la page Tarifs). Éditables dans l'onglet Plans
 // (table platform_settings, clé 'global'). null = illimité.
@@ -349,6 +363,9 @@ export function AdminPage() {
   // Diagnostic affiché quand la table des réglages est injoignable : QUEL projet
   // Supabase, QUOI exécuter, et l'erreur brute de PostgREST.
   const [siteChatDiag, setSiteChatDiag] = useState<any>(null);
+  // Les demandes que l'assistant a notées pendant les appels du site.
+  const [siteLeads, setSiteLeads] = useState<SiteLeadRow[]>([]);
+  const [newLeads, setNewLeads] = useState(0);
   // « Tester l'appel » : on demande un vrai jeton Gemini Live et on affiche
   // exactement ce que le serveur répond (succès ou raison précise).
   const [callTest, setCallTest] = useState<{ state: 'idle' | 'loading' | 'ok' | 'error'; message: string }>({
@@ -615,10 +632,30 @@ export function AdminPage() {
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Lecture impossible');
       setSiteChat({ ...(data.config as SiteChatConfig), available: data.available !== false, stored: !!data.stored });
       setSiteChatDiag({ ...(data.diag || {}), error: data.error || null });
+      setSiteLeads(Array.isArray(data.leads) ? data.leads : []);
+      setNewLeads(Number(data.newLeadCount) || 0);
     } catch (err: any) {
       notify('Chatbot du site : ' + (err?.message || 'lecture impossible'), 'error');
     } finally {
       setLoadingSiteChat(false);
+    }
+  };
+
+  /** « Traité » / « nouveau » : le suivi des demandes du site. */
+  const markLead = async (id: string, status: 'nouveau' | 'traite') => {
+    try {
+      const res = await fetch('/api/admin/site-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await adminToken()}` },
+        body: JSON.stringify({ action: 'mark-lead', id, status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Marquage impossible');
+      setSiteLeads(Array.isArray(data.leads) ? data.leads : []);
+      setNewLeads(Number(data.leadCount) || 0);
+      notify(status === 'traite' ? 'Demande marquée comme traitée.' : 'Demande remise en nouveau.');
+    } catch (err: any) {
+      notify('Demande : ' + (err?.message || 'marquage impossible'), 'error');
     }
   };
 
@@ -1322,7 +1359,12 @@ export function AdminPage() {
   const navigationItems = [
     {
       group: 'MON SITE JAWEBFLOW',
-      items: [{ id: 'site-chat', label: 'Chatbot du site', icon: Sparkles, badge: siteChat?.enabled === false ? 'fermé' : null as string | null }],
+      items: [{
+        id: 'site-chat',
+        label: 'Chatbot du site',
+        icon: Sparkles,
+        badge: (siteChat?.enabled === false ? 'fermé' : newLeads > 0 ? `${newLeads} demande${newLeads > 1 ? 's' : ''}` : null) as string | null,
+      }],
     },
     {
       group: 'PILOTAGE & KPI',
@@ -2644,6 +2686,68 @@ export function AdminPage() {
                         {callTest.state === 'ok' ? '✅ ' : '⚠️ '}
                         {callTest.message}
                       </p>
+                    )}
+                  </div>
+
+                  {/* ── 🎯 Les demandes notées par l'assistant pendant les appels ── */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5" data-testid="site-call-leads">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold text-slate-900">📞 Demandes notées pendant les appels</h3>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                          Au téléphone, l'assistant répond puis amène le visiteur au CTA
+                          {siteChat?.widget?.voice?.mission?.cta ? ` « ${siteChat.widget.voice.mission.cta} »` : ''} :
+                          il note le nom, le numéro, le besoin et le rendez-vous éventuel, et la demande arrive ici.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={loadSiteChat}
+                        className="px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${loadingSiteChat ? 'animate-spin' : ''}`} /> Actualiser
+                      </button>
+                    </div>
+
+                    {siteLeads.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-500" data-testid="site-leads-empty">
+                        Aucune demande pour l'instant : elle apparaîtra ici dès qu'un visiteur laissera ses
+                        coordonnées pendant un appel.
+                      </p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {siteLeads.map((lead) => (
+                          <div
+                            key={lead.id}
+                            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 rounded-xl px-3 py-2"
+                          >
+                            <span className="font-semibold text-sm text-slate-900">{lead.name || 'Visiteur'}</span>
+                            {lead.phone ? <span className="text-sm text-slate-700">{lead.phone}</span> : null}
+                            {!lead.phone && lead.email ? <span className="text-sm text-slate-700">{lead.email}</span> : null}
+                            {lead.city ? <span className="text-xs text-slate-500">{lead.city}</span> : null}
+                            {lead.date ? <span className="text-xs text-purple-700 bg-purple-50 rounded-full px-2 py-0.5">🗓 {lead.date}</span> : null}
+                            {lead.need ? <span className="text-xs text-slate-500 max-w-[280px] truncate">{lead.need}</span> : null}
+                            <span className="text-[11px] text-slate-400">
+                              {lead.createdAt ? new Date(lead.createdAt).toLocaleString('fr-FR') : ''}
+                            </span>
+                            <span className="flex-1" />
+                            <span
+                              className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                lead.status === 'traite' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700'
+                              }`}
+                            >
+                              {lead.status === 'traite' ? 'traité' : 'nouveau'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => markLead(lead.id, lead.status === 'traite' ? 'nouveau' : 'traite')}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                            >
+                              {lead.status === 'traite' ? 'Remettre en nouveau' : 'Marquer traité'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
 

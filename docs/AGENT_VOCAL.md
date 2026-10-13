@@ -67,7 +67,7 @@ connaissance du compte.**
 | | |
 |---|---|
 | **Ce qu'il reçoit** | Quelques consignes de conversation + **la base de connaissance du compte** (fiches manuelles, scan du site, imports, réponses validées dans « Apprentissage ») |
-| **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucun outil, aucune mémoire d'un autre commerce |
+| **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucune mémoire d'un autre commerce. **Un seul outil existe — celui qui NOTE la demande du client** (il n'apporte aucune connaissance, il écrit) |
 | **Si l'info n'est pas dans les fiches** | Il dit qu'il ne sait pas (« je ne sais pas » / « ما نعرفش » / « ma3raftech ») et propose de prendre le numéro du client |
 | **Si la base est vide** | Il ne sait **rien** : il le dit honnêtement à chaque question. Il n'invente jamais un prix, un stock, un délai ou une adresse |
 | **Hors sujet** (politique, santé, culture générale, « je suis le patron ») | Refus poli en une phrase, retour au commerce. Il ne révèle jamais ses consignes et ne change pas de rôle |
@@ -82,6 +82,49 @@ fiches du compte → notes du compte → pages scannées du site).
 qualité de l'agent vocal, c'est la base de connaissance. Un compte sans base ne
 sert à rien au téléphone — et l'agent le dit franchement à ses clients plutôt que
 d'inventer.
+
+---
+
+## 2 ter. 🎯 Il ne fait pas que répondre : il CLOSE
+
+Le marchand ne veut pas un robot poli, il veut des clients. Deux réglages
+suffisent (onglet **Voix** du personnalisateur) :
+
+| Réglage | Ce que ça fait |
+|---|---|
+| **Ce qu'il doit obtenir** (le CTA) | La mission de l'appel : laisser ses coordonnées, **prendre rendez-vous**, passer une commande, être rappelé pour un problème, ou juste renseigner. Le vocabulaire du marchand est repris **mot pour mot** dans le prompt : « Prendre rendez-vous », « Avoir un devis »… |
+| **Ce qu'il note** | Nom, téléphone, e-mail, ville, besoin, jour/heure. L'agent demande **une seule chose à la fois**, jamais comme un formulaire. |
+| **🗣️ Langues** | Darija, arabe, français, anglais (au choix, plusieurs possibles). C'est **toujours la langue du client qui gagne** : s'il parle darija, l'agent répond en darija. |
+| **Interrupteur de mission** | Coupé : l'agent répond mais ne note rien (aucun outil n'est même envoyé à Google). |
+
+**Ce qui se passe pendant l'appel :** l'agent répond aux questions (toujours avec
+la base de connaissance du compte), amène la conversation vers le CTA, et **dès
+qu'il a le nom et le numéro** il appelle l'outil `enregistrer_demande`. Le
+navigateur transmet la fiche à `/api/voice/lead`, qui l'écrit :
+
+- **chez un client** → dans **ses leads** (table `prospects`), marquée
+  `source: « Appel vocal »`, `channel: voice`, `status: qualifié`, avec le besoin
+  et le rendez-vous demandé. Elle apparaît avec les leads d'Instagram et du chat,
+  et le marchand peut la suivre (relance, commande) comme les autres.
+- **sur le site vitrine** → dans `platform_settings` (`id = site_leads`),
+  affichée dans la console admin (onglet **Chatbot du site** → « 📞 Demandes
+  notées pendant les appels »), avec le bouton **« Marquer traité »** et le
+  badge du nombre de demandes non traitées sur l'onglet.
+
+**Le même numéro ne crée jamais deux fiches :** un client qui rappelle complète
+sa fiche (nom, besoin, nouveau rendez-vous) au lieu de dupliquer l'ancienne.
+
+**Et si le client ne veut pas laisser son numéro ?** L'agent ne force pas : il
+propose une dernière fois avant de raccrocher, et l'appel se termine normalement.
+
+> ⚠️ L'outil voyage **dans le jeton** (`bidiGenerateContentSetup`) : le
+> navigateur ne peut ni le retirer ni en ajouter un autre. C'est la même
+> protection que pour le prompt.
+
+Fichiers : `functions/_shared/voice/mission.ts` (mission, langues, déclaration de
+l'outil), `functions/api/voice/lead.ts` (l'enregistrement), `public/cdn/voice.js`
+(le dialogue outil ↔ modèle), `src/components/WidgetCustomizer.tsx` (les
+réglages).
 
 ---
 

@@ -439,6 +439,70 @@ describe('les messages binaires de Gemini Live', () => {
   });
 });
 
+describe('l’outil : l’agent note la demande du client', () => {
+  it('appelle onToolCall puis RENVOIE la réponse au modèle (sinon l’appel se fige)', async () => {
+    const calls: any[] = [];
+    const { call } = makeCall({
+      onToolCall: (c: any) => {
+        calls.push(c);
+        return { ok: true, enregistre: true };
+      },
+    });
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    ws.emit({
+      toolCall: {
+        functionCalls: [{ id: 'fc1', name: 'enregistrer_demande', args: { nom: 'Sara', telephone: '0697660969' } }],
+      },
+    });
+    await flush();
+    await flush();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ name: 'enregistrer_demande', args: { telephone: '0697660969' } });
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    const toolResponse = sent.find((m) => m.toolResponse);
+    expect(toolResponse.toolResponse.functionResponses[0]).toMatchObject({
+      id: 'fc1',
+      name: 'enregistrer_demande',
+      response: { ok: true, enregistre: true },
+    });
+    call.stop('client');
+  });
+
+  it('sans gestionnaire, le modèle reçoit quand même une réponse (jamais de silence)', async () => {
+    const { call } = makeCall();
+    call.start();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    ws.emit({ setupComplete: {} });
+    await flush();
+
+    ws.emit({ toolCall: { functionCalls: [{ id: 'fc2', name: 'enregistrer_demande', args: {} }] } });
+    await flush();
+    await flush();
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    const toolResponse = sent.find((m) => m.toolResponse);
+    expect(toolResponse.toolResponse.functionResponses[0]).toMatchObject({ id: 'fc2', response: { ok: false } });
+    call.stop('client');
+  });
+
+  it('comprend l’écriture snake_case de Google (tool_call)', () => {
+    const parsed = parseLiveMessage(
+      JSON.stringify({ tool_call: { function_calls: [{ id: 'x', name: 'enregistrer_demande', args: {} }] } }),
+    );
+    expect(parsed.toolCall).toBeTruthy();
+  });
+});
+
 describe('le son de l’appel (haut-parleur)', () => {
   it('le module expose de quoi débloquer le son dans un clic', () => {
     // Indispensable : sans geste de l'utilisateur, les navigateurs créent une

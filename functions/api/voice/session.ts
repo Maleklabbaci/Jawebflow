@@ -38,6 +38,7 @@ import {
   VOICE_NOT_ENABLED_MSG,
   VOICE_RATE_LIMITED_MSG,
 } from '../../_shared/voice/live.ts';
+import { liveTools } from '../../_shared/voice/mission.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -132,13 +133,20 @@ export async function onRequestPost(context: any) {
     const opening = voice.greeting
       ? `### OUVERTURE DE L'APPEL\nCommence l'appel par ces mots, exactement : « ${String(voice.greeting).slice(0, 300)} »`
       : '';
-    const systemInstruction = buildVoiceSystemPrompt(config, knowledgeText, opening);
+    const systemInstruction = buildVoiceSystemPrompt(config, knowledgeText, opening, {
+      mission: voice.mission,
+      languages: voice.languages,
+    });
     // `fallback: true` = le navigateur vient de se faire fermer la session juste
     // après le setup : on lui redonne un jeton sur le couple historique.
     const live = await createLiveToken(env, {
       systemInstruction,
       voice: voice.voice,
       legacy: body.fallback === true,
+      // 🎯 La mission du marchand voyage avec le jeton : coordonnées du client,
+      // besoin, rendez-vous… L'agent note, le marchand retrouve la fiche dans
+      // ses leads (marquée « appel vocal »).
+      tools: liveTools(voice.mission),
     });
     if (!live.ok || !live.token) {
       if (live.detail) console.error('[voice/session] Gemini Live :', live.detail);
@@ -158,6 +166,7 @@ export async function onRequestPost(context: any) {
       expiresAt: live.expiresAt,
       maxSeconds: voice.maxSeconds,
       greeting: voice.greeting,
+      mission: voice.mission,
       // Le navigateur envoie ce message en ouvrant la connexion : le serveur
       // décide, le visiteur ne peut rien changer.
       setup: buildClientSetup(String(live.model), voice.voice),

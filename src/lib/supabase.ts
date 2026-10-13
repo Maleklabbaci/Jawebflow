@@ -95,6 +95,15 @@ export interface WidgetCustomization {
     voice: string;
     greeting: string;
     maxMinutes: number;
+    /** 🗣️ Langues que l'agent doit parler (darija, arabe, français, anglais). */
+    languages?: string[];
+    /** 🎯 Ce que l'agent doit obtenir pendant l'appel (le CTA) et ce qu'il note. */
+    mission?: {
+      enabled: boolean;
+      goal: 'info' | 'lead' | 'appointment' | 'order' | 'support';
+      cta: string;
+      collect: string[];
+    };
   };
   /**
    * 🎯 Mode du widget (décision du 14/10/2026) : 'both' = écrit + appels,

@@ -44,6 +44,40 @@ const COLOR_PRESETS = [
   { name: 'Doré Ambre', primary: '#d97706', secondary: '#fbbf24' },
 ];
 
+/** 🗣️ Les langues que l'agent peut parler (le client garde toujours le dernier mot). */
+const LANGUAGE_CHOICES: { id: string; label: string }[] = [
+  { id: 'darija', label: 'Darija (algérien)' },
+  { id: 'ar', label: 'Arabe' },
+  { id: 'fr', label: 'Français' },
+  { id: 'en', label: 'Anglais' },
+];
+
+/** 🎯 Ce que l'agent doit obtenir : le CTA du marchand. */
+const MISSION_GOALS: { id: string; label: string; desc: string }[] = [
+  { id: 'lead', label: 'Laisser ses coordonnées', desc: 'Nom + numéro pour rappeler' },
+  { id: 'appointment', label: 'Prendre rendez-vous', desc: 'Jour et heure fixés' },
+  { id: 'order', label: 'Passer une commande', desc: 'Ce qu\'il veut, la quantité' },
+  { id: 'support', label: 'Être rappelé (problème)', desc: 'Le souci, puis le numéro' },
+  { id: 'info', label: 'Juste renseigner', desc: 'Répondre, puis proposer un rappel' },
+];
+
+/** Les informations que l'agent peut récolter. */
+const COLLECT_CHOICES: { id: string; label: string }[] = [
+  { id: 'nom', label: 'Nom' },
+  { id: 'telephone', label: 'Téléphone' },
+  { id: 'email', label: 'E-mail' },
+  { id: 'ville', label: 'Ville' },
+  { id: 'besoin', label: 'Besoin' },
+  { id: 'date', label: 'Jour / heure' },
+];
+
+const DEFAULT_MISSION = {
+  enabled: true,
+  goal: 'lead',
+  cta: '',
+  collect: ['nom', 'telephone', 'besoin'],
+};
+
 /** Voix proposées par l'agent vocal (noms Google, décrits simplement). */
 const VOICE_CHOICES = [
   { id: 'Puck', label: 'Puck', desc: 'Enjouée' },
@@ -72,6 +106,9 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   // Réglages de voix : valeurs par défaut tant que le marchand n'a rien réglé.
   const voice = config.voice || { enabled: false, voice: 'Puck', greeting: '', maxMinutes: 5 };
+  const languages = voice.languages || [];
+  const mission = voice.mission || DEFAULT_MISSION;
+  const patchVoice = (patch: Record<string, unknown>) => onChange({ voice: { ...voice, ...patch } as any });
   // 🎯 Mode + accroche : valeurs par défaut tant que le marchand n'a rien réglé.
   const mode = config.mode || 'both';
   const attention = config.attention || {
@@ -782,6 +819,143 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                       placeholder="Bonjour, vous êtes bien chez … ! Que puis-je faire pour vous ?"
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
                     />
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      🗣️ Langues de l'assistant
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {LANGUAGE_CHOICES.map((choice) => {
+                        const on = languages.includes(choice.id);
+                        return (
+                          <button
+                            key={choice.id}
+                            type="button"
+                            data-testid={`voice-language-${choice.id}`}
+                            aria-pressed={on}
+                            onClick={() =>
+                              patchVoice({
+                                languages: on ? languages.filter((l: string) => l !== choice.id) : [...languages, choice.id],
+                              })
+                            }
+                            className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                              on ? 'border-purple-600 bg-purple-50 text-purple-900' : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                            }`}
+                          >
+                            {choice.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span className="block text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+                      C'est le client qui a le dernier mot : l'assistant répond dans la langue où on lui parle,
+                      parmi celles que vous cochez. Sans choix : darija, arabe et français.
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3" data-testid="voice-mission">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <span className="block text-xs font-bold text-slate-900">🎯 Sa mission pendant l'appel</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                          Après avoir répondu, l'assistant amène le client à votre CTA, puis il
+                          <strong> note sa demande</strong> (nom, numéro, besoin, rendez-vous) — vous la retrouvez
+                          dans vos leads, marquée « appel vocal ».
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        data-testid="voice-mission-enabled"
+                        aria-label="Activer la mission (l'assistant note les demandes)"
+                        checked={mission.enabled !== false}
+                        onChange={(e) => patchVoice({ mission: { ...mission, enabled: e.target.checked } })}
+                        className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 shrink-0 mt-0.5"
+                      />
+                    </div>
+
+                    {mission.enabled !== false ? (
+                      <>
+                        <div>
+                          <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                            Ce qu'il doit obtenir
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {MISSION_GOALS.map((goal) => (
+                              <button
+                                key={goal.id}
+                                type="button"
+                                data-testid={`voice-goal-${goal.id}`}
+                                onClick={() => patchVoice({ mission: { ...mission, goal: goal.id } })}
+                                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                  mission.goal === goal.id
+                                    ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-600'
+                                    : 'border-slate-200 bg-white hover:border-purple-300'
+                                }`}
+                              >
+                                <span className="block text-[11px] font-bold text-slate-900">{goal.label}</span>
+                                <span className="block text-[10px] text-slate-500">{goal.desc}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                            Votre CTA (ce que l'assistant propose, avec vos mots)
+                          </label>
+                          <input
+                            type="text"
+                            data-testid="voice-mission-cta"
+                            value={mission.cta}
+                            onChange={(e) => patchVoice({ mission: { ...mission, cta: e.target.value } })}
+                            placeholder="Prendre rendez-vous, avoir un devis, commander…"
+                            className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
+                          />
+                        </div>
+
+                        <div>
+                          <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                            Ce qu'il note
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {COLLECT_CHOICES.map((field) => {
+                              const on = (mission.collect || []).includes(field.id);
+                              return (
+                                <button
+                                  key={field.id}
+                                  type="button"
+                                  data-testid={`voice-collect-${field.id}`}
+                                  aria-pressed={on}
+                                  onClick={() =>
+                                    patchVoice({
+                                      mission: {
+                                        ...mission,
+                                        collect: on
+                                          ? (mission.collect || []).filter((f: string) => f !== field.id)
+                                          : [...(mission.collect || []), field.id],
+                                      },
+                                    })
+                                  }
+                                  className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all cursor-pointer ${
+                                    on ? 'border-purple-600 bg-purple-50 text-purple-900' : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                                  }`}
+                                >
+                                  {field.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <span className="block text-[10px] text-slate-500 mt-1.5">
+                            Un appel sans numéro ne sert à rien : gardez au moins « Téléphone ».
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="block text-[10px] text-slate-500">
+                        Désactivée : l'assistant répond aux questions mais ne note rien.
+                      </span>
+                    )}
                   </div>
 
                   <div>

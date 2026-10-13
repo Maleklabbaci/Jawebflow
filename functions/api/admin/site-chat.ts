@@ -17,7 +17,13 @@
  * reste utilisable et le message est clair.
  */
 import { verifySupabaseIdToken, supabaseRequest } from '../../_shared/supabase.ts';
-import { readSiteChatConfig, saveSiteChatConfig, siteChatDiag } from '../../_shared/site-chat.ts';
+import {
+  readSiteChatConfig,
+  saveSiteChatConfig,
+  siteChatDiag,
+  readSiteLeads,
+  markSiteLead,
+} from '../../_shared/site-chat.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -58,7 +64,20 @@ export async function onRequestGet(context: any) {
   // `error` + `diag` : quand la table est injoignable, la console doit pouvoir
   // dire OÙ (quel projet Supabase) et QUOI FAIRE — le cas n°1 des « j'ai
   // pourtant exécuté le SQL » est un SQL exécuté dans un autre projet.
-  return json({ ok: true, stored, available, error, diag: siteChatDiag(env), config });
+  // 🎯 Les demandes que l'assistant a NOTÉES pendant les appels du site :
+  // elles s'affichent dans la console, et l'admin les marque « traité ».
+  const leads = await readSiteLeads(env);
+  return json({
+    ok: true,
+    stored,
+    available,
+    error,
+    diag: siteChatDiag(env),
+    config,
+    leads: leads.slice(0, 50),
+    leadCount: leads.length,
+    newLeadCount: leads.filter((l) => l.status !== 'traite').length,
+  });
 }
 
 export async function onRequestPost(context: any) {
@@ -67,6 +86,18 @@ export async function onRequestPost(context: any) {
   if (gate.error) return gate.error;
 
   const body = await context.request.json().catch(() => ({} as any));
+
+  // Marquer une demande du site comme traitée (ou la remettre en « nouveau »).
+  if (body?.action === 'mark-lead') {
+    const id = String(body?.id || '').trim().slice(0, 120);
+    const status = body?.status === 'nouveau' ? 'nouveau' : 'traite';
+    if (!id) return json({ ok: false, error: 'id requis' }, 400);
+    const marked = await markSiteLead(env, id, status);
+    if (!marked.ok) return json({ ok: false, error: marked.error || 'Marquage impossible.' }, 502);
+    const leads = await readSiteLeads(env);
+    return json({ ok: true, leads: leads.slice(0, 50), leadCount: leads.length });
+  }
+
   // On accepte { config } (forme normale) ou l'objet direct : plus tolérant
   // pour les scripts, sans jamais faire confiance au contenu.
   const raw = body && typeof body === 'object' && body.config && typeof body.config === 'object' ? body.config : body;

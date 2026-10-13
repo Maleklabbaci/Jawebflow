@@ -17,6 +17,7 @@ import * as siteChatApi from '../functions/api/site-chat';
 import * as adminSiteChatApi from '../functions/api/admin/site-chat';
 import * as siteVoiceApi from '../functions/api/site-voice';
 import * as voiceReport from '../functions/api/voice/report';
+import * as leadApi from '../functions/api/voice/lead';
 import { ENV, installFakes } from './helpers/fakes';
 
 const ADMIN = '22222222-2222-4222-8222-222222222222';
@@ -417,5 +418,40 @@ describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', 
     expect(json.ok).toBe(true);
     expect(json.site).toBe(true);
     expect(fx.supabase.rows('conversation_contexts').length).toBe(0);
+  });
+});
+
+describe('les demandes notées pendant les appels du site (console)', () => {
+  const postLead = (body: unknown) =>
+    leadApi.onRequestPost({
+      request: new Request('https://jawebflow.test/api/voice/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '20.0.0.9' },
+        body: JSON.stringify(body),
+      }),
+      env: ENV,
+    });
+
+  it('une demande notée arrive dans la console, puis se marque « traitée »', async () => {
+    const saved = await postLead({ site: true, sessionId: 'sv_1', args: { nom: 'Karim', telephone: '0555112233', besoin: 'un agent vocal', type_demande: 'rendez-vous', date: 'jeudi 14h' } });
+    expect(((await saved.json()) as any).ok).toBe(true);
+
+    const first = (await (await adminGet('BEARER_ADMIN')).json()) as any;
+    expect(first.leadCount).toBe(1);
+    expect(first.newLeadCount).toBe(1);
+    expect(first.leads[0]).toMatchObject({ name: 'Karim', phone: '0555112233', status: 'nouveau', date: 'jeudi 14h' });
+
+    const marked = await adminPost({ action: 'mark-lead', id: first.leads[0].id, status: 'traite' }, 'BEARER_ADMIN');
+    expect(marked.status).toBe(200);
+    const after = (await marked.json()) as any;
+    expect(after.ok).toBe(true);
+    expect(after.leads[0].status).toBe('traite');
+  });
+
+  it('un marchand connecté ne peut ni lire ni marquer ces demandes', async () => {
+    const res = await adminGet('BEARER_CLIENT');
+    expect(res.status).toBe(403);
+    const mark = await adminPost({ action: 'mark-lead', id: 'lead_x', status: 'traite' }, 'BEARER_CLIENT');
+    expect(mark.status).toBe(403);
   });
 });

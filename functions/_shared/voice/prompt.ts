@@ -20,6 +20,13 @@
  */
 
 /** Plafond du texte de connaissance injecté (≈ 1 500 jetons). */
+import {
+  missionInstruction,
+  languageInstruction,
+  type VoiceLanguage,
+  type VoiceMission,
+} from './mission.ts';
+
 export const VOICE_KNOWLEDGE_BUDGET = 6_000;
 /** Longueur maximale d'une fiche « vitale » (horaires, contact, livraison…). */
 const CORE_LINE_CAP = 420;
@@ -105,6 +112,7 @@ export function buildVoiceSystemPrompt(
   config: any,
   knowledgeText = '',
   openingInstructions = '',
+  options: { mission?: VoiceMission; languages?: VoiceLanguage[] } = {},
 ): string {
   const businessName = clean(config?.businessName, 120) || 'cette entreprise';
   const phone = clean(config?.businessInfo?.phone, 60);
@@ -128,6 +136,16 @@ export function buildVoiceSystemPrompt(
 - Si le client parle darija, tu réponds en darija ; s'il parle arabe, en arabe ; s'il parle français, en français.
 - Quand le client donne son numéro ou son email, tu le répètes pour vérifier qu'il est juste.
 - Tu termines naturellement : « autre chose ? », et tu laisses le client raccrocher.`;
+
+  // 🗣️ Langues choisies par le marchand (darija, arabe, français, anglais).
+  // Sans choix explicite, on ne gonfle pas le prompt : la règle « tu réponds
+  // dans la langue du client » est déjà dans les consignes du téléphone.
+  const langLine = options.languages && options.languages.length ? languageInstruction(options.languages) : '';
+  if (langLine) prompt += `\n\n${langLine}`;
+
+  // 🎯 La mission (CTA du marchand) + l'outil qui note la demande.
+  const missionLine = options.mission ? missionInstruction(options.mission) : '';
+  if (missionLine) prompt += `\n\n${missionLine}`;
 
   if (knowledge) {
     prompt += `\n\n### BASE DE CONNAISSANCE DE ${businessName.toUpperCase()} (ta seule source)\n${knowledge}`;

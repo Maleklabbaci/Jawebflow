@@ -254,7 +254,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   // les navigateurs (surtout iOS) gardent la sortie « suspendue » : le modèle
   // parle, le visiteur n'entend rien — c'était le « j'écoute rien ».
   const engineRef = useRef<any>(null);
-  const engineUrl = '/cdn/voice.js?v=11';
+  const engineUrl = '/cdn/voice.js?v=12';
 
   useEffect(() => {
     let alive = true;
@@ -317,6 +317,21 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
         onNotice: (n: any) => {
           // Le navigateur a coupé la sortie audio : on le DIT au visiteur.
           if (n?.message) setCall((c) => ({ ...c, error: String(n.message) }));
+        },
+        // 🎯 L'agent note la demande du visiteur (nom, téléphone, besoin) :
+        // la fiche part dans la console admin (id = site_leads). Sans réponse,
+        // Gemini attendrait — et l'appel deviendrait muet.
+        onToolCall: async (call: any) => {
+          try {
+            const res = await fetch('/api/voice/lead', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ site: true, sessionId, args: call?.args || {} }),
+            });
+            return await res.json().catch(() => null);
+          } catch {
+            return null;
+          }
         },
         onError: (e: any) => {
           const message = e?.message || "L'appel a échoué.";

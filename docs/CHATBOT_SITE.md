@@ -85,3 +85,23 @@ Un message du chatbot du site coûte **≈ 0,0014 $** (même modèle que les
 clients : `gemini-3.1-flash-lite`, réponses plafonnées à 420 tokens, aucune
 réflexion facturée). 1 000 messages ≈ **1,4 $**. Le garde-fou de 20 messages /
 10 minutes / visiteur empêche un robot de vider le quota Google.
+
+---
+
+## 🎯 L'assistant du site ne fait pas que répondre : il collecte
+
+Le même réglage que pour les clients : onglet **Voix** du personnalisateur →
+« Sa mission pendant l'appel ». Sur le site vitrine, le CTA par défaut est
+**« Créer son assistant gratuitement »** : au téléphone, l'assistant répond aux
+questions, amène le visiteur à créer son assistant, et **note son nom, son
+numéro et son besoin** via l'outil `enregistrer_demande`.
+
+Les demandes arrivent dans **cette console** : onglet « Chatbot du site » →
+**📞 Demandes notées pendant les appels**. Chaque ligne montre le nom, le
+numéro, la ville, le besoin, le rendez-vous éventuel et la date — avec un bouton
+**« Marquer traité »** (et le compteur de demandes non traitées sur l'onglet).
+Elles sont stockées dans `platform_settings` (`id = site_leads`, 200 dernières,
+même numéro = même demande).
+
+Le visiteur reçoit la réponse de l'agent (« c'est noté, on vous rappelle ») sans
+jamais voir qu'une fiche a été écrite.

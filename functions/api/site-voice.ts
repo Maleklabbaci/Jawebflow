@@ -18,6 +18,7 @@
 import { rateLimited } from '../_shared/rate-limit.ts';
 import { readSiteChatConfig, buildSiteVoicePrompt, siteVoiceMaxSeconds, SITE_ASSISTANT_ID } from '../_shared/site-chat.ts';
 import { createLiveToken, buildClientSetup, VOICE_RATE_LIMITED_MSG } from '../_shared/voice/live.ts';
+import { liveTools } from '../_shared/voice/mission.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -68,6 +69,10 @@ export async function onRequestPost(context: any) {
       systemInstruction: buildSiteVoicePrompt(config),
       voice: voice.voice,
       legacy: body?.fallback === true,
+      // 🎯 L'agent peut NOTER la demande du visiteur (nom, téléphone, besoin) :
+      // la fiche arrive dans la console. L'outil ne lui donne aucune
+      // connaissance en plus — il ne sert qu'à enregistrer.
+      tools: liveTools(voice.mission),
     });
     if (!live.ok || !live.token) {
       if (live.detail) console.error('[site-voice] Gemini Live :', live.detail);
@@ -91,6 +96,8 @@ export async function onRequestPost(context: any) {
       maxSeconds: siteVoiceMaxSeconds(config),
       greeting: voice.greeting || '',
       setup: buildClientSetup(String(live.model), voice.voice),
+      // Ce que l'agent doit obtenir (le CTA) : le panneau d'appel l'affiche.
+      mission: voice.mission,
       sessionId,
     });
   } catch (e: any) {

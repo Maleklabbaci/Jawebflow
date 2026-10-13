@@ -21,6 +21,13 @@
  */
 
 /** Modèle temps réel par défaut (surchargeable par `GEMINI_LIVE_MODEL`). */
+import {
+  normalizedLanguages,
+  normalizedMission,
+  type VoiceLanguage,
+  type VoiceMission,
+} from './mission.ts';
+
 export const DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
 
 /**
@@ -82,6 +89,10 @@ export interface VoiceSettings {
   voice: string;
   greeting: string;
   maxSeconds: number;
+  /** 🗣️ Les langues que l'agent doit parler (le client garde le dernier mot). */
+  languages: VoiceLanguage[];
+  /** 🎯 Ce que l'agent doit obtenir (CTA du marchand) et ce qu'il doit noter. */
+  mission: VoiceMission;
 }
 
 /** Réglages de voix du widget, toujours assainis (le jsonb vient du marchand). */
@@ -99,6 +110,8 @@ export function normalizedVoiceSettings(raw: unknown): VoiceSettings {
     voice: (LIVE_VOICES as readonly string[]).includes(voice) ? voice : DEFAULT_LIVE_VOICE,
     greeting: String(v.greeting || '').slice(0, 400),
     maxSeconds: Math.min(MAX_SESSION_SECONDS, Math.max(30, seconds)),
+    languages: normalizedLanguages(v.languages),
+    mission: normalizedMission(v.mission),
   };
 }
 
@@ -145,7 +158,12 @@ export function buildClientSetup(model: string, voice: string) {
  * Configuration imposée par le jeton (autoritaire côté Google) : le marchand
  * garde la main sur le comportement, le visiteur ne peut rien changer.
  */
-export function buildTokenSetup(model: string, voice: string, systemInstruction: string) {
+export function buildTokenSetup(
+  model: string,
+  voice: string,
+  systemInstruction: string,
+  tools: unknown[] = [],
+) {
   return {
     model: `models/${model}`,
     generationConfig: {
@@ -153,6 +171,10 @@ export function buildTokenSetup(model: string, voice: string, systemInstruction:
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
     },
     systemInstruction: { parts: [{ text: systemInstruction }] },
+    // 🎯 La mission de l'agent (enregistrer la demande du client) vit ICI :
+    // le jeton est autoritaire, donc le navigateur ne peut ni retirer l'outil
+    // ni en ajouter un autre.
+    ...(Array.isArray(tools) && tools.length ? { tools } : {}),
   };
 }
 
@@ -187,6 +209,8 @@ export async function createLiveToken(
     apiVersion?: string;
     /** Le navigateur redemande un jeton APRÈS l'échec du premier : couple historique. */
     legacy?: boolean;
+    /** Les outils que l'agent pourra appeler (enregistrer une demande…). */
+    tools?: unknown[];
     fetchImpl?: typeof fetch;
     now?: number;
   },
@@ -228,7 +252,7 @@ export async function createLiveToken(
             uses: 1, // un seul appel par jeton : impossible de le revendre
             expireTime,
             newSessionExpireTime: expireTime,
-            bidiGenerateContentSetup: buildTokenSetup(modelName, voice, opts.systemInstruction),
+            bidiGenerateContentSetup: buildTokenSetup(modelName, voice, opts.systemInstruction, opts.tools),
           }),
         });
       } catch (e) {

@@ -76,7 +76,7 @@
   // Le moteur d'appel est mis en cache 24 h par le navigateur : on demande une
   // adresse versionnée pour qu'une correction du moteur arrive tout de suite
   // (incrémenter `v` à chaque changement de `public/cdn/voice.js`).
-  var VOICE_ENGINE = '/cdn/voice.js?v=11';
+  var VOICE_ENGINE = '/cdn/voice.js?v=12';
   // Le moteur, chargé D'AVANCE : c'est ce qui permet de débloquer le son dans
   // le clic du visiteur (règle Chrome/Safari : sans geste, la sortie audio
   // démarre « suspendue » et l'assistant reste muet, même s'il parle).
@@ -405,6 +405,23 @@
             onNotice: function (n) {
               // Le navigateur a coupé la sortie : on le DIT au visiteur.
               if (n && n.message) { callError = n.message; render(); }
+            },
+            onToolCall: function (call) {
+              // 🎯 L'agent veut NOTER la demande du client (nom, numéro,
+              // besoin, rendez-vous) : on l'enregistre chez le marchand. Sans
+              // réponse, Gemini attendrait — et l'appel deviendrait muet.
+              return fetch((apiOrigin || '') + '/api/voice/lead', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  assistantId: assistantId,
+                  origin: window.location.origin,
+                  sessionId: visitorId,
+                  args: (call && call.args) || {},
+                }),
+              })
+                .then(function (r) { return r.json().catch(function () { return null; }); })
+                .catch(function () { return null; });
             },
             onError: function (e) {
               var msg = (e && e.message) || VOICE_FALLBACK_ERROR;

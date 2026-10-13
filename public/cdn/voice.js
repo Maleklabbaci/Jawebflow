@@ -248,6 +248,9 @@ export function parseLiveMessage(raw) {
  * @param {(e:{message:string,code?:string})=>void} [options.onError]
  * @param {(u:{seconds:number,tokensIn:number,tokensOut:number,reason:string})=>void} [options.onEnd]
  * @param {(level:number)=>void} [options.onLevel]
+ * @param {(call:{name:string,args:object,callId:string})=>Promise<object>|object} [options.onToolCall]
+ *        l'agent appelle un outil (ex. enregistrer la demande du client) : le
+ *        widget enregistre, puis renvoie la réponse au modèle.
  */
 export function createVoiceCall(options) {
   const opts = options || {};
@@ -478,6 +481,7 @@ export function createVoiceCall(options) {
       abort('server', String(detail), 'server');
       return;
     }
+    if (msg.toolCall) runToolCalls(msg.toolCall);
     if (msg.setupComplete) {
       setupDone = true;
       stopRingtone();
@@ -508,6 +512,42 @@ export function createVoiceCall(options) {
       tokensIn = Math.max(tokensIn, msg.usage.tokensIn || 0);
       tokensOut = Math.max(tokensOut, msg.usage.tokensOut || 0);
     }
+  }
+
+  /**
+   * 🎯 L'agent vient d'appeler un outil (il veut NOTER quelque chose : nom,
+   * numéro, rendez-vous). On prévient le widget (`onToolCall`), il enregistre
+   * côté serveur, et on renvoie la réponse au modèle pour qu'il confirme au
+   * client. Sans réponse, Gemini attendrait — et l'appel deviendrait muet.
+   */
+  function runToolCalls(call) {
+    const calls = (call && (call.functionCalls || call.function_calls)) || [];
+    if (!calls.length) return;
+    const handler = typeof opts.onToolCall === 'function' ? opts.onToolCall : null;
+    const send = (functionResponses) => {
+      try {
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ toolResponse: { functionResponses } }));
+      } catch {
+        /* trame perdue : l'appel continue */
+      }
+    };
+    // Le modèle annonce lui-même « c'est noté » à voix haute : pas besoin de
+    // doubler avec un message à l'écran.
+    const done = (list) => send(list);
+    Promise.all(
+      calls.map((c) =>
+        Promise.resolve()
+          .then(() => (handler ? handler({ name: c.name, args: c.args || {}, callId: c.id }) : null))
+          .catch(() => null)
+          .then((response) => ({
+            id: c.id,
+            name: c.name,
+            response: response && typeof response === 'object' ? response : { ok: false },
+          })),
+      ),
+    )
+      .then(done)
+      .catch(() => {});
   }
 
   function startMic() {
