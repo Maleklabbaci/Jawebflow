@@ -2,3 +2,11 @@
   Access-Control-Allow-Origin: *
   Access-Control-Allow-Methods: GET, POST, OPTIONS
   Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With
+
+# Le moteur d'appel vocal est importé par le widget depuis le site du marchand :
+# sans ces en-têtes, le navigateur refuse le module (CORS) et le micro ne
+# s'ouvre jamais.
+/cdn/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, OPTIONS
+  Cache-Control: public, max-age=86400

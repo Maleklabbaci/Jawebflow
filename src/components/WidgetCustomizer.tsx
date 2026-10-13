@@ -1,27 +1,5 @@
 import React, { useState } from 'react';
-import {
-  Sparkles,
-  Bot,
-  MessageSquare,
-  Zap,
-  Headphones,
-  Brain,
-  Shield,
-  Image as ImageIcon,
-  Palette,
-  Eye,
-  Check,
-  Copy,
-  ArrowRight,
-  Sun,
-  Moon,
-  CheckCircle2,
-  HelpCircle,
-  Upload,
-  Layers,
-  Send,
-  X
-} from 'lucide-react';
+import { Sparkles, Mic, Bot, MessageSquare, Zap, Headphones, Brain, Shield, Image as ImageIcon, Palette, Eye, Check, Copy, ArrowRight, Sun, Moon, CheckCircle2, HelpCircle, Upload, Layers, Send, X } from 'lucide-react';
 import { WidgetCustomization } from '../lib/supabase';
 
 interface WidgetCustomizerProps {
@@ -57,6 +35,16 @@ const COLOR_PRESETS = [
   { name: 'Doré Ambre', primary: '#d97706', secondary: '#fbbf24' },
 ];
 
+/** Voix proposées par l'agent vocal (noms Google, décrits simplement). */
+const VOICE_CHOICES = [
+  { id: 'Puck', label: 'Puck', desc: 'Enjouée' },
+  { id: 'Kore', label: 'Kore', desc: 'Posée' },
+  { id: 'Aoede', label: 'Aoede', desc: 'Chaleureuse' },
+  { id: 'Zephyr', label: 'Zephyr', desc: 'Claire' },
+  { id: 'Charon', label: 'Charon', desc: 'Sérieuse' },
+  { id: 'Fenrir', label: 'Fenrir', desc: 'Grave' },
+];
+
 export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   businessName,
   onBusinessNameChange,
@@ -67,10 +55,13 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   onGoToIntegration,
   isSaving = false
 }) => {
-  const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content'>('icon');
+  const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content' | 'voice'>('icon');
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   const [previewTestMessage, setPreviewTestMessage] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  // Réglages de voix : valeurs par défaut tant que le marchand n'a rien réglé.
+  const voice = config.voice || { enabled: false, voice: 'Puck', greeting: '', maxMinutes: 5 };
+
   const [previewMessages, setPreviewMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string }>>([
     { sender: 'bot', text: config.welcomeMessage || `Bonjour ! 👋 Comment puis-je vous aider aujourd'hui ?` }
   ]);
@@ -188,7 +179,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
         <div className="lg:col-span-7 space-y-4">
           
           {/* Sub-tabs for customization categories */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
             <button
               type="button"
               onClick={() => setActiveTab('icon')}
@@ -239,6 +230,20 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
             >
               <MessageSquare className="w-3.5 h-3.5" />
               <span className="truncate">4. Textes & Accroche</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('voice')}
+              data-testid="tab-voice"
+              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'voice'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span className="truncate">5. Voix</span>
             </button>
           </div>
 
@@ -672,6 +677,110 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                   className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
                 />
               </div>
+            </div>
+          )}
+
+          {/* ── 5. VOIX : l'agent vocal dans la bulle ───────────────────── */}
+          {activeTab === 'voice' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-4">
+                <div>
+                  <span className="block text-xs font-bold text-slate-900">Agent vocal — l'appel en direct</span>
+                  <span className="block text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    Vos visiteurs appuient sur le micro et parlent à voix haute. L'assistant répond,
+                    comme au téléphone, sans quitter votre site.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="voice-enabled"
+                  aria-label="Activer l'agent vocal"
+                  checked={voice.enabled}
+                  onChange={(e) => onChange({ voice: { ...voice, enabled: e.target.checked } })}
+                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 shrink-0 mt-0.5"
+                />
+              </div>
+
+              {voice.enabled ? (
+                <>
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="block text-[11px] font-bold text-amber-900">
+                      💸 La voix consomme plus de crédit IA qu'un message écrit
+                    </span>
+                    <span className="block text-[10px] text-amber-800 mt-1 leading-relaxed">
+                      C'est une conversation en direct : chaque minute compte. Le plafond mensuel de votre
+                      formule s'applique comme pour le chat — quand il est atteint, l'assistant se met en
+                      pause et votre forfait n'est jamais dépassé sans que vous le sachiez.
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Voix de l'assistant</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {VOICE_CHOICES.map((choice) => (
+                        <button
+                          key={choice.id}
+                          type="button"
+                          onClick={() => onChange({ voice: { ...voice, voice: choice.id } })}
+                          data-testid={`voice-choice-${choice.id}`}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            voice.voice === choice.id
+                              ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-600'
+                              : 'border-slate-200 bg-white hover:border-purple-300'
+                          }`}
+                        >
+                          <span className="block text-xs font-bold text-slate-900">{choice.label}</span>
+                          <span className="block text-[10px] text-slate-500">{choice.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Phrase d'ouverture <span className="normal-case font-normal">(l'assistant parle en premier)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={voice.greeting}
+                      onChange={(e) => onChange({ voice: { ...voice, greeting: e.target.value } })}
+                      placeholder="Bonjour, vous êtes bien chez … ! Que puis-je faire pour vous ?"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Durée maximale d'un appel
+                    </span>
+                    <div className="flex gap-2">
+                      {[2, 5, 10, 15].map((minutes) => (
+                        <button
+                          key={minutes}
+                          type="button"
+                          onClick={() => onChange({ voice: { ...voice, maxMinutes: minutes } })}
+                          data-testid={`voice-minutes-${minutes}`}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            (voice.maxMinutes || 5) === minutes
+                              ? 'border-purple-600 bg-purple-50 text-purple-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {minutes} min
+                        </button>
+                      ))}
+                    </div>
+                    <span className="block text-[10px] text-slate-500 mt-1.5">
+                      L'appel se termine tout seul à la fin du temps : c'est votre protection.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Cochez « Agent vocal » pour l'activer. Vos visiteurs verront alors un micro dans
+                  l'en-tête du chat. Le chat écrit continue de fonctionner exactement comme avant.
+                </p>
+              )}
             </div>
           )}
 

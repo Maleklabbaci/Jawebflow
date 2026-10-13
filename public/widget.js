@@ -23,6 +23,20 @@
   var avatarUrl = (scriptEl && scriptEl.getAttribute('data-avatar-url')) || '';
   var brandingEnabled = true;
 
+  // ── Appel vocal (agent voix) : le marchand l'allume depuis son tableau de
+  // bord, ou avec data-voice="on" pour un test rapide.
+  var voiceEnabled = ((scriptEl && scriptEl.getAttribute('data-voice')) || '').toLowerCase() === 'on';
+  var voiceGreeting = (scriptEl && scriptEl.getAttribute('data-voice-greeting')) || '';
+  var voiceMaxMinutes = 5;
+  var callActive = false;      // un appel est en cours (ou en train de s'ouvrir)
+  var callSession = null;      // le moteur d'appel, une fois chargé
+  var callState = '';          // connecting | listening | speaking | error
+  var callLines = [];          // ce qui se dit, en direct
+  var callSeconds = 0;
+  var callMuted = false;
+  var callError = '';
+  var callTimerId = null;
+
   var namedColors = {
     violet: '#8b5cf6', cyan: '#06b6d4', orange: '#f97316', mono: '#334155',
     emerald: '#10b981', rose: '#f43f5e', indigo: '#4f46e5', blue: '#3b82f6', purple: '#9333ea'
@@ -60,6 +74,12 @@
     }
     if (name === 'bot' || name === 'robot' || name === 'ai') {
       return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>';
+    }
+    if (name === 'mic' || name === 'micro') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+    }
+    if (name === 'hangup') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67"/><path d="M5 10v2a7 7 0 0 0 12 5"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
     }
     if (name === 'arrowdown') {
       return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '"><path d="m6 9 6 6 6-6"/></svg>';
@@ -125,7 +145,26 @@
     '.jw-feedback{display:flex;gap:2px;align-self:flex-start;margin:-8px 0 0 4px;}' +
     '.jw-feedback button{background:none;border:none;cursor:pointer;font-size:11px;opacity:.4;padding:1px 3px;transition:opacity .15s,transform .15s;}' +
     '.jw-feedback button:hover{opacity:1;}' +
-    '.jw-feedback button.jw-fb-on{opacity:1;transform:scale(1.2);}';
+    '.jw-feedback button.jw-fb-on{opacity:1;transform:scale(1.2);}' +
+    '.jw-header-mic{background:rgba(255,255,255,.15);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;margin-right:8px;}' +
+    '.jw-header-mic svg{width:14px;height:14px;stroke-width:2.5;}' +
+    '.jw-call{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:22px 18px;overflow-y:auto;}' +
+    '.jw-call-avatar{width:88px;height:88px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;overflow:hidden;}' +
+    '.jw-call-avatar svg{width:38px;height:38px;}' +
+    '.jw-call-avatar img{width:100%;height:100%;object-fit:cover;}' +
+    '.jw-call-live .jw-call-avatar{animation:jwPulse 1.8s infinite;}' +
+    '@keyframes jwPulse{0%{box-shadow:0 0 0 0 rgba(139,92,246,.45);}70%{box-shadow:0 0 0 26px rgba(139,92,246,0);}100%{box-shadow:0 0 0 0 rgba(139,92,246,0);}}' +
+    '.jw-call-title{font-size:15px;font-weight:700;}' +
+    '.jw-call-status{font-size:12.5px;opacity:.75;}' +
+    '.jw-call-timer{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;}' +
+    '.jw-call-lines{width:100%;max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:4px;text-align:left;}' +
+    '.jw-call-line{font-size:12px;line-height:1.45;padding:7px 10px;border-radius:12px;background:rgba(127,127,127,.12);}' +
+    '.jw-call-actions{display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap;}' +
+    '.jw-call-btn{border:none;cursor:pointer;border-radius:999px;padding:11px 18px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;font-family:inherit;}' +
+    '.jw-call-btn svg{width:16px;height:16px;}' +
+    '.jw-call-mute{background:rgba(127,127,127,.18);color:inherit;}' +
+    '.jw-call-hang{background:#e11d48;color:#fff;}' +
+    '.jw-call-error{font-size:12.5px;line-height:1.5;color:#e11d48;max-width:280px;}';
   shadow.appendChild(styleEl);
 
   // --- Suivi prospect (Supabase via /api/track, best-effort, ne bloque jamais l'IA) ---
@@ -203,6 +242,190 @@
       });
   }
 
+  // ── APPEL VOCAL (agent voix) ─────────────────────────────────────────────
+  // Le visiteur appuie sur le micro : le serveur autorise l'appel (forfait,
+  // quota, plafond de coût) puis rend un jeton éphémère. Le moteur
+  // /cdn/voice.js ouvre alors le direct avec Gemini Live. L'audio passe par le
+  // navigateur du visiteur, JAMAIS par nos serveurs : seuls la durée et les
+  // tokens consommés remontent, pour que le forfait du marchand reste juste.
+  var VOICE_FALLBACK_ERROR = "L'appel vocal n'est pas disponible. Ecrivez-nous dans le chat.";
+
+  function formatTimer(total) {
+    var s = Math.max(0, Math.floor(total || 0));
+    var m = Math.floor(s / 60), r = s % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+  }
+
+  function addCallLine(speaker, text) {
+    if (!text) return;
+    var last = callLines[callLines.length - 1];
+    // La transcription arrive par morceaux : on complete la derniere ligne de
+    // la meme personne au lieu d'empiler des bouts de phrase.
+    if (last && last.speaker === speaker) last.text = text;
+    else callLines.push({ speaker: speaker, text: text });
+  }
+
+  function reportCall(info) {
+    try {
+      fetch((apiOrigin || '') + '/api/voice/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: assistantId,
+          sessionId: visitorId,
+          seconds: (info && info.seconds) || 0,
+          tokensIn: (info && info.tokensIn) || 0,
+          tokensOut: (info && info.tokensOut) || 0,
+          transcript: (info && info.transcript) || ''
+        }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) { /* silencieux : un releve rate ne casse pas l'appel */ }
+  }
+
+  function hangUp() {
+    if (callSession && callSession.stop) callSession.stop('client');
+    else { callActive = false; callState = ''; callError = ''; render(); }
+  }
+
+  function startVoice() {
+    if (callActive) return;
+    callActive = true; callState = 'connecting'; callError = '';
+    callLines = []; callSeconds = 0; callMuted = false; callSession = null;
+    render();
+
+    fetch((apiOrigin || '') + '/api/voice/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assistantId: assistantId, origin: window.location.origin, sessionId: visitorId })
+    })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (data) {
+        if (!data || !data.ok || !data.wsUrl) {
+          callState = 'error';
+          callError = (data && (data.error || data.message)) || VOICE_FALLBACK_ERROR;
+          render();
+          return null;
+        }
+        return import((apiOrigin || '') + '/cdn/voice.js').then(function (mod) {
+          callSession = mod.createVoiceCall({
+            wsUrl: data.wsUrl,
+            setup: data.setup,
+            greeting: data.greeting || voiceGreeting,
+            maxSeconds: data.maxSeconds || (voiceMaxMinutes * 60) || 300,
+            onState: function (state) { callState = state; render(); },
+            onTranscript: function (t) { addCallLine(t.speaker, t.text); render(); },
+            onError: function (e) { callError = (e && e.message) || VOICE_FALLBACK_ERROR; callState = 'error'; render(); },
+            onEnd: function (info) {
+              callActive = false; callState = ''; callSession = null;
+              if (callTimerId) { clearInterval(callTimerId); callTimerId = null; }
+              reportCall(info);
+              render();
+            }
+          });
+          callSession.start();
+          if (callTimerId) clearInterval(callTimerId);
+          callTimerId = setInterval(function () {
+            callSeconds = callSession && callSession.getSeconds ? callSession.getSeconds() : callSeconds + 1;
+            var timerEl = shadow.querySelector('.jw-call-timer');
+            if (timerEl) timerEl.textContent = formatTimer(callSeconds);
+          }, 1000);
+          return null;
+        });
+      })
+      .catch(function () {
+        callState = 'error';
+        callError = VOICE_FALLBACK_ERROR;
+        render();
+      });
+  }
+
+  function buildCallPanel() {
+    var overlay = document.createElement('div');
+    overlay.className = 'jw-call';
+    overlay.setAttribute('data-jw-call', '1');
+    overlay.style.cssText = 'position:absolute;inset:0;z-index:9;background:' + (isDark ? '#0c0f1d' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#0f172a') + ';';
+
+    var avatar = document.createElement('div');
+    avatar.className = 'jw-call-avatar' + (callState === 'listening' || callState === 'speaking' ? ' jw-call-live' : '');
+    if (avatarUrl) avatar.innerHTML = '<img src="' + avatarUrl + '" alt="" referrerpolicy="no-referrer">';
+    else avatar.innerHTML = icon24('mic', 38);
+    overlay.appendChild(avatar);
+
+    var title = document.createElement('div');
+    title.className = 'jw-call-title';
+    title.textContent = businessName;
+    overlay.appendChild(title);
+
+    if (callState === 'error') {
+      var err = document.createElement('div');
+      err.className = 'jw-call-error';
+      err.textContent = callError || VOICE_FALLBACK_ERROR;
+      overlay.appendChild(err);
+    } else {
+      var status = document.createElement('div');
+      status.className = 'jw-call-status';
+      status.textContent = callState === 'connecting' ? 'Connexion a l\u2019appel...'
+        : callState === 'speaking' ? 'Il vous repond...'
+        : callState === 'listening' ? 'Je vous ecoute : parlez normalement.'
+        : 'Appel en cours';
+      overlay.appendChild(status);
+
+      var timer = document.createElement('div');
+      timer.className = 'jw-call-timer';
+      timer.textContent = formatTimer(callSeconds);
+      overlay.appendChild(timer);
+    }
+
+    if (callLines.length) {
+      var lines = document.createElement('div');
+      lines.className = 'jw-call-lines';
+      callLines.slice(-6).forEach(function (line) {
+        var el = document.createElement('div');
+        el.className = 'jw-call-line';
+        el.textContent = (line.speaker === 'user' ? 'Vous : ' : businessName + ' : ') + line.text;
+        lines.appendChild(el);
+      });
+      overlay.appendChild(lines);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'jw-call-actions';
+    if (callState === 'error') {
+      var retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'jw-call-btn jw-call-hang';
+      retry.innerHTML = icon24('mic', 16) + '<span>Reessayer</span>';
+      retry.onclick = function () { callState = ''; callActive = false; callError = ''; startVoice(); };
+      actions.appendChild(retry);
+
+      var write = document.createElement('button');
+      write.type = 'button';
+      write.className = 'jw-call-btn jw-call-mute';
+      write.textContent = 'Ecrire a la place';
+      write.onclick = function () { callState = ''; callError = ''; callActive = false; render(); };
+      actions.appendChild(write);
+    } else {
+      var mute = document.createElement('button');
+      mute.type = 'button';
+      mute.className = 'jw-call-btn jw-call-mute';
+      mute.textContent = callMuted ? 'Reactiver le micro' : 'Couper le micro';
+      mute.onclick = function () {
+        if (callSession && callSession.setMuted) { callMuted = callSession.setMuted(!callMuted); render(); }
+      };
+      actions.appendChild(mute);
+
+      var hang = document.createElement('button');
+      hang.type = 'button';
+      hang.className = 'jw-call-btn jw-call-hang';
+      hang.innerHTML = icon24('hangup', 16) + '<span>Raccrocher</span>';
+      hang.onclick = hangUp;
+      actions.appendChild(hang);
+    }
+    overlay.appendChild(actions);
+    return overlay;
+  }
+
   // --- Rendu ---
   function render() {
     wrapper.innerHTML = '';
@@ -256,6 +479,15 @@
       meta.appendChild(subtitle);
       headerInfo.appendChild(meta);
       header.appendChild(headerInfo);
+      if (voiceEnabled) {
+        var micBtn = document.createElement('button');
+        micBtn.type = 'button';
+        micBtn.className = 'jw-header-mic';
+        micBtn.setAttribute('aria-label', 'Appeler : parler a voix haute');
+        micBtn.innerHTML = icon24('mic', 14);
+        micBtn.onclick = function () { if (!callActive) startVoice(); };
+        header.appendChild(micBtn);
+      }
       var closeBtn = document.createElement('button');
       closeBtn.className = 'jw-header-close';
       closeBtn.innerHTML = icon24('close', 14);
@@ -374,6 +606,11 @@
         win.appendChild(branding);
       }
 
+      if (callActive || callState === 'error') {
+        win.style.position = 'relative';
+        win.appendChild(buildCallPanel());
+      }
+
       wrapper.appendChild(win);
       setTimeout(function () { body.scrollTop = body.scrollHeight; }, 15);
     }
@@ -416,6 +653,11 @@
       if (c.welcomeMessage) messages[0] = { sender: 'bot', text: c.welcomeMessage };
       if (c.headerTitle) businessName = c.headerTitle;
       if (c.icon) icon = c.icon;
+      if (c.voice && typeof c.voice === 'object') {
+        if (c.voice.enabled === true) voiceEnabled = true;
+        if (c.voice.greeting) voiceGreeting = String(c.voice.greeting);
+        if (c.voice.maxMinutes) voiceMaxMinutes = Number(c.voice.maxMinutes) || voiceMaxMinutes;
+      }
       var s = shadow.querySelector('#jawebflow-widget-styles') || styleEl;
       s.textContent = s.textContent
         .replace(/--primary:\s*[^;]+/g, '--primary: ' + primaryColor)

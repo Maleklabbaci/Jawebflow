@@ -131,6 +131,23 @@ n'apparaît que dans l'ancien serveur Express). Inutile de le configurer.
 
 ---
 
+### 🎙️ Agent vocal (appel direct dans le widget) — facultatif
+
+Le visiteur appuie sur un micro et **parle** à l'assistant, comme au téléphone, directement dans
+le site du marchand. C'est le marchand qui l'allume : **Tableau de bord → Apparence → 5. Voix**
+(éteint par défaut). Aucune variable obligatoire : la voix utilise `GEMINI_API_KEY`.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `GEMINI_LIVE_MODEL` | `gemini-2.0-flash-live-001` | modèle temps réel |
+| `GEMINI_LIVE_API_VERSION` | `v1alpha` | version d'API des jetons éphémères |
+
+⚠️ La clé doit avoir accès à l'**API Live** (Google AI Studio → projet → activer l'API Gemini
+Live). Sinon la réponse est claire : « L'appel vocal n'est pas encore activé », et rien n'est
+facturé. 💸 La voix consomme plus vite que le texte : le plafond mensuel de la formule
+(Basic 3 $ · Pro 9 $ · Enterprise 30 $) s'applique aux appels comme au chat. Tout le détail :
+`docs/AGENT_VOCAL.md`.
+
 ## Étape 4 — Vérifier ce qui marche
 
 **La route qui répond à ta question :**
