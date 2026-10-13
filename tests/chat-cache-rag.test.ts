@@ -188,6 +188,28 @@ describe('/api/chat — étanchéité entre comptes (RAG multi-tenant)', () => {
   });
 });
 
+describe('/api/chat — une question hors sujet ne reçoit AUCUNE fiche', () => {
+  it('le foot, la politique, la météo : refus, pas une réponse « à côté »', async () => {
+    setKnowledge(8, 3);   // livraison / horaires / contact = fiches « vitales »
+
+    const gemini = new FakeGemini();
+    gemini.next(modelReply(textPart('Je m’occupe uniquement de Boutique Nour.')));
+    fx.external.handler = gemini.handler;
+
+    const res = await send('qui a gagné le match de hier soir ?', 'msg-off-1', 'session-off');
+    expect(res.status).toBe(200);
+
+    const payload = JSON.stringify(gemini.calls[0].body);
+    expect(payload).not.toContain('Article 1');                    // pas la fiche vitale
+    expect(payload).not.toContain('[livraison]');                  // ni la livraison
+    expect(payload).toContain('HORS SUJET');                       // la règle, elle, est bien là
+    // …alors qu'une question de client normale garde ses fiches.
+    gemini.next(modelReply(textPart('Oui, on livre partout.')));
+    await send('vous livrez à Blida ?', 'msg-off-2', 'session-off');
+    expect(JSON.stringify(gemini.calls[1].body)).toContain('[livraison]');
+  });
+});
+
 describe('/api/chat — les coordonnées du commerce voyagent AVEC le message', () => {
   it('téléphone, adresse et horaires : dans le contexte du tour, jamais dans les instructions', async () => {
     const row = fx.supabase.rows('assistants')[0];

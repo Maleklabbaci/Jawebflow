@@ -183,6 +183,47 @@ describe('le chatbot répond', () => {
     expect(sent.contents[0].role).toBe('user');
   });
 
+  it('question HORS SUJET : aucune donnée du site n’est envoyée (le bot refuse, il ne répond pas « à côté »)', async () => {
+    fx.external.handler = () =>
+      new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Je m’occupe uniquement de JawebFlow.' }] } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+
+    await post({ message: 'qui a gagné le match de hier ?' }, { 'CF-Connecting-IP': '10.0.0.41' }, {
+      ...ENV,
+      GEMINI_API_KEY: 'GEMINI_TEST_KEY',
+    });
+
+    const sent = JSON.parse(String(fx.external.calls[0].init.body));
+    const contexte = sent.contents[sent.contents.length - 1].parts[0].text;
+    expect(contexte).toContain('<contexte_client');
+    expect(contexte).toContain('aucun extrait de notre base');
+    expect(contexte).not.toContain("JAWEBFLOW — l'essentiel");   // aucune fiche pour un hors-sujet
+    // …et la règle interdit désormais de donner un élément de réponse.
+    const prompt = sent.systemInstruction.parts[0].text;
+    expect(prompt).toContain('Tu ne sors JAMAIS du sujet JawebFlow');
+    expect(prompt).toContain('AUCUN élément de réponse');
+  });
+
+  it('question vague (« salut ») : la base part quand même (le visiteur écrit sans contexte)', async () => {
+    fx.external.handler = () =>
+      new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Salam !' }] } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+
+    await post({ message: 'salut' }, { 'CF-Connecting-IP': '10.0.0.42' }, {
+      ...ENV,
+      GEMINI_API_KEY: 'GEMINI_TEST_KEY',
+    });
+
+    const sent = JSON.parse(String(fx.external.calls[0].init.body));
+    const contexte = sent.contents[sent.contents.length - 1].parts[0].text;
+    expect(contexte).toContain("JAWEBFLOW — l'essentiel");
+    expect(contexte).not.toContain('aucun extrait de notre base');
+  });
+
   it('question hors base : le contexte le DIT (pas de trou silencieux dans le prompt)', async () => {
     fx.external.handler = () =>
       new Response(
@@ -199,6 +240,10 @@ describe('le chatbot répond', () => {
     const contexte = sent.contents[sent.contents.length - 1].parts[0].text;
     expect(contexte).toContain('<contexte_client');
     expect(contexte).toContain('QUESTION DU VISITEUR');
+    // Question qui ne recoupe rien ET qui n'est pas une question pratique :
+    // aucune fiche du site ne part — le bot dit honnêtement qu'il ne sait pas.
+    expect(contexte).toContain('aucun extrait de notre base');
+    expect(contexte).not.toContain("JAWEBFLOW — l'essentiel");
   });
 
   it('base vide : le contexte le dit noir sur blanc (pas de prompt muet)', async () => {

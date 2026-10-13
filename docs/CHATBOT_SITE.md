@@ -87,6 +87,23 @@ Conséquences pratiques : le coût par message baisse (la base ne repart plus en
 le cache Google est efficace (les consignes ne changent jamais), et un changement de
 base est pris en compte **au message suivant** — sans redéploiement.
 
+### 🚫 Hors sujet : il refuse, il ne répond pas « à côté » (15/10/2026)
+
+Deux garde-fous ont été ajoutés parce que l'assistant pouvait répondre à une question qui
+n'a rien à voir (foot, politique, météo, culture générale) :
+
+1. **la règle ne demande plus de répondre** — la consigne disait « réponds brièvement puis
+   recentre », ce qui invitait le modèle à répondre : elle dit maintenant *« tu ne donnes
+   AUCUN élément de réponse (ni nom, ni date, ni chiffre, ni avis), même si on insiste »* ;
+2. **aucune donnée ne part avec une question hors sujet** — la base (fiches vitales et
+   début de la base comprise) n'est **pas** envoyée quand la question sort du sujet : le
+   contexte le dit au modèle, qui n'a donc rien pour répondre « à côté »
+   (`isOffTopicQuestion()`, `OFFTOPIC_RE` dans `functions/_shared/prompt.ts`).
+
+Les questions **vagues** (« salut », « et alors ? ») gardent la base entière, et les
+questions **pratiques** sans mot en commun (« vous êtes ouverts demain ? ») gardent les
+fiches vitales : ces cas-là sont de vraies questions de client.
+
 ## 4. Mise en route (une fois)
 
 1. Supabase → SQL Editor → `supabase/migration_site_chatbot.sql` → **Run**.

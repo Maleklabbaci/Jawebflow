@@ -113,6 +113,14 @@ Concrètement :
   produit : ni les fiches, ni les coordonnées de l'un ne peuvent apparaître chez
   l'autre. Même contrôle pour la recherche vocale du site et des marchands.
 
+**Question hors sujet** (foot, politique, météo, culture générale) : l'assistant ne reçoit
+**aucune** donnée du commerce (`isOffTopicQuestion()` court-circuite la sélection RAG) et ses
+règles lui interdisent de donner un élément de réponse. C'est ce qui évite la « réponse à
+côté » : le prix de la coque à une question sur le match de la veille. Les questions
+**vagues** (« salut ») gardent la base entière, et les questions **pratiques** sans mot en
+commun (« vous êtes ouverts demain ? » → famille de mots « horaires ») gardent les fiches
+vitales — ce sont de vraies questions de client.
+
 Effet mesuré sur le prompt du site vitrine : les instructions perdent toute la base
 (≈ 1 300 jetons) et se stabilisent à **~4 000 caractères de règles pures** ; seuls les
 extraits utiles (plafonnés à `SITE_KB_TURN_BUDGET_CHARS`) partent avec la question.

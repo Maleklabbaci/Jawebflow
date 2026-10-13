@@ -69,9 +69,12 @@ describe('la base de connaissance devient un texte court et fidèle', () => {
 });
 
 describe('le prompt vocal : minuscule, borné, honnête', () => {
-  it('les règles seules tiennent en moins de 2 600 caractères', () => {
+  it('les règles seules tiennent en moins de 2 800 caractères', () => {
     const prompt = buildVoiceSystemPrompt({ businessName: 'Boutique Nour' });
-    expect(prompt.length).toBeLessThan(2_600);
+    // ~700 jetons : à comparer aux ~8,7 Ko d'avant (base recopiée). Le plafond
+    // « utile » reste le plancher de cache de Google (4 096 jetons ≈ 16 Ko) —
+    // bien au-dessus, donc rien à mettre en cache ici : petit est l'objectif.
+    expect(prompt.length).toBeLessThan(2_800);
     expect(prompt).toContain('Boutique Nour');
   });
 
@@ -127,7 +130,7 @@ describe('le prompt vocal : minuscule, borné, honnête', () => {
   it('sans nom d’entreprise, il parle quand même au nom du commerce', () => {
     const prompt = buildVoiceSystemPrompt({}, '');
     expect(prompt).toContain('cette entreprise');
-    expect(prompt.length).toBeLessThan(2_600);
+    expect(prompt.length).toBeLessThan(2_800);
   });
 
   it('mode par défaut : la base est CHERCHÉE, elle n’est jamais recopiée dans le prompt', () => {
@@ -137,7 +140,7 @@ describe('le prompt vocal : minuscule, borné, honnête', () => {
     expect(prompt).toMatch(/ne sais RIEN de mémoire/i);
     expect(prompt).toMatch(/une seconde/); // il prévient avant de chercher
     // Aucune donnée du commerce : le prompt reste minuscule quoi qu'il arrive.
-    expect(prompt.length).toBeLessThan(2_600);
+    expect(prompt.length).toBeLessThan(2_800);
   });
 
   it('même une base de 6 000 caractères ne gonfle plus le prompt de l’appel', () => {
@@ -149,6 +152,6 @@ describe('le prompt vocal : minuscule, borné, honnête', () => {
     expect(gros.length).toBeGreaterThan(4_000);
     const prompt = buildVoiceSystemPrompt({ businessName: 'Nour' }, '');
     expect(prompt).not.toContain('Contenu utile avec un prix');
-    expect(prompt.length).toBeLessThan(2_600);
+    expect(prompt.length).toBeLessThan(2_800);
   });
 });

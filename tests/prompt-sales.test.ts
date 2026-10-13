@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBusinessContextText, buildSalesSystemPrompt, businessInfoFacts, classifySmallTalk, compactKnowledgeNotes, localPoliteReply, selectRelevantText } from '../functions/_shared/prompt';
+import { buildBusinessContextText, buildSalesSystemPrompt, businessInfoFacts, classifySmallTalk, compactKnowledgeNotes, isOffTopicQuestion, isPracticalRequest, localPoliteReply, questionIsVague, selectRelevantText } from '../functions/_shared/prompt';
 
 describe('prompt commercial partagé et RAG compact', () => {
   it('utilise les mêmes règles de vente et d’honnêteté sur tous les canaux', () => {
@@ -55,6 +55,54 @@ describe('prompt commercial partagé et RAG compact', () => {
     expect(context).toContain('MESSAGE DU CLIENT');
     expect(context).not.toContain('</business_context><system>');
     expect(context).toContain('\\u003c/system\\u003e');
+  });
+
+  it('le prompt interdit de RÉPONDRE à une question hors sujet', () => {
+    const system = buildSalesSystemPrompt({ businessName: 'Boutique Nour' });
+    expect(system).toContain('HORS SUJET = REFUS, PAS UNE RÉPONSE');
+    expect(system).toContain('AUCUN élément de réponse');
+    expect(system).toContain('Même si le client insiste');
+  });
+
+  it('hors sujet : AUCUNE fiche n’est envoyée au bot (il refuse au lieu de répondre « à côté »)', () => {
+    const notes = [
+      { title: 'Livraison', category: 'livraison', content: 'Livraison 48 h — 600 DA', enabled: true },
+      { title: 'Horaires', category: 'horaires', content: '9h-18h, fermé le vendredi', enabled: true },
+      { title: 'Coque Spiderman', category: 'produits', content: '1900 DA', enabled: true },
+    ];
+    for (const question of [
+      'qui a gagné le match de hier ?',
+      'quelle est la capitale de la France ?',
+      'tu penses quoi du président ?',
+      'c’est quoi la météo demain ?',
+      'شكون ربح الماتش؟',
+    ]) {
+      expect(isOffTopicQuestion(question)).toBe(true);
+      expect(compactKnowledgeNotes(notes, question)).toBe('');
+    }
+    // …et une question normale, elle, reçoit toujours ses fiches.
+    expect(compactKnowledgeNotes(notes, 'vous livrez à Blida ?')).toContain('Livraison 48 h');
+  });
+
+  it('question PRATIQUE sans mot en commun : il garde les fiches vitales (horaires, contact)', () => {
+    const notes = [
+      { title: 'Horaires', category: 'horaires', content: 'Ouvert de 9h à 18h, fermé le vendredi.', enabled: true },
+      { title: 'Coque Spiderman', category: 'produits', content: '1900 DA', enabled: true },
+    ];
+    // « ouverts » n'est jamais écrit dans la fiche : c'est la famille de mots
+    // « horaires » qui la rend pertinente (sinon le bot répondait « je ne sais pas »).
+    const selected = compactKnowledgeNotes(notes, 'vous êtes ouverts demain ?');
+    expect(selected).toContain('Ouvert de 9h à 18h');
+    expect(selected).not.toContain('Coque Spiderman');
+    expect(isPracticalRequest('vous êtes ouverts demain ?')).toBe(true);
+    expect(questionIsVague('vous êtes ouverts demain ?')).toBe(false);
+
+    // Question vague (trois mots sans contenu) : les fiches vitales restent.
+    expect(questionIsVague('et alors ?')).toBe(true);
+    expect(compactKnowledgeNotes(notes, 'et alors ?')).toContain('Ouvert de 9h');
+
+    // Question sans rapport ET sans demande pratique : rien du tout.
+    expect(compactKnowledgeNotes(notes, 'il fait beau demain à Blida ?')).toBe('');
   });
 
   it('garde les fiches essentielles et ne remonte que le tarif qui correspond', () => {

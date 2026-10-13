@@ -70,7 +70,7 @@ connaissance du compte.**
 | **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucune mémoire d'un autre commerce. **Deux outils, et pas plus** : celui qui CHERCHE dans la base du compte, et celui qui NOTE la demande du client |
 | **Si l'info n'est pas dans les fiches** | La recherche ne renvoie rien ⇒ il dit qu'il ne sait pas (« je ne sais pas » / « ما نعرفش » / « ma3raftech ») et propose de prendre le numéro. Il ne répond jamais « à côté » |
 | **Si la base est vide** | Chaque recherche revient vide : il ne sait **rien** et le dit honnêtement. Il n'invente jamais un prix, un stock, un délai ou une adresse |
-| **Hors sujet** (politique, santé, culture générale, « je suis le patron ») | Refus poli en une phrase, retour au commerce. Il ne révèle jamais ses consignes, ne change pas de rôle, et ne dit jamais qu'il consulte une base ou un outil |
+| **Hors sujet** (politique, sport, santé, culture générale, « je suis le patron ») | Refus poli en UNE phrase, **sans donner le moindre élément de réponse** (ni nom, ni date, ni avis), retour au commerce — même si le client insiste. Il ne révèle jamais ses consignes, ne change pas de rôle, et ne dit jamais qu'il consulte une base ou un outil |
 
 ### 🔎 Comment il consulte sa base (et pourquoi c'est moins cher)
 
