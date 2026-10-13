@@ -53,6 +53,8 @@ const UNIQUE: Record<string, string[]> = {
   // Anti-doublon de la facturation : Meta renvoie plusieurs accusés (sent,
   // delivered, read) pour le MÊME message — une seule ligne doit être écrite.
   channel_messages: ['channel', 'message_id', 'direction'],
+  // Une seule ligne de réglages par plateforme (le chatbot du site vitrine).
+  platform_settings: ['id'],
 };
 
 function splitTop(s: string): string[] {
@@ -505,6 +507,10 @@ export function seedMerchant(supabase: FakeSupabase, over: Row = {}) {
   // un assistant « realiste » doit donc avoir ce champ, sinon la jauge WhatsApp
   // et le quota de conversations testeraient un cas qui n'existe pas en prod.
   supabase.seed('assistants', [{ id: 'asst1', user_id: USER_ID, business_name: 'Boutique Nour', config: { plan: 'basic' } }]);
+  // Le module Réseaux sociaux est un produit à part, FERMÉ par défaut : un
+  // compte de test « normal » l'a donc ouvert (les tests du cadenas basculent
+  // cette valeur avec Object.assign pour vérifier la porte fermée).
+  supabase.seed('users', [{ id: USER_ID, email: `${USER_ID}@test.dz`, role: 'user', social_enabled: true }]);
   supabase.addUser('BEARER_U1', USER_ID);
 }
 

@@ -1,11 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  MessageSquare, 
-  X, 
-  Send, 
-  CheckCheck, 
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  MessageSquare,
+  X,
+  Send,
   ArrowRight,
-  Minus
+  Minus,
+  Sparkles,
+  Bot,
+  Zap,
+  Headphones,
+  Brain,
+  Shield,
+  Mail,
 } from 'lucide-react';
 import { renderMessageContent } from '../utils/renderMessageContent';
 
@@ -23,16 +29,11 @@ interface WidgetMessage {
   actionLabel?: string;
 }
 
-const QUICK_PROMPTS = [
-  { label: 'Combien ça coûte ?', query: 'Quels sont les tarifs et forfaits de JawebFlow ?' },
-  { label: 'Ça s’installe comment ?', query: 'Comment installer le widget sur mon site web ?' },
-  { label: 'Ça parle darija ?', query: 'Est-ce que le chatbot comprend et répond en Darija algérienne ?' },
-  { label: 'Comment je paie ?', query: 'Quels sont les modes de paiement acceptés en Algérie ?' }
-];
-
-// Les mêmes prix que la page Tarifs : un visiteur qui compare les deux pages ne
-// doit jamais tomber sur deux montants différents (l'ancien widget annonçait
-// 2 900 DA et 5 900 DA — introuvables ailleurs sur le site).
+/**
+ * Réponses de secours : elles servent UNIQUEMENT si l'API du chatbot est
+ * injoignable (ou coupée). Elles sont recopiées de la base de connaissance du
+ * site — un visiteur ne doit jamais tomber sur « une erreur est survenue ».
+ */
 const DEFAULT_ANSWERS: Record<string, string> = {
   tarifs: `Voici nos formules, en dinars comme en dollars :
 • Découverte — 0 DA : configuration complète et installation du widget, pour tester sans risque.
@@ -49,38 +50,162 @@ JawebFlow a été calibré pour le public algérien : il comprend la darija écr
   paiement: `Nous acceptons les moyens de paiement locaux et professionnels :
 • BaridiMob (transfert RIP instantané)
 • CCP (virement / reçu postal)
-• Virement bancaire d'entreprise avec facture conforme (NIF, NIS, RC, RIB)`
+• Virement bancaire d'entreprise avec facture conforme (NIF, NIS, RC, RIB)`,
 };
 
-export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({ 
+/** Questions cliquables par défaut : elles restent affichées si l'API des
+ *  réglages est injoignable (le visiteur ne doit jamais voir un chat vide). */
+const DEFAULT_QUICK_PROMPTS = ['Combien ça coûte ?', 'Ça s’installe comment ?', 'Ça parle darija ?', 'Comment je paie ?'];
+
+const GENERIC_REPLY =
+  "JawebFlow installe en 5 minutes un assistant qui répond à vos clients 24h/24, en français et en darija, et qui vous transmet le contact des clients intéressés. Vous pouvez commencer gratuitement, sans carte bancaire.";
+
+const localAnswer = (question: string) => {
+  const lower = question.toLowerCase();
+  if (/tarif|prix|forfait|combien|chhal|سعر|الثمن/.test(lower)) return DEFAULT_ANSWERS.tarifs;
+  if (/install|code|script|integr|intégr/.test(lower)) return DEFAULT_ANSWERS.installer;
+  if (/darija|arabe|langue|alger|دارجة/.test(lower)) return DEFAULT_ANSWERS.darija;
+  if (/paiement|baridimob|ccp|payer|دفع/.test(lower)) return DEFAULT_ANSWERS.paiement;
+  return '';
+};
+
+/** Réglages publics servis par /api/site-chat (réglés dans la console admin). */
+interface PublicSiteChat {
+  enabled: boolean;
+  quickPrompts: string[];
+  placeholder: string;
+  aiEnabled: boolean;
+  contact: { email: string; whatsapp: string; whatsappText: string };
+  widget: {
+    iconType: string;
+    customLogoUrl: string;
+    primaryColor: string;
+    gradientSecondary: string;
+    useGradient: boolean;
+    position: 'bottom-right' | 'bottom-left';
+    shape: 'circle' | 'squircle' | 'compact';
+    size: 'standard' | 'large' | 'compact';
+    showTeaser: boolean;
+    teaserText: string;
+    onlineBadge: boolean;
+    headerTitle: string;
+    headerSubtitle: string;
+    welcomeMessage: string;
+    themeMode: 'dark' | 'light';
+    showBranding: boolean;
+    mode: 'chat' | 'both';
+    attention: { pulse: boolean; teaserDelaySeconds: number; autoOpenSeconds: number; proactiveText: string; callCtaText: string };
+    customCss: string;
+  };
+}
+
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  sparkles: Sparkles,
+  bot: Bot,
+  message: MessageSquare,
+  zap: Zap,
+  headphone: Headphones,
+  brain: Brain,
+  shield: Shield,
+};
+
+const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   onOpenCreateAssistant,
-  onNavigate 
+  onNavigate,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [showTeaser, setShowTeaser] = useState(true);
+  const [showTeaser, setShowTeaser] = useState(false);
   const [hasUnread, setHasUnread] = useState(true);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  
+  const [config, setConfig] = useState<PublicSiteChat | null>(null);
   const [messages, setMessages] = useState<WidgetMessage[]>([
     {
       id: 'welcome',
       sender: 'assistant',
       text: "Salam ! 👋 Je suis l’assistant JawebFlow. Posez-moi vos questions : installation, tarifs, darija, paiement — je vous réponds tout de suite.",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
+      timestamp: now(),
+    },
   ]);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const openedOnce = useRef(false);
+
+  // ── Les réglages viennent de la console admin : un seul endroit à changer. ──
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/site-chat', { headers: { Accept: 'application/json' } });
+        if (!res.ok) return;
+        const data = await res.json();
+        // On n'accepte qu'une vraie réponse de réglages : une réponse vide ou
+        // inattendue ne doit jamais casser la bulle (ni la faire disparaître).
+        if (!alive || !data || data.ok === false || !data.widget) return;
+        setConfig(data as PublicSiteChat);
+      } catch {
+        /* Réglages injoignables : on garde les valeurs par défaut, jamais d'erreur. */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const widget = config?.widget;
+  const theme = widget?.themeMode === 'light' ? 'light' : 'dark';
+  const branded = widget?.showBranding !== false;
+  const primary = widget?.primaryColor || '#9333ea';
+  const secondary = widget?.gradientSecondary || '#6366f1';
+  const showTeaserBubble = widget?.showTeaser !== false;
+  const position = widget?.position === 'bottom-left' ? 'left' : 'right';
+  const shape = widget?.shape || 'circle';
+  const size = widget?.size || 'standard';
+  const BubbleIcon = (widget?.customLogoUrl ? null : ICONS[widget?.iconType || 'sparkles']) || MessageSquare;
+  const quickPrompts = config?.quickPrompts?.length ? config.quickPrompts : DEFAULT_QUICK_PROMPTS;
+
+  // Message d'accueil réglé dans la console (une seule fois, au chargement).
+  useEffect(() => {
+    if (!widget?.welcomeMessage) return;
+    setMessages((prev) => (prev.length === 1 && prev[0].id === 'welcome' ? [{ ...prev[0], text: widget.welcomeMessage }] : prev));
+  }, [widget?.welcomeMessage]);
+
+  // Accroche retardée (délai réglable) puis ouverture automatique éventuelle.
+  useEffect(() => {
+    if (!showTeaserBubble) return;
+    const delay = Number(widget?.attention?.teaserDelaySeconds ?? 3) * 1000;
+    const timer = setTimeout(() => setShowTeaser(true), Math.max(0, delay));
+    return () => clearTimeout(timer);
+  }, [showTeaserBubble, widget?.attention?.teaserDelaySeconds]);
 
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
+    const seconds = Number(widget?.attention?.autoOpenSeconds ?? 0);
+    if (!seconds) return;
+    const timer = setTimeout(() => setIsOpen(true), seconds * 1000);
+    return () => clearTimeout(timer);
+  }, [widget?.attention?.autoOpenSeconds]);
+
+  // Message proactif : le bot parle le premier (réglage « accroche »).
+  useEffect(() => {
+    const text = widget?.attention?.proactiveText?.trim();
+    if (!text || openedOnce.current) return;
+    openedOnce.current = true;
+    setMessages((prev) => [...prev, { id: `proactive-${Date.now()}`, sender: 'assistant', text, timestamp: now() }]);
+  }, [widget?.attention?.proactiveText]);
+
+  useEffect(() => {
+    if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [messages, isTyping]);
 
+  // CSS libre : le propriétaire du site écrit ce qu'il veut (le champ est borné
+  // à 4 000 caractères côté serveur).
+  const customCss = widget?.customCss?.trim() || '';
+  const customCssTag = useMemo(() => (customCss ? <style>{customCss}</style> : null), [customCss]);
+
   const handleToggle = () => {
-    setIsOpen(!isOpen);
+    setIsOpen((v) => !v);
     setShowTeaser(false);
     setHasUnread(false);
   };
@@ -89,150 +214,171 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
     const query = (customQuery || inputText).trim();
     if (!query) return;
 
-    const userMsg: WidgetMessage = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: query,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages(prev => [...prev, userMsg]);
+    const userMsg: WidgetMessage = { id: Date.now().toString(), sender: 'user', text: query, timestamp: now() };
+    setMessages((prev) => [...prev, userMsg]);
     if (!customQuery) setInputText('');
     setIsTyping(true);
 
-    // Fast keyword analysis for immediate responsive feedback
-    const lower = query.toLowerCase();
-    let instantMatch = '';
-    if (lower.includes('tarif') || lower.includes('prix') || lower.includes('forfait') || lower.includes('combien') || lower.includes('chhal')) {
-      instantMatch = DEFAULT_ANSWERS.tarifs;
-    } else if (lower.includes('install') || lower.includes('code') || lower.includes('script') || lower.includes('integr')) {
-      instantMatch = DEFAULT_ANSWERS.installer;
-    } else if (lower.includes('darija') || lower.includes('arabe') || lower.includes('langue') || lower.includes('alger')) {
-      instantMatch = DEFAULT_ANSWERS.darija;
-    } else if (lower.includes('paiement') || lower.includes('baridimob') || lower.includes('ccp') || lower.includes('payer')) {
-      instantMatch = DEFAULT_ANSWERS.paiement;
-    }
+    const history = messages
+      .filter((m) => m.id !== 'welcome')
+      .slice(-6)
+      .map((m) => ({ role: m.sender === 'user' ? 'user' : 'model', text: m.text }));
 
+    let botReply = '';
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/site-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          assistantId: 'jawebflow_assistant',
-          message: query
-        })
+        body: JSON.stringify({ message: query, history }),
       });
-
-      let botReply = '';
       if (response.ok) {
         const data = await response.json();
-        botReply = data.text || data.message || data.response || '';
+        botReply = String(data?.text || '').trim();
+        if (data?.contact && !config?.contact?.whatsapp) setConfig((prev) => (prev ? { ...prev, contact: data.contact } : prev));
       }
+    } catch {
+      /* panne réseau : on répond avec les réponses du site */
+    }
 
-      if (!botReply) {
-        botReply = instantMatch || "JawebFlow installe en 5 minutes un assistant qui répond à vos clients 24h/24, en français et en darija, et qui vous transmet le contact des clients intéressés. Vous pouvez commencer gratuitement, sans carte bancaire.";
-      }
+    if (!botReply) botReply = localAnswer(query) || GENERIC_REPLY;
 
-      const botMsg: WidgetMessage = {
+    setMessages((prev) => [
+      ...prev,
+      {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',
         text: botReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now(),
         actionLabel: 'Créer mon assistant gratuitement',
-        actionUrl: 'create-assistant'
-      };
-
-      setMessages(prev => [...prev, botMsg]);
-    } catch {
-      const fallbackReply = instantMatch || "Merci pour votre question ! JawebFlow s'installe en 5 minutes sur n'importe quel site web et répond à vos clients 24h/24. Voulez-vous créer votre assistant gratuitement ?";
-      const botMsg: WidgetMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: fallbackReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages(prev => [...prev, botMsg]);
-    } finally {
-      setIsTyping(false);
-    }
+        actionUrl: 'create-assistant',
+      },
+    ]);
+    setIsTyping(false);
   };
 
-  return (
-    <div 
-      id="floating-live-widget-container"
-      className="fixed bottom-3 right-3 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end font-sans antialiased max-w-[calc(100vw-1.5rem)] pointer-events-none"
+  // Interrupteur général de la console : fermé = aucune bulle sur le site.
+  // (Seul un `false` explicite ferme : un réglage illisible laisse la bulle.)
+  if (config && config.enabled === false) return null;
+
+  const bubblePadding = size === 'large' ? 'p-4 sm:p-5' : size === 'compact' ? 'p-3 sm:p-3.5' : 'p-3.5 sm:p-4';
+  const bubbleRadius = shape === 'circle' ? 'rounded-full' : shape === 'squircle' ? 'rounded-[22px]' : 'rounded-[16px]';
+  const bubbleIconSize = size === 'large' ? 'h-7 w-7' : size === 'compact' ? 'h-5 w-5' : 'h-6 w-6';
+  const bubbleStyle: React.CSSProperties = widget?.useGradient === false
+    ? { backgroundColor: primary }
+    : { backgroundImage: `linear-gradient(to bottom, ${primary}, ${secondary})` };
+
+  const light = theme === 'light';
+  const skin = {
+    panel: light ? 'border-black/10 bg-white/97 text-neutral-900' : 'border-purple-400/25 bg-[#0b0912]/97 text-white',
+    header: light ? 'border-b border-black/[0.07] bg-white' : 'border-b border-white/[0.07] bg-white/[0.03] text-white',
+    area: light ? 'bg-neutral-50' : 'bg-[#08070e]',
+    bot: light ? 'rounded-tl-sm border border-black/[0.06] bg-white font-light text-neutral-800' : 'rounded-tl-sm border border-white/[0.07] bg-white/[0.045] font-light text-neutral-100',
+    teaser: light ? 'border-black/10 bg-white/97 text-neutral-700' : 'border-purple-400/35 bg-[#0b0912]/96 text-neutral-200',
+    footer: light ? 'bg-neutral-100 text-neutral-500' : 'bg-black/30 text-neutral-500',
+    bar: light ? 'bg-neutral-100/90 border-black/[0.07]' : 'bg-neutral-900/90 border-white/10',
+    input: light ? 'bg-white border border-black/10 text-neutral-900' : 'bg-neutral-900 border border-white/10 text-white',
+  };
+
+  const contactLine = config?.contact?.email ? (
+    <a
+      href={`mailto:${config.contact.email}`}
+      className="inline-flex items-center gap-1 text-[0.62rem] font-light text-purple-300 transition-colors hover:text-purple-200"
     >
+      <Mail className="h-3 w-3" />
+      {config.contact.email}
+    </a>
+  ) : null;
+
+  return (
+    <div
+      id="floating-live-widget-container"
+      className={`fixed bottom-3 z-[9999] flex max-w-[calc(100vw-1.5rem)] flex-col font-sans antialiased pointer-events-none sm:bottom-5 ${
+        position === 'left' ? 'left-3 items-start sm:left-5' : 'right-3 items-end sm:right-5'
+      }`}
+    >
+      {customCssTag}
+
       {/* Live Chat Window */}
       {isOpen && (
-        <div 
+        <div
           id="live-widget-modal"
-          className="animate-in slide-in-from-bottom-5 pointer-events-auto mb-2.5 flex h-[520px] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col overflow-hidden rounded-[22px] border border-purple-400/25 bg-[#0b0912]/97 shadow-[0_36px_70px_-40px_rgba(0,0,0,0.95)] backdrop-blur-2xl duration-200 sm:h-[540px] sm:max-h-[82vh] sm:w-[380px]"
+          className={`animate-in slide-in-from-bottom-5 pointer-events-auto mb-2.5 flex h-[520px] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col overflow-hidden rounded-[22px] border shadow-[0_36px_70px_-40px_rgba(0,0,0,0.95)] backdrop-blur-2xl duration-200 sm:h-[540px] sm:max-h-[82vh] sm:w-[380px] ${skin.panel}`}
         >
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] bg-white/[0.03] p-3.5 text-white sm:p-4">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className={`flex shrink-0 items-center justify-between gap-2 p-3.5 sm:p-4 ${skin.header}`}>
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
               <div className="relative shrink-0">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-b from-purple-500 to-purple-700 text-[0.8rem] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]">
-                  JF
-                </div>
-                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0b0912] bg-emerald-400"></span>
+                {widget?.customLogoUrl ? (
+                  <img
+                    src={widget.customLogoUrl}
+                    alt={widget?.headerTitle || 'Assistant JawebFlow'}
+                    className="h-9 w-9 rounded-xl object-cover"
+                  />
+                ) : (
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+                    style={bubbleStyle}
+                  >
+                    <BubbleIcon className="h-4 w-4" />
+                  </div>
+                )}
+                {widget?.onlineBadge !== false && (
+                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 bg-emerald-400 ${light ? 'border-white' : 'border-[#0b0912]'}`} />
+                )}
               </div>
               <div className="min-w-0">
-                <h4 className="font-semibold text-xs sm:text-sm leading-tight text-white flex items-center gap-1.5 truncate">
-                  <span className="truncate">Assistant JawebFlow</span>
-                  <span className="shrink-0 rounded-full border border-purple-400/30 bg-purple-500/15 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-[0.1em] text-purple-200">Officiel</span>
+                <h4 className="flex items-center gap-1.5 truncate text-xs font-semibold leading-tight sm:text-sm">
+                  <span className="truncate">{widget?.headerTitle || 'Assistant JawebFlow'}</span>
+                  <span className="shrink-0 rounded-full border border-purple-400/30 bg-purple-500/15 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-[0.1em] text-purple-200">
+                    Officiel
+                  </span>
                 </h4>
-                <p className="truncate text-[0.68rem] font-light text-emerald-400">
-                  En ligne • réponse immédiate
+                <p className="truncate text-[0.68rem] font-light text-emerald-500">
+                  {widget?.headerSubtitle || 'En ligne • réponse immédiate'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0 ml-2">
+            <div className="ml-2 flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/[0.05] text-neutral-400 transition-colors hover:bg-white/[0.12] hover:text-white sm:h-8 sm:w-8"
+                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${light ? 'bg-black/[0.04] hover:bg-black/[0.09]' : 'bg-white/[0.05] hover:bg-white/[0.12] hover:text-white'}`}
                 title="Réduire"
               >
-                <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <Minus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/[0.05] text-neutral-400 transition-colors hover:bg-white/[0.12] hover:text-white sm:h-8 sm:w-8"
+                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${light ? 'bg-black/[0.04] hover:bg-black/[0.09]' : 'bg-white/[0.05] hover:bg-white/[0.12] hover:text-white'}`}
                 title="Fermer"
               >
-                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
             </div>
           </div>
 
           {/* Messages Container */}
-          <div 
+          <div
             ref={chatScrollRef}
-            className="flex-1 space-y-3 overflow-y-auto overscroll-contain bg-[#08070e] p-3.5 sm:p-4"
+            className={`flex-1 space-y-3 overflow-y-auto overscroll-contain p-3.5 sm:p-4 ${skin.area}`}
             style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}
           >
             {messages.map((m) => {
               const isAssistant = m.sender === 'assistant';
               return (
-                <div 
-                  key={m.id}
-                  className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}
-                >
-                  <div 
-                    className={`max-w-[88%] rounded-2xl px-3.5 sm:px-4 py-2.5 text-xs sm:text-[13px] leading-relaxed shadow-sm break-words ${
-                      isAssistant
-                        ? 'rounded-tl-sm border border-white/[0.07] bg-white/[0.045] font-light text-neutral-100'
-                        : 'rounded-tr-sm bg-purple-600 text-white'
+                <div key={m.id} className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}>
+                  <div
+                    className={`max-w-[88%] break-words rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm sm:px-4 sm:text-[13px] ${
+                      isAssistant ? skin.bot : 'rounded-tr-sm text-white'
                     }`}
+                    style={isAssistant ? undefined : { backgroundColor: primary }}
                   >
-                    {renderMessageContent(m.text, 'dark')}
-                    
-                    {/* Action Button inside bot responses */}
+                    {renderMessageContent(m.text, light ? 'light' : 'dark')}
+
                     {isAssistant && m.actionLabel && (
-                      <div className="mt-3 pt-2.5 border-t border-white/10">
+                      <div className={`mt-3 border-t pt-2.5 ${light ? 'border-black/10' : 'border-white/10'}`}>
                         <button
                           type="button"
                           onClick={() => {
@@ -242,122 +388,127 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
                           className="btn btn-sm btn-primary btn-block"
                         >
                           <span>{m.actionLabel}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          <ArrowRight className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     )}
                   </div>
-                  <span className="text-[9px] text-neutral-400 mt-1 px-1">{m.timestamp}</span>
+                  <span className="mt-1 px-1 text-[9px] text-neutral-400">{m.timestamp}</span>
                 </div>
               );
             })}
 
             {isTyping && (
-              <div className="flex items-center gap-1.5 p-3 rounded-2xl bg-neutral-900 border border-white/10 w-16">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce"></span>
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce [animation-delay:0.2s]"></span>
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce [animation-delay:0.4s]"></span>
+              <div className={`flex w-16 items-center gap-1.5 rounded-2xl border p-3 ${light ? 'border-black/10 bg-white' : 'border-white/10 bg-neutral-900'}`}>
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400"></span>
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:0.2s]"></span>
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:0.4s]"></span>
               </div>
             )}
           </div>
 
           {/* Quick Prompts Bar */}
-          <div className="px-3 py-2 bg-neutral-900/90 border-t border-white/10 flex items-center gap-1.5 overflow-x-auto shrink-0 overscroll-x-contain" style={{ scrollbarWidth: 'none' }}>
-            {QUICK_PROMPTS.map((qp, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleSendMessage(qp.query)}
-                className="lux-chip shrink-0"
-              >
-                {qp.label}
+          <div className={`flex shrink-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain border-t px-3 py-2 ${skin.bar}`} style={{ scrollbarWidth: 'none' }}>
+            {quickPrompts.map((qp, idx) => (
+              <button key={idx} type="button" onClick={() => handleSendMessage(qp)} className="lux-chip shrink-0">
+                {qp}
               </button>
             ))}
           </div>
 
           {/* Input Footer */}
-          <div className="p-3 bg-neutral-900 border-t border-white/10 flex items-center gap-2 shrink-0">
+          <div className={`flex shrink-0 items-center gap-2 border-t p-3 ${skin.bar}`}>
             <input
               id="live-widget-input"
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Posez votre question…"
-              className="lux-input min-w-0 flex-1 rounded-[10px] px-3.5 py-2 text-[0.82rem]"
+              placeholder={config?.placeholder || 'Posez votre question…'}
+              className={`lux-input min-w-0 flex-1 rounded-[10px] px-3.5 py-2 text-[0.82rem] ${skin.input}`}
             />
             <button
               id="live-widget-send-btn"
               type="button"
               onClick={() => handleSendMessage()}
               disabled={!inputText.trim()}
-              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] bg-purple-600 text-white transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
+              style={{ backgroundColor: primary }}
               title="Envoyer"
             >
-              <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </button>
           </div>
 
           {/* Bottom attribution label */}
-          <div className="flex items-center justify-between border-t border-white/[0.06] bg-black/30 px-3 py-1.5 text-[0.62rem] font-light text-neutral-500">
-            <span>⚡ Propulsé par JawebFlow</span>
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                onOpenCreateAssistant();
-              }}
-              className="cursor-pointer font-normal text-purple-300 transition-colors hover:text-purple-200"
-            >
-              Créer mon chatbot →
-            </button>
-          </div>
+          {(branded || contactLine) && (
+            <div className={`flex items-center justify-between gap-2 border-t px-3 py-1.5 text-[0.62rem] font-light ${skin.footer} ${light ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
+              <span className="truncate">{branded ? '⚡ Propulsé par JawebFlow' : contactLine}</span>
+              {branded && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenCreateAssistant();
+                  }}
+                  className="shrink-0 cursor-pointer font-normal text-purple-300 transition-colors hover:text-purple-200"
+                >
+                  Créer mon chatbot →
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* Teaser Bubble (when closed) */}
-      {!isOpen && showTeaser && (
-        <div className="animate-in fade-in slide-in-from-right-4 pointer-events-auto mb-2 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-2xl border border-purple-400/35 bg-[#0b0912]/96 px-3 py-2 text-[0.76rem] font-light text-neutral-200 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl duration-300 sm:max-w-xs sm:px-3.5">
-          <button 
-            type="button"
-            onClick={handleToggle}
-            className="flex items-center gap-2 text-left cursor-pointer hover:text-white truncate"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse"></span>
-            <span className="truncate">Une question ? Je réponds tout de suite 👋</span>
+      {!isOpen && showTeaser && showTeaserBubble && (
+        <div
+          className={`animate-in fade-in slide-in-from-right-4 pointer-events-auto mb-2 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-2xl border px-3 py-2 text-[0.76rem] font-light shadow-[0_20px_45px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl duration-300 sm:max-w-xs sm:px-3.5 ${skin.teaser}`}
+        >
+          <button type="button" onClick={handleToggle} className="flex cursor-pointer items-center gap-2 truncate text-left hover:opacity-90">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400"></span>
+            <span className="truncate">{widget?.teaserText || 'Une question ? Je réponds tout de suite 👋'}</span>
           </button>
           <button
             type="button"
             onClick={() => setShowTeaser(false)}
-            className="text-neutral-400 hover:text-neutral-200 p-0.5 cursor-pointer ml-auto shrink-0"
+            className="ml-auto shrink-0 cursor-pointer p-0.5 opacity-70 hover:opacity-100"
             title="Fermer"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
 
       {/* Floating Trigger Bubble */}
-      <button
-        id="floating-live-widget-toggle"
-        type="button"
-        onClick={handleToggle}
-        className="group pointer-events-auto relative flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-purple-500 to-purple-700 p-3.5 text-white shadow-[0_20px_45px_-22px_rgba(124,58,237,1)] transition-transform duration-200 hover:scale-[1.04] active:scale-95 sm:p-4"
-        aria-label="Ouvrir l'assistant"
-      >
-        {isOpen ? (
-          <X className="w-6 h-6 transition-transform duration-200" />
-        ) : (
-          <MessageSquare className="w-6 h-6 transition-transform duration-200 group-hover:scale-110" />
+      <div className="relative">
+        {widget?.attention?.pulse !== false && !isOpen && (
+          <span className="pointer-events-none absolute inset-0 animate-ping rounded-full opacity-40" style={{ backgroundColor: primary }} />
         )}
+        <button
+          id="floating-live-widget-toggle"
+          type="button"
+          onClick={handleToggle}
+          className={`group pointer-events-auto relative flex cursor-pointer items-center justify-center text-white shadow-[0_20px_45px_-22px_rgba(124,58,237,1)] transition-transform duration-200 hover:scale-[1.04] active:scale-95 ${bubbleRadius} ${bubblePadding}`}
+          style={bubbleStyle}
+          aria-label="Ouvrir l'assistant"
+        >
+          {isOpen ? (
+            <X className={`${bubbleIconSize} transition-transform duration-200`} />
+          ) : widget?.customLogoUrl ? (
+            <img src={widget.customLogoUrl} alt="" className={`${bubbleIconSize} rounded-full object-cover`} />
+          ) : (
+            <BubbleIcon className={`${bubbleIconSize} transition-transform duration-200 group-hover:scale-110`} />
+          )}
 
-        {/* Unread indicator dot */}
-        {!isOpen && hasUnread && (
-          <span className="absolute right-0 top-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#08070f] bg-emerald-400 text-[0.5rem] font-bold text-neutral-950">
-            1
-          </span>
-        )}
-      </button>
+          {!isOpen && hasUnread && (
+            <span className={`absolute right-0 top-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 bg-emerald-400 text-[0.5rem] font-bold text-neutral-950 ${light ? 'border-white' : 'border-[#08070f]'}`}>
+              1
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   );
 };
