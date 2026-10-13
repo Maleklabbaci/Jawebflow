@@ -234,6 +234,34 @@ describe('barre latérale et en-tête (look « SaaS moderne »)', () => {
     expect(be.api.some((request) => request.method === 'POST' && request.url === '/api/leads')).toBe(true);
   });
 
+  it('chaque client affiche son vrai canal, et le filtre par canal isole WhatsApp', async () => {
+    be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [
+      { id: 'pw', name: 'Yacine', phone: '0550111222', status: 'qualifie', channel: 'whatsapp', updatedAt: '2026-10-03T11:00:00.000Z' },
+      { id: 'pm', name: 'Lina', phone: '0550111333', status: 'qualifie', channel: 'messenger', updatedAt: '2026-10-03T11:10:00.000Z' },
+      { id: 'ps', name: 'Ancien', phone: '0550111444', status: 'nouveau', updatedAt: '2026-10-03T11:20:00.000Z' },
+    ] }), { status: 200 }));
+    render(<DashboardPlatform initialSection="leads" />);
+    await settle(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Mes clients' }));
+    await settle(80);
+
+    // Trois clients, trois canaux différents : plus jamais « Mon site » partout.
+    const lignes = document.querySelector('tbody')!.textContent || '';
+    expect(lignes).toContain('WhatsApp');
+    expect(lignes).toContain('Messenger');
+    expect(lignes).toContain('Site web'); // un ancien prospect sans canal = venu du site
+    expect(document.querySelectorAll('tbody tr').length).toBe(3);
+
+    // Le filtre ne garde que le canal demandé.
+    fireEvent.change(screen.getByLabelText('Filtrer par canal'), { target: { value: 'whatsapp' } });
+    await settle(60);
+    const apresFiltre = document.querySelector('tbody')!.textContent || '';
+    expect(apresFiltre).toContain('Yacine');
+    expect(apresFiltre).not.toContain('Lina');
+    expect(document.querySelectorAll('tbody tr').length).toBe(1);
+    expect(screen.getByText(/1 sur 3 prospects affichés/)).toBeTruthy();
+  });
+
   it('la liste Clients montre une petite liste « Discussions » pour ceux qui ont validé une action', async () => {
     be.stub('/api/leads', () => new Response(JSON.stringify({ prospects: [
       {

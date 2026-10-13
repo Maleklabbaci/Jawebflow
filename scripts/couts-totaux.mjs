@@ -47,7 +47,7 @@ const H = {
   packs: [
     { id: 'free',       libelle: 'Découverte',    prixDzd: 0,     convWebInclus: 0,    waInclus: 0,    capIaUsd: 0 },
     { id: 'basic',      libelle: 'Basic',         prixDzd: 4500,  convWebInclus: 1000, waInclus: 0,    capIaUsd: 3 },
-    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 14000, convWebInclus: 5000, waInclus: 1000, capIaUsd: 20 },
+    { id: 'pro',        libelle: 'Pro/Business',  prixDzd: 14000, convWebInclus: 5000, waInclus: 1000, capIaUsd: 9 },
     { id: 'enterprise', libelle: 'Enterprise',    prixDzd: 47100, convWebInclus: null, waInclus: 5000, capIaUsd: 30 },
   ],
 
@@ -237,7 +237,7 @@ for (const p of H.packs) {
   );
 }
 console.log(`
-  ⚠️ Le plafond IA (${dzd(da(3))} pour Basic, ${dzd(da(20))} pour Pro, ${dzd(da(30))} pour Enterprise au taux réel)
+  ⚠️ Le plafond IA (${H.packs.filter((x) => x.capIaUsd > 0).map((x) => `${dzd(da(x.capIaUsd))} pour ${x.libelle}`).join(', ')} au taux réel)
      borne le coût GEMINI uniquement. Les frais Meta, eux, ne sont bornés par RIEN :
      d'où la colonne « Dont Meta » du scénario B.`);
 

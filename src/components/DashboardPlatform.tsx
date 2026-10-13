@@ -62,6 +62,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveAssistantToDatabase, getUserAssistants, WidgetCustomization, isUserAdmin, supabase, updateAssistantPlan } from '../lib/supabase';
 import { SocialModuleLocked } from './SocialModuleLocked';
 import { resolveTeamRole, roleCan, type TeamRole } from '../lib/roles';
+import { CLIENT_CHANNELS, channelIdentity, channelLabel, clientChannel } from '../lib/channels';
 import { buildCoachPlan, coachHeadline } from '../../functions/_shared/bot-coach';
 import { WidgetCustomizer } from './WidgetCustomizer';
 import { KnowledgeNotesManager } from './KnowledgeNotesManager';
@@ -725,6 +726,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'nouveau' | 'qualifie'>('all');
   const [hasContactFilter, setHasContactFilter] = useState<boolean>(false);
+  // « all » ou la clé d'un canal : le marchand voit d'un coup d'œil qui vient
+  // du site, d'Instagram, de WhatsApp…
+  const [channelFilter, setChannelFilter] = useState<string>('all');
   const [showExportDetails, setShowExportDetails] = useState<boolean>(false);
 
   // Real leads captured by the assistant
@@ -1215,12 +1219,13 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   };
 
   const handleExportCSV = () => {
-    const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];
+    const headers = ['ID Prospect', 'Nom', 'Email', 'Telephone', 'Canal', 'Besoin Detecte', 'Statut', 'Date Capture', 'Referer', 'Page Actuelle', 'Langue', 'User Agent'];
     const rows = leadsList.map(lead => [
       lead.id,
       lead.name,
       lead.email,
       lead.phone,
+      channelLabel(lead.channel, lead.source || ''),
       lead.need.replace(/"/g, '""'),
       lead.status,
       lead.date,
@@ -2831,6 +2836,9 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
               if (statusFilter !== 'all') {
                 if (lead.status !== statusFilter) return false;
               }
+              if (channelFilter !== 'all') {
+                if (clientChannel(lead.channel, lead.source).key !== channelFilter) return false;
+              }
               if (searchTerm.trim() !== '') {
                 const term = searchTerm.toLowerCase();
                 const nameMatch = (lead.name || '').toLowerCase().includes(term);
@@ -2986,7 +2994,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       
                       {/* Search Bar */}
-                      <div className="relative md:col-span-6">
+                      <div className="relative md:col-span-5">
                         <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                         <input
                           type="text"
@@ -3013,11 +3021,28 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         </div>
                       </div>
 
+                      {/* Channel Filter */}
+                      <div className="md:col-span-2">
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
+                          <select
+                            value={channelFilter}
+                            onChange={(e) => setChannelFilter(e.target.value)}
+                            aria-label="Filtrer par canal"
+                            className="w-full bg-transparent border-0 py-2 px-1 text-xs text-slate-700 focus:outline-none focus:ring-0 cursor-pointer font-semibold"
+                          >
+                            <option value="all">Tous les canaux</option>
+                            {CLIENT_CHANNELS.map((canal) => (
+                              <option key={canal.key} value={canal.key}>{canal.emoji} {canal.short}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
                       {/* Contact Toggle Filter */}
                       <button
                         type="button"
                         onClick={() => setHasContactFilter(!hasContactFilter)}
-                        className={`md:col-span-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                        className={`md:col-span-2 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
                           hasContactFilter 
                             ? 'bg-purple-50 border-purple-200 text-purple-700' 
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -3035,6 +3060,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px]">
                           <tr>
                             <th className="p-3.5">Prospect</th>
+                            <th className="p-3.5">Canal</th>
                             <th className="p-3.5">Téléphone / WhatsApp</th>
                             <th className="p-3.5">Besoin / Canal UTM</th>
                             <th className="p-3.5">Statut</th>
@@ -3046,6 +3072,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                           {filteredLeads.length > 0 ? (
                             filteredLeads.map((lead) => {
                               const hasContact = (lead.email && lead.email !== 'Non fourni') || (lead.phone && lead.phone !== 'Non fourni');
+                              // D'où vient ce client : le canal prime, l'origine sert de repli.
+                              const canal = clientChannel(lead.channel, lead.source);
                               const utmSource = (lead as any).utm_source;
                               const utmCampaign = (lead as any).utm_campaign;
                               const followUpDate = lead.followUpAt && Number.isFinite(Date.parse(lead.followUpAt))
@@ -3070,6 +3098,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                                     <div className="text-[10px] text-slate-400 font-normal truncate max-w-[150px]">{lead.email}</div>
                                   </td>
                                   
+                                  <td className="p-3.5">
+                                    <span
+                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${canal.badgeClass}`}
+                                    >
+                                      <span aria-hidden="true">{canal.emoji}</span>
+                                      {canal.short}
+                                    </span>
+                                  </td>
+
                                   <td className="p-3.5 font-mono text-purple-700 font-bold whitespace-nowrap">
                                     {lead.phone}
                                   </td>
@@ -3184,7 +3221,15 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                             </div>
                             <div>
                               <h3 className="font-bold text-slate-900 text-base">{lead.name}</h3>
-                              <span className="text-[10px] font-mono text-slate-400">{lead.id}</span>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${clientChannel(lead.channel, lead.source).badgeClass}`}
+                                >
+                                  <span aria-hidden="true">{clientChannel(lead.channel, lead.source).emoji}</span>
+                                  {clientChannel(lead.channel, lead.source).short}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400">{lead.id}</span>
+                              </div>
                             </div>
                           </div>
                           <button
@@ -3277,7 +3322,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                               <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
                                 <Clock className="h-3.5 w-3.5 text-amber-500" /> Suivi commercial
                               </h4>
-                              <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-slate-500">{lead.channel === 'instagram' ? 'Instagram' : lead.channel ? 'Mon site' : lead.source || 'Canal inconnu'}</span>
+                              <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-slate-500">{channelLabel(lead.channel, lead.source || 'Canal inconnu')}</span>
                             </div>
                             {lead.followUpReason && <p className="text-xs font-semibold text-slate-800">{lead.followUpReason}</p>}
                             {lead.nextAction && <p className="text-xs leading-relaxed text-slate-600"><span className="font-semibold">Prochaine action :</span> {lead.nextAction}</p>}
