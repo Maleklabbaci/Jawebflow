@@ -228,7 +228,8 @@ describe('relevé de fin d’appel', () => {
       assistant_id: 'asst1',
       channel: 'voice',
       session_id: 'v_visiteur',
-      weight: 1,
+      // 15 minutes × 80 unités = 1 200 unités, soit 150 conversations.
+      weight: 1200,
       tokens_in: 400000,
       tokens_out: 512,
     });

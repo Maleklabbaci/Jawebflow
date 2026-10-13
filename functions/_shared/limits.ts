@@ -31,15 +31,18 @@ export const SCAN_LIMITS_PER_MONTH: Record<string, number> = {
   enterprise: 12,
 };
 
-// 💸 PLAFOND DE COÛT RÉEL (décision du propriétaire) : quand le coût Gemini
-// du mois — calculé sur les VRAIS tokens renvoyés par l'API (tokens × tarif
-// officiel), pas une estimation — atteint le plafond du plan, l'IA se met en
-// pause proprement (même UX que le quota conversations).
+// 💸 PLAFOND DE COÛT RÉEL — DÉCISION DU 13/10/2026 : plus de plafond en
+// dollars sur Basic et Pro. C'est le QUOTA DE CONVERSATIONS qui arrête tout
+// (Basic : 1 000 conversations = 100 minutes d'appel OU 8 000 messages ;
+// Pro : 5 000 conversations = 500 minutes OU 40 000 messages). Le client a
+// donc TOUT son forfait, et jamais une pause au milieu à cause d'un montant.
+// 0 = aucun plafond. Enterprise, qui n'a pas encore de quota chiffré (vendu
+// « sur devis »), garde un fusible en attendant sa limite négociée.
 export const COST_CAP_USD_PER_PLAN: Record<string, number> = {
-  free: 0,      // 0 crédit IA
-  basic: 3,     // 3 $ / mois max
-  pro: 9,       // 9 $ / mois max
-  enterprise: 30, // 30 $ / mois max
+  free: 0,        // bloqué par le quota à 0, pas par un montant
+  basic: 0,       // aucun plafond : le quota décide
+  pro: 0,         // aucun plafond : le quota décide
+  enterprise: 30, // fusible temporaire, en attendant un quota « sur devis »
 };
 export const GEMINI_PRICE_IN_PER_MTOK = 0.25;  // $ / million tokens entrée
 export const GEMINI_PRICE_OUT_PER_MTOK = 1.5;  // $ / million tokens sortie

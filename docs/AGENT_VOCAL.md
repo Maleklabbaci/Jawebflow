@@ -68,8 +68,8 @@ chaque seconde de parole (et chaque seconde de réponse) est facturée par Googl
 
 | Protection | Ce qu'elle fait |
 |---|---|
-| **Plafond mensuel de coût** (Basic 3 $ · Pro 9 $ · Enterprise 30 $) | Compté sur les tokens réels, **appels inclus**. Au plafond : l'assistant se met en pause, comme pour le chat. |
-| **Quota de conversations** | Un appel = une conversation du forfait (comme un échange écrit). |
+| **Quota de conversations** (le seul arrêt — décision du 13/10/2026) | **1 minute d'appel = 10 conversations** (80 unités de quota). Basic : 100 min d'appel **ou** 8 000 messages. Pro : 500 min **ou** 40 000 messages. Épuisé → l'assistant se met en pause et reprend le 1er du mois. |
+| **Plus de plafond en dollars** | Basic et Pro n'ont plus de plafond de coût : c'est le quota qui arrête tout, pour que le client ait **tout** son forfait. Enterprise garde un fusible de 30 $ tant que son quota « sur devis » n'est pas chiffré. |
 | **Durée maximale** | L'appel se coupe tout seul à la fin du temps réglé (2 → 15 min). |
 | **Anti-abus** | 6 appels maximum par visiteur (IP) et par tranche de 10 minutes. |
 

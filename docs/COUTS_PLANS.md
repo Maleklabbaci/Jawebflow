@@ -326,3 +326,36 @@ Deux sorties possibles :
 Le pire cas est une borne haute : en usage réaliste (3,50 DA/min), 500 minutes
 coûtent 1 750 DA et tiennent dans les 9 $ de Pro. Mais un client qui laisse
 l'assistant parler beaucoup peut atteindre la borne — c'est elle qui décide.
+
+---
+
+## Décision du 13/10/2026 : le quota arrête tout, plus le plafond
+
+**Ce qui change.** Les plafonds en dollars (Basic 3 $, Pro 9 $) sont **supprimés** :
+un client qui paie son forfait doit avoir **tout** son forfait. Le **quota de
+conversations** devient le seul arrêt.
+
+| Pack | Conversations | = en appels | = en messages écrits | = en mixte |
+|---|---|---|---|---|
+| **Basic** | 1 000 | **100 min** | **8 000 messages** | 1 min d'appel = 80 messages (ex. 40 min + 4 800 messages) |
+| **Pro** | 5 000 | **500 min** | **40 000 messages** | 1 min d'appel = 80 messages (ex. 200 min + 24 000 messages) |
+| **Enterprise** | à négocier | — | — | fusible de 30 $ en attendant |
+
+**Ce que ça coûte, au maximum** (1 $ = 260 DA) — un client qui épuise tout son
+forfait :
+
+| Pack | Prix | Tout en appels | Tout en messages | Tout en messages (avec cache) |
+|---|---|---|---|---|
+| Basic | 4 940 DA | 618 DA → marge **87 %** | **2 870 DA** → marge **42 %** | 1 220 DA → marge **75 %** |
+| Pro | 15 340 DA | 3 090 DA → marge **80 %** | **14 350 DA** → marge **6 %** | 6 100 DA → marge **60 %** |
+
+**Lecture.** Les appels sont **4,6× moins chers** que l'écrit à quota égal
+(1 conversation d'appel = 0,62 DA, 1 conversation écrite = 2,87 DA). Le risque
+n'est donc pas la voix : c'est un client Pro qui écrirait vraiment 40 000
+messages dans le mois — et le cache de contexte (déjà actif) divise ce coût par
+2,3 quand la conversation s'enchaîne. Un client réel fait 100 à 300
+conversations par mois : personne n'approche ces montants.
+
+*Calculs : `node scripts/couts-vocal.mjs --change=260` et
+`node scripts/couts-plans.mjs --change=260`.*
+
