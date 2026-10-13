@@ -349,6 +349,12 @@ export function AdminPage() {
   // Diagnostic affiché quand la table des réglages est injoignable : QUEL projet
   // Supabase, QUOI exécuter, et l'erreur brute de PostgREST.
   const [siteChatDiag, setSiteChatDiag] = useState<any>(null);
+  // « Tester l'appel » : on demande un vrai jeton Gemini Live et on affiche
+  // exactement ce que le serveur répond (succès ou raison précise).
+  const [callTest, setCallTest] = useState<{ state: 'idle' | 'loading' | 'ok' | 'error'; message: string }>({
+    state: 'idle',
+    message: '',
+  });
   const [loadingSiteChat, setLoadingSiteChat] = useState(false);
   const [savingSiteChat, setSavingSiteChat] = useState(false);
   const [limitsDraft, setLimitsDraft] = useState<Record<string, string>>({
@@ -649,6 +655,35 @@ export function AdminPage() {
       notify('Chatbot du site : ' + (err?.message || 'enregistrement impossible'), 'error');
     } finally {
       setSavingSiteChat(false);
+    }
+  };
+
+  // 📞 « Est-ce que l'appel marche ? » — la question se règle en un clic.
+  const testSiteCall = async () => {
+    setCallTest({ state: 'loading', message: '' });
+    try {
+      const res = await fetch('/api/site-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: `admin_${Date.now().toString(36)}` }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (res.ok && data?.ok) {
+        const minutes = Math.max(1, Math.round(Number(data.maxSeconds || 300) / 60));
+        setCallTest({
+          state: 'ok',
+          message: `L'appel est prêt : voix « ${data.voice || 'Puck'} », ${minutes} min max, modèle ${data.model || 'Gemini Live'}. Le téléphone du site fonctionne.`,
+        });
+      } else {
+        setCallTest({
+          state: 'error',
+          message: `${data?.error || "L'appel n'a pas pu démarrer."}${
+            data?.detail ? ` (${String(data.detail).slice(0, 200)})` : ''
+          }`,
+        });
+      }
+    } catch (err: any) {
+      setCallTest({ state: 'error', message: err?.message || 'Réseau injoignable.' });
     }
   };
 
@@ -2492,6 +2527,44 @@ export function AdminPage() {
                       isSaving={savingSiteChat}
                       scriptUrl={`${window.location.origin}/widget.js`}
                     />
+                  </div>
+
+                  {/* ── 5. Est-ce que l'appel marche ? (un clic, une réponse) ── */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-purple-600" /> Tester l'appel tout de suite
+                        </h3>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Un clic : le serveur demande un vrai jeton d'appel et répond si la voix est prête
+                          (ou la raison exacte si elle ne l'est pas). Rien n'est facturé tant qu'un visiteur
+                          ne parle pas.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={testSiteCall}
+                        disabled={callTest.state === 'loading'}
+                        data-testid="site-chat-test-call"
+                        className="shrink-0 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 disabled:opacity-60 transition-colors cursor-pointer"
+                      >
+                        {callTest.state === 'loading' ? "Préparation de l'appel…" : "Tester l'appel"}
+                      </button>
+                    </div>
+                    {callTest.message && (
+                      <p
+                        data-testid="site-chat-test-call-result"
+                        className={`text-xs leading-relaxed rounded-xl p-3 border ${
+                          callTest.state === 'ok'
+                            ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                            : 'text-rose-800 bg-rose-50 border-rose-200'
+                        }`}
+                      >
+                        {callTest.state === 'ok' ? '✅ ' : '⚠️ '}
+                        {callTest.message}
+                      </p>
+                    )}
                   </div>
 
                   {/* ── Barre d'enregistrement ─────────────────────────────── */}
