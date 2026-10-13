@@ -56,8 +56,9 @@ Le quota n'est pas compté en messages mais en **unités pondérées**
 | Photo (vision) | **4** | Oui |
 | Recherche dans le catalogue | **+2** | Oui |
 
-Et : **1 conversation commerciale = 8 unités**. Donc « 1 000 conversations » = jusqu'à
-8 000 messages. Le calcul de coût ci-dessous suppose **8 messages IA par conversation**,
+Et : **1 conversation commerciale = 5 unités** (décision du 13/10/2026). Donc
+« 1 000 conversations » = jusqu'à **5 000 messages**. Le calcul ci-dessous suppose
+**5 messages IA par conversation**,
 ce qui est **prudent** (les politesses, elles, ne coûtent rien).
 
 ### 2.2 Le prompt, mesuré (pas estimé)
@@ -268,7 +269,7 @@ node scripts/couts-plans.mjs --marge-cible=70   # autre objectif de marge
 | Plafonds de coût | `functions/_shared/limits.ts` → `COST_CAP_USD_PER_PLAN` |
 | Tarifs Gemini | `functions/_shared/limits.ts` → `GEMINI_PRICE_*` |
 | Prix des packs (DZD/USD) | `functions/api/slickpay.js` → `PLAN_AMOUNTS_*`, `src/pages/PricingPage.tsx` |
-| Pondération du quota (8 unités) | `supabase/migration_ai_usage.sql` |
+| Pondération du quota (5 unités = 1 conversation) | `functions/_shared/limits.ts` (`UNITS_PER_CONVERSATION`) |
 | Taille du prompt | `functions/_shared/prompt.ts` (mesurée) |
 | Cache de contexte | `functions/_shared/gemini-cache.ts` |
 | Où l'IA est coupée | `functions/api/chat.js` (lignes ~226-260) |
@@ -287,7 +288,7 @@ plus cher à la seconde). Les deux dépensent le **même plafond** du pack.
 | | Coût réel | À 270 DA | À 260 DA |
 |---|---|---|---|
 | 1 échange écrit (question + réponse) | 0,00138 $ | **0,37 DA** | **0,36 DA** |
-| 1 conversation commerciale (8 échanges) | 0,011 $ | **2,97 DA** | **2,87 DA** |
+| 1 conversation commerciale (5 échanges) | 0,0069 $ | **1,86 DA** | **1,79 DA** |
 | 1 conversation, contexte en cache | 0,0047 $ | 1,27 DA | 1,22 DA |
 | 1 minute d'appel — pire cas | 0,02376 $ | **6,42 DA** | **6,18 DA** |
 | 1 minute d'appel — réaliste (l'agent parle ~40 %) | 0,01296 $ | **3,50 DA** | **3,37 DA** |
@@ -337,8 +338,8 @@ conversations** devient le seul arrêt.
 
 | Pack | Conversations | = en appels | = en messages écrits | = en mixte |
 |---|---|---|---|---|
-| **Basic** | 1 000 | **100 min** | **8 000 messages** | 1 min d'appel = 80 messages (ex. 40 min + 4 800 messages) |
-| **Pro** | 5 000 | **500 min** | **40 000 messages** | 1 min d'appel = 80 messages (ex. 200 min + 24 000 messages) |
+| **Basic** | 1 000 | **100 min** | **5 000 messages** | 1 min d'appel = 50 messages (ex. 40 min + 3 000 messages) |
+| **Pro** | 5 000 | **500 min** | **25 000 messages** | 1 min d'appel = 50 messages (ex. 200 min + 15 000 messages) |
 | **Enterprise** | à négocier | — | — | fusible de 30 $ en attendant |
 
 **Ce que ça coûte, au maximum** (1 $ = 260 DA) — un client qui épuise tout son
@@ -346,14 +347,15 @@ forfait :
 
 | Pack | Prix | Tout en appels | Tout en messages | Tout en messages (avec cache) |
 |---|---|---|---|---|
-| Basic | 4 940 DA | 618 DA → marge **87 %** | **2 870 DA** → marge **42 %** | 1 220 DA → marge **75 %** |
-| Pro | 15 340 DA | 3 090 DA → marge **80 %** | **14 350 DA** → marge **6 %** | 6 100 DA → marge **60 %** |
+| Basic | 4 940 DA | 618 DA → marge **87 %** | **1 794 DA** → marge **64 %** | 763 DA → marge **85 %** |
+| Pro | 15 340 DA | 3 090 DA → marge **80 %** | **8 970 DA** → marge **42 %** | 3 813 DA → marge **75 %** |
 
-**Lecture.** Les appels sont **4,6× moins chers** que l'écrit à quota égal
-(1 conversation d'appel = 0,62 DA, 1 conversation écrite = 2,87 DA). Le risque
-n'est donc pas la voix : c'est un client Pro qui écrirait vraiment 40 000
+**Lecture.** Les appels sont **2,9× moins chers** que l'écrit à quota égal
+(1 conversation d'appel = 0,62 DA, 1 conversation écrite = 1,79 DA — mais une
+minute d'appel reste 17× plus chère qu'un message écrit). Le risque
+n'est donc pas la voix : c'est un client Pro qui écrirait vraiment 25 000
 messages dans le mois — et le cache de contexte (déjà actif) divise ce coût par
-2,3 quand la conversation s'enchaîne. Un client réel fait 100 à 300
+2,35 quand la conversation s'enchaîne. Un client réel fait 100 à 300
 conversations par mois : personne n'approche ces montants.
 
 *Calculs : `node scripts/couts-vocal.mjs --change=260` et

@@ -31,8 +31,8 @@ const H = {
   /** ---- ÉCRIT (Gemini 3.1 Flash-Lite) — coût réel mesuré sur le trafic. ---- */
   /** Un échange = 1 message du client + 1 réponse de l'IA (moyenne pondérée). */
   messageUsd: 0.00138,
-  /** Une conversation commerciale = 8 échanges → 8 unités de quota. */
-  messagesParConversation: 8,
+  /** Une conversation commerciale = 5 échanges → 5 unités de quota. */
+  messagesParConversation: 5,
   /** Quand le contexte est déjà en cache : lecture à 10 % du prix d'entrée. */
   conversationCacheUsd: 0.0047,
 
@@ -112,7 +112,7 @@ console.log(`
 console.log(titre("1. L'ÉCRIT — ce qu'un message coûte"));
 console.log(`
   1 échange (question + réponse) ................ ${usd(MESSAGE_USD, 5)}  ≈ ${dzd(da(MESSAGE_USD), 3)}
-  1 conversation commerciale (8 échanges) ....... ${usd(CONVERSATION_USD, 4)}  ≈ ${dzd(da(CONVERSATION_USD))}
+  1 conversation commerciale (5 échanges) ....... ${usd(CONVERSATION_USD, 4)}  ≈ ${dzd(da(CONVERSATION_USD))}
      (même conversation, contexte en cache) ..... ${usd(H.conversationCacheUsd, 4)}  ≈ ${dzd(da(H.conversationCacheUsd))}
 `);
 console.log(`  Autrement dit : ${dzd(da(MESSAGE_USD), 3)} le message, et il en faut ${H.messagesParConversation} pour marquer 1 conversation au compteur.`);
@@ -143,81 +143,112 @@ console.log(`
      • le barème « 1 min = ${H.conversationsParMinuteAppel} conversations » est donc GÉNÉREUX :
        tu factures ${H.conversationsParMinuteAppel} unités ce qui te coûte ${(APPEL_MAX.totalUsd / CONVERSATION_USD).toFixed(1).replace('.', ',')} conversations.`);
 
-// --- 3. Ce que le plafond autorise ---------------------------------------
-console.log(titre('3. JUSQU’OÙ CHAQUE PLAFOND LAISSE ALLER (écrit, puis appel)'));
+// --- 3. Le forfait entier, sans plafond -----------------------------------
+console.log(titre('3. LE FORFAIT ENTIER : CE QU’IL COÛTE AU MAXIMUM (aucun plafond)'));
+console.log(`
+  Décision du 13/10/2026 : plus de plafond en dollars sur Basic et Pro. C'est
+  le QUOTA DE CONVERSATIONS qui arrête l'assistant. Le pire cas possible est
+  donc « le client épuise tout son forfait » — et il peut l'épuiser en écrit,
+  en appels, ou dans n'importe quel mélange des deux.
+`);
 console.log(
-  pad('Pack', 12) + padL('Plafond IA', 14) + padL('Prix du pack', 14) +
-    padL('Conversations', 15) + padL('Minutes (pire)', 16) + padL('Minutes (réel)', 16),
+  pad('Pack', 12) + padL('Quota', 10) + padL('Tout en écrit', 15) + padL('Tout en appel', 15) +
+    padL('Prix du pack', 14) + padL('Marge (pire)', 14),
 );
 console.log('─'.repeat(94));
 for (const p of H.plans) {
-  const capDzd = da(p.capUsd);
-  const conversations = Math.floor(capDzd / da(CONVERSATION_USD));
-  const minutesMax = Math.floor(capDzd / da(APPEL_MAX.totalUsd));
-  const minutesReel = Math.floor(capDzd / da(APPEL_REEL.totalUsd));
+  if (p.quotaConversations === null) {
+    // Enterprise : pas de quota chiffré → fusible en dollars en attendant.
+    const fuseDzd = da(p.capUsd);
+    console.log(
+      pad(p.libelle, 12) + padL('à négocier', 10) +
+        padL(`${Math.floor(fuseDzd / da(CONVERSATION_USD)).toLocaleString('fr-FR')} conv.`, 15) +
+        padL(`${Math.floor(fuseDzd / da(APPEL_MAX.totalUsd)).toLocaleString('fr-FR')} min`, 15) +
+        padL('sur devis', 14) + padL(`fusible ${p.capUsd} $`, 14),
+    );
+    continue;
+  }
+  const quota = p.quotaConversations;
+  const toutEcrit = quota * da(CONVERSATION_USD);
+  const toutAppel = (quota / H.conversationsParMinuteAppel) * da(APPEL_MAX.totalUsd);
+  const pire = Math.max(toutEcrit, toutAppel);
   console.log(
-    pad(p.libelle, 12) +
-      padL(`${p.capUsd} $ = ${Math.round(capDzd).toLocaleString('fr-FR')} DA`, 14) +
-      padL(p.prixDzd ? `${p.prixDzd.toLocaleString('fr-FR')} DA` : 'sur devis', 14) +
-      padL(conversations.toLocaleString('fr-FR'), 15) +
-      padL(minutesMax.toLocaleString('fr-FR'), 16) +
-      padL(minutesReel.toLocaleString('fr-FR'), 16),
+    pad(p.libelle, 12) + padL(quota.toLocaleString('fr-FR'), 10) +
+      padL(`${Math.round(toutEcrit).toLocaleString('fr-FR')} DA`, 15) +
+      padL(`${Math.round(toutAppel).toLocaleString('fr-FR')} DA`, 15) +
+      padL(p.prixDzd.toLocaleString('fr-FR') + ' DA', 14) +
+      padL(pct(((p.prixDzd - pire) / p.prixDzd) * 100), 14),
   );
 }
+const conversationAppelDzd = da(APPEL_MAX.totalUsd) / H.conversationsParMinuteAppel;
 console.log(`
-  Lecture : le plafond est un MONTANT (${da(1).toFixed(0)} DA par dollar), pas un nombre
-  d'actions. Le client peut le dépenser en messages ou en minutes d'appel — et
-  quand il l'a atteint, l'assistant se met en pause tout seul (même UX que le
-  quota de conversations : il reprend le 1er du mois).`);
+  Une conversation ÉCRITE = ${H.messagesParConversation} messages × ${dzd(da(MESSAGE_USD), 3)} = ${dzd(da(CONVERSATION_USD))}
+  Une conversation d'APPEL = 1/${H.conversationsParMinuteAppel} de minute × ${dzd(da(APPEL_MAX.totalUsd))} = ${dzd(conversationAppelDzd)}
 
-// --- 4. Le barème tient-il dans le plafond ? -----------------------------
-console.log(titre('4. LE BARÈME « 1 MIN = 10 CONVERSATIONS » TIENT-IL DANS LE PLAFOND ?'));
+  → À QUOTA ÉGAL, l'écrit coûte ${(da(CONVERSATION_USD) / conversationAppelDzd).toFixed(1).replace('.', ',')}× plus cher que l'appel.
+  → MAIS une minute d'appel reste ${(APPEL_MAX.totalUsd / MESSAGE_USD).toFixed(0)}× plus chère qu'un message : la voix est
+    chère à la seconde, c'est le barème « 1 min = ${H.conversationsParMinuteAppel} conversations » qui la rend
+    bon marché EN UNITÉS DE QUOTA (le client brûle ${H.messagesParConversation * H.conversationsParMinuteAppel} messages de forfait
+    pour une minute qui te coûte ${dzd(da(APPEL_MAX.totalUsd))}).`);
+
+// --- 4. Le barème tient-il dans le quota ? --------------------------------
+console.log(titre('4. LE BARÈME « 1 MIN = 10 CONVERSATIONS » TIENT-IL DANS LE QUOTA ?'));
 console.log(
-  pad('Pack', 12) + padL('Quota', 10) + padL('Minutes visées', 15) +
-    padL('Coût des minutes', 18) + padL('Plafond', 14) + padL('Verdict', 20),
+  pad('Pack', 12) + padL('Quota', 10) + padL('Minutes visées', 16) +
+    padL('Conversations prises', 21) + padL('Reste', 16) + padL('Verdict', 14),
 );
 console.log('─'.repeat(94));
 for (const p of H.plans) {
   const visees = H.minutesVisees[p.id];
-  const capeDzd = da(p.capUsd);
-  const coutMinutes = visees * da(APPEL_MAX.totalUsd);
-  const tient = coutMinutes <= capeDzd;
-  const minutesPossibles = Math.floor(capeDzd / da(APPEL_MAX.totalUsd));
+  const prises = visees * H.conversationsParMinuteAppel;
+  if (p.quotaConversations === null) {
+    console.log(
+      pad(p.libelle, 12) + padL('à négocier', 10) + padL(`${visees.toLocaleString('fr-FR')} min`, 16) +
+        padL(prises.toLocaleString('fr-FR'), 21) + padL('—', 16) +
+        padL(`fusible ${p.capUsd} $`, 14),
+    );
+    continue;
+  }
+  const reste = p.quotaConversations - prises;
   console.log(
-    pad(p.libelle, 12) +
-      padL(p.quotaConversations ? p.quotaConversations.toLocaleString('fr-FR') : 'illimité', 10) +
-      padL(`${visees.toLocaleString('fr-FR')} min`, 15) +
-      padL(`${Math.round(coutMinutes).toLocaleString('fr-FR')} DA`, 18) +
-      padL(`${Math.round(capeDzd).toLocaleString('fr-FR')} DA`, 14) +
-      padL(tient ? '✅ tient' : `❌ coupé à ${minutesPossibles} min`, 20),
+    pad(p.libelle, 12) + padL(p.quotaConversations.toLocaleString('fr-FR'), 10) +
+      padL(`${visees.toLocaleString('fr-FR')} min`, 16) + padL(prises.toLocaleString('fr-FR'), 21) +
+      padL(reste >= 0 ? `${reste.toLocaleString('fr-FR')} conv.` : `${Math.abs(reste).toLocaleString('fr-FR')} de trop`, 16) +
+      padL(reste >= 0 ? '✅ tient' : '❌ dépasse', 14),
   );
 }
 console.log(`
-  ⚠️ Le barème vocal et les plafonds ont été décidés séparément : en pire cas,
-     la voix coûte ${dzd(da(APPEL_MAX.totalUsd))} la minute, donc un plafond de 9 $ ne finance que
-     ~${Math.floor(da(9) / da(APPEL_MAX.totalUsd))} minutes. Deux façons de remettre d'aplomb :
-       (a) baisser les minutes vendues (Pro 380 min, Enterprise 1 200 min), ou
-       (b) monter les plafonds (Pro 12 $, Enterprise 48 $) — et donc tes coûts max.`);
+  Le barème tient exactement dans le quota pour Basic et Pro : 100 minutes
+  d'appel = 1 000 conversations, 500 minutes = 5 000. Un client qui parle
+  beaucoup épuise donc son forfait en minutes, un client qui écrit l'épuise en
+  messages — et le premier te coûte BEAUCOUP moins cher que le second.
+
+  Enterprise n'a pas de quota chiffré (vendu « sur devis ») : il ne reste qu'un
+  fusible de ${H.plans[2].capUsd} $ — soit ${Math.floor(da(H.plans[2].capUsd) / da(APPEL_MAX.totalUsd)).toLocaleString('fr-FR')} minutes d'appel ou
+  ${Math.floor(da(H.plans[2].capUsd) / da(CONVERSATION_USD)).toLocaleString('fr-FR')} conversations écrites. À chiffrer avec le client.`);
 
 // --- 5. Usage mixte -------------------------------------------------------
 console.log(titre('5. UN CLIENT QUI FAIT LES DEUX (usage mixte, cas courant)'));
 const mixte = [
-  { libelle: 'Un Pro : 300 conversations écrites + 100 minutes d’appel', conversations: 300, minutes: 100, capUsd: 9 },
-  { libelle: 'Un Pro : 700 conversations écrites + 40 minutes d’appel', conversations: 700, minutes: 40, capUsd: 9 },
-  { libelle: 'Un Basic : 200 conversations écrites + 30 minutes d’appel', conversations: 200, minutes: 30, capUsd: 3 },
+  { libelle: 'Un Pro : 300 conversations écrites + 100 minutes d’appel', conversations: 300, minutes: 100, prixDzd: 14000 },
+  { libelle: 'Un Pro : 700 conversations écrites + 40 minutes d’appel', conversations: 700, minutes: 40, prixDzd: 14000 },
+  { libelle: 'Un Basic : 200 conversations écrites + 30 minutes d’appel', conversations: 200, minutes: 30, prixDzd: 4500 },
+  { libelle: 'Un Basic qui épuise tout son forfait en appels (100 min)', conversations: 0, minutes: 100, prixDzd: 4500 },
 ];
-console.log(pad('Scénario', 56) + padL('Coût', 14) + padL('Plafond', 12) + padL('Tenu ?', 12));
+console.log(pad('Scénario', 58) + padL('Coût', 12) + padL('Prix', 12) + padL('Marge', 12));
 console.log('─'.repeat(94));
-for (const s of mixte) {
-  const cout = s.conversations * da(CONVERSATION_USD) + s.minutes * da(APPEL_MAX.totalUsd);
+for (const sc of mixte) {
+  const cout = sc.conversations * da(CONVERSATION_USD) + sc.minutes * da(APPEL_MAX.totalUsd);
   console.log(
-    pad(s.libelle, 56) +
-      padL(`${Math.round(cout).toLocaleString('fr-FR')} DA`, 14) +
-      padL(`${Math.round(da(s.capUsd)).toLocaleString('fr-FR')} DA`, 12) +
-      padL(cout <= da(s.capUsd) ? `✅ ${pct((cout / da(s.capUsd)) * 100)}` : '❌ coupé', 12),
+    pad(sc.libelle, 58) +
+      padL(`${Math.round(cout).toLocaleString('fr-FR')} DA`, 12) +
+      padL(`${sc.prixDzd.toLocaleString('fr-FR')} DA`, 12) +
+      padL(pct(((sc.prixDzd - cout) / sc.prixDzd) * 100), 12),
   );
 }
-
 console.log(`
+  Un client normal (100 à 300 conversations et quelques appels par mois) te
+  coûte 500 à 1 500 DA : la marge reste au-dessus de 85 %.
+
   Variables : --change=260 (taux) · modifier H en tête de fichier pour tout le reste.
 `);

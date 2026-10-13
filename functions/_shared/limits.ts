@@ -34,7 +34,7 @@ export const SCAN_LIMITS_PER_MONTH: Record<string, number> = {
 // 💸 PLAFOND DE COÛT RÉEL — DÉCISION DU 13/10/2026 : plus de plafond en
 // dollars sur Basic et Pro. C'est le QUOTA DE CONVERSATIONS qui arrête tout
 // (Basic : 1 000 conversations = 100 minutes d'appel OU 8 000 messages ;
-// Pro : 5 000 conversations = 500 minutes OU 40 000 messages). Le client a
+// Pro : 5 000 conversations = 500 minutes OU 25 000 messages). Le client a
 // donc TOUT son forfait, et jamais une pause au milieu à cause d'un montant.
 // 0 = aucun plafond. Enterprise, qui n'a pas encore de quota chiffré (vendu
 // « sur devis »), garde un fusible en attendant sa limite négociée.
@@ -56,6 +56,16 @@ export function costCapReachedMsg(plan: string, cost: number, cap: number) {
   // clients doivent comprendre d'un coup d'œil (le forfait est fini, ça reprend).
   return `Cet assistant a terminé son forfait pour ce mois-ci. 😊 Il reprend automatiquement le 1er du mois prochain — le propriétaire peut aussi l'activer davantage à tout moment depuis son tableau de bord JawebFlow.`;
 }
+
+/**
+ * 🧮 TAILLE D'UNE CONVERSATION (décision du 13/10/2026) : **5 messages écrits
+ * = 1 conversation** du forfait (c'était 8). Moins de messages par
+ * conversation = un forfait qui se consomme moins vite en écrit, donc un coût
+ * Gemini plus bas à prix vendu identique : le pire cas d'un Basic passe de
+ * 2 870 DA à 1 794 DA, celui d'un Pro de 14 350 DA à 8 970 DA (à 260 DA/$).
+ * La voix, elle, garde son barème (1 minute d'appel = 10 conversations).
+ */
+export const UNITS_PER_CONVERSATION = 5;
 
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 0,        // Plan Gratuit = zéro crédit IA (page Tarifs)
@@ -117,8 +127,10 @@ export function monthStartIso(): string {
 /** Nombre de conversations IA déjà consommées ce mois-ci par un assistant. */
 export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assistantId: string): Promise<number> {
   try {
-    // 🧮 COMPTEUR PONDÉRÉ : 1 conversation commerciale = 8 unités, avec
-    // poids par message (photo = 4, recherche produits = +2, message = 1).
+    // 🧮 COMPTEUR PONDÉRÉ : 1 conversation commerciale = UNITS_PER_CONVERSATION
+    // unités (5), avec poids par message (photo = 4, recherche produits = +2,
+    // message = 1). Les poids ne changent pas : seule la taille de la
+    // conversation a été réduite, ce qui abaisse le coût du forfait.
     // Les unités du mois sont agrégées en base par la vue SQL
     // assistant_monthly_usage (voir supabase/migration_ai_usage.sql).
     const vRes = await supabaseRequest(
@@ -128,7 +140,7 @@ export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assist
     if (vRes.ok) {
       const vRows = (await vRes.json().catch(() => [])) as any[];
       const units = Number(vRows?.[0]?.units || 0);
-      return Math.ceil(units / 8);
+      return Math.ceil(units / UNITS_PER_CONVERSATION);
     }
     // Repli si la vue n'existe pas encore : ancien comptage (1 ligne = 1 unité).
     const res = await supabaseRequest(
@@ -139,9 +151,9 @@ export async function supabaseCountMonthlyConversations(env: SupabaseEnv, assist
     if (!res.ok) return 0; // en cas de pépin on ne bloque PAS le client (fail-open)
     const range = res.headers.get('content-range') || '';
     const total = parseInt(range.split('/')[1] || '', 10);
-    if (!isNaN(total)) return Math.ceil(total / 8);
+    if (!isNaN(total)) return Math.ceil(total / UNITS_PER_CONVERSATION);
     const rows = (await res.json()) as any[];
-    return Math.ceil((Array.isArray(rows) ? rows.length : 0) / 8);
+    return Math.ceil((Array.isArray(rows) ? rows.length : 0) / UNITS_PER_CONVERSATION);
   } catch {
     return 0;
   }

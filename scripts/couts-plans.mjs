@@ -14,7 +14,7 @@
  * Les valeurs par défaut viennent du CODE du dépôt (pas d'un guide trouvé en
  * ligne) :
  *   • quotas & plafonds ....... functions/_shared/limits.ts
- *   • pondération du quota .... supabase/migration_ai_usage.sql (8 unités = 1 conversation)
+ *   • pondération du quota .... functions/_shared/limits.ts (5 unités = 1 conversation)
  *   • tarifs des packs ........ functions/api/slickpay.js + src/pages/PricingPage.tsx
  *   • génération du prompt ..... functions/_shared/prompt.ts (mesuré : 6 125 → 7 499 car.)
  *   • cache de contexte ....... functions/_shared/gemini-cache.ts
@@ -36,8 +36,8 @@ const HYPOTHESES = {
   /** STOCKAGE du cache : facturé à l'heure, que le cache serve ou non. */
   prixStockageCacheUsdParMTokParHeure: 1.0,
 
-  /** Une « conversation commerciale » facturée au client = 8 unités de quota. */
-  unitesParConversation: 8,
+  /** Une « conversation commerciale » facturée au client = 5 unités de quota. */
+  unitesParConversation: 5,
 
   /** Tokens du prompt système stable (mesuré sur le code : 6 125 → 7 499 car.). */
   tokensPromptSysteme: 1600,
@@ -338,7 +338,7 @@ for (const messages of [200, 1000, 2000, 5000, 25000]) {
   const coutMeta = factures * wa.rateServiceDzdParMessage;
   const coutIa = usdVersDzd(coutMessageMoyen() * messages);
   console.log(
-    pad(`${(messages / 8).toFixed(0)} conversations`, 30) + padL(messages.toLocaleString('fr-FR'), 16) +
+    pad(`${(messages / HYPOTHESES.unitesParConversation).toFixed(0)} conversations`, 30) + padL(messages.toLocaleString('fr-FR'), 16) +
       padL(dzd(coutMeta), 14) + padL(dzd(coutIa), 12) + padL(dzd(coutMeta + coutIa), 14),
   );
 }

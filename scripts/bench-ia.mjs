@@ -61,4 +61,4 @@ console.log('──────────────────────�
 console.log(`TOTAL : ${n} messages · tokens in=${totIn} out=${totOut}`);
 console.log(`COÛT Gemini estimé : $${cost.toFixed(4)} (≈ ${(cost * 135).toFixed(2)} DA)`);
 console.log(`Coût par CONVERSATION (8 messages) ×1000 → $${(cost * 1000).toFixed(2)}`);
-console.log(`Jauge du client : +${totUnits} unité(s) = ${Math.ceil(totUnits / 8)} conversation(s) sur 1000`);
+console.log(`Jauge du client : +${totUnits} unité(s) = ${Math.ceil(totUnits / 5)} conversation(s) sur 1000`);

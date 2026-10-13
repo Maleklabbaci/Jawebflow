@@ -25,7 +25,7 @@
 const U = {
   /** IA : Gemini 3.1 Flash-Lite, mesuré sur le code du dépôt. */
   iaParMessage: 0.00138,          // ~0,186 DA au taux de 135
-  iaParConversationWeb: 0.011,    // 8 messages
+  iaParConversationWeb: 0.0069,   // 5 messages × 0,00138 (décision du 13/10)
 
   /** WhatsApp (barème Meta du 01/10/2026, marché « Rest of Africa »). */
   waService: 0.0046,              // par message, après 1 000 gratuits/mois/numéro
