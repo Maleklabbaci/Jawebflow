@@ -45,9 +45,15 @@ import {
   supabase,
 } from '../lib/supabase';
 import { buildWidgetSnippet } from '../lib/widget-snippet';
+import { WidgetCustomizer } from '../components/WidgetCustomizer';
+import type { WidgetCustomization } from '../lib/supabase';
+import type { SiteChatConfig } from '../../functions/_shared/site-chat';
 import { useAuth } from '../context/AuthContext';
 
-export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'sites' | 'plans' | 'leads' | 'invoices' | 'system';
+export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'sites' | 'site-chat' | 'plans' | 'leads' | 'invoices' | 'system';
+
+/** Réglages du chatbot du site + l'état de la lecture (table absente ?). */
+type SiteChatAdminState = SiteChatConfig & { available?: boolean; stored?: boolean };
 
 // ---------------------------------------------------------------------------
 // Quotas des plans (alignés sur la page Tarifs). Éditables dans l'onglet Plans
@@ -338,6 +344,10 @@ export function AdminPage() {
   const [loadingSites, setLoadingSites] = useState(false);
   const [sitesQuery, setSitesQuery] = useState('');
   const [planLimits, setPlanLimits] = useState<Record<string, number | null>>({ ...DEFAULT_PLAN_LIMITS });
+  // 🤖 Le chatbot de notre propre site (pages publiques, avant l'interface).
+  const [siteChat, setSiteChat] = useState<SiteChatAdminState | null>(null);
+  const [loadingSiteChat, setLoadingSiteChat] = useState(false);
+  const [savingSiteChat, setSavingSiteChat] = useState(false);
   const [limitsDraft, setLimitsDraft] = useState<Record<string, string>>({
     free: '0', basic: '1000', pro: '5000', enterprise: '',
   });
@@ -578,6 +588,62 @@ export function AdminPage() {
     }
   };
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // 🤖 LE CHATBOT DU SITE (jawebflow.dz) — réglé ici, appliqué publiquement
+  // ───────────────────────────────────────────────────────────────────────────
+  const adminToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || '';
+  };
+
+  const loadSiteChat = async () => {
+    setLoadingSiteChat(true);
+    try {
+      const res = await fetch('/api/admin/site-chat', {
+        headers: { Authorization: `Bearer ${await adminToken()}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Lecture impossible');
+      setSiteChat({ ...(data.config as SiteChatConfig), available: data.available !== false, stored: !!data.stored });
+    } catch (err: any) {
+      notify('Chatbot du site : ' + (err?.message || 'lecture impossible'), 'error');
+    } finally {
+      setLoadingSiteChat(false);
+    }
+  };
+
+  const patchSiteChat = (patch: Partial<SiteChatAdminState>) =>
+    setSiteChat((prev) => (prev ? { ...prev, ...patch } : prev));
+  const patchSiteWidget = (patch: Partial<WidgetCustomization>) =>
+    setSiteChat((prev) => (prev ? { ...prev, widget: { ...prev.widget, ...patch } as any } : prev));
+  const patchSiteAi = (patch: Partial<SiteChatConfig['ai']>) =>
+    setSiteChat((prev) => (prev ? { ...prev, ai: { ...prev.ai, ...patch } } : prev));
+  const patchSiteContact = (patch: Partial<SiteChatConfig['contact']>) =>
+    setSiteChat((prev) => (prev ? { ...prev, contact: { ...prev.contact, ...patch } } : prev));
+
+  const saveSiteChat = async () => {
+    if (!siteChat) return;
+    setSavingSiteChat(true);
+    try {
+      // On n'envoie que les réglages : `available`/`stored` sont des détails de
+      // lecture, pas des réglages.
+      const { available, stored, ...payload } = siteChat;
+      const res = await fetch('/api/admin/site-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await adminToken()}` },
+        body: JSON.stringify({ config: payload }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Enregistrement refusé');
+      setSiteChat({ ...(data.config as SiteChatConfig), available: true, stored: true });
+      notify('Chatbot du site enregistré : vos visiteurs voient déjà les nouveaux réglages.');
+    } catch (err: any) {
+      notify('Chatbot du site : ' + (err?.message || 'enregistrement impossible'), 'error');
+    } finally {
+      setSavingSiteChat(false);
+    }
+  };
+
   // 🌐 Qui est branché sur quoi : un appel, une réponse prête à lire.
   const loadSites = async () => {
     setLoadingSites(true);
@@ -598,6 +664,7 @@ export function AdminPage() {
 
   useEffect(() => {
     if (isAdminAuthenticated && activeTab === 'sites' && !sitesOverview && !loadingSites) loadSites();
+    if (isAdminAuthenticated && activeTab === 'site-chat' && !siteChat && !loadingSiteChat) loadSiteChat();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdminAuthenticated, activeTab]);
 
@@ -1132,6 +1199,10 @@ export function AdminPage() {
 
   const navigationItems = [
     {
+      group: 'MON SITE JAWEBFLOW',
+      items: [{ id: 'site-chat', label: 'Chatbot du site', icon: Sparkles, badge: siteChat?.enabled === false ? 'fermé' : null as string | null }],
+    },
+    {
       group: 'PILOTAGE & KPI',
       items: [{ id: 'overview', label: "Vue d'ensemble", icon: LayoutDashboard, badge: null as string | null }],
     },
@@ -1226,6 +1297,12 @@ export function AdminPage() {
       </div>
     );
   };
+
+  // Champs de formulaire de la console (une seule fois, pour rester cohérent).
+  const fieldCls =
+    'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-1 focus:ring-purple-600 text-sm transition-all';
+  const labelCls = 'block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider';
+  const cardCls = 'bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4';
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased selection:bg-purple-500/20 selection:text-purple-900">
@@ -2059,6 +2136,342 @@ export function AdminPage() {
                       Dernière lecture : {fmtDate(sitesOverview.generatedAt)} · depuis la console, tu peux ouvrir ou refermer le module dans l’onglet « Clients ».
                     </p>
                   )}
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'site-chat' && (
+            <div className="space-y-5" data-testid="admin-site-chat">
+              {/* ── En-tête : de quoi on parle, et l'interrupteur général ── */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-purple-600" /> Le chatbot de jawebflow.dz
+                    </h2>
+                    <p className="text-sm text-slate-500 mt-1 max-w-3xl leading-relaxed">
+                      La bulle que voient vos visiteurs <strong>avant</strong> d'entrer dans l'interface (accueil,
+                      tarifs, services, contact…). Ici vous réglez ce qu'il dit, ce qu'il sait, et toute
+                      l'apparence du widget — les visiteurs voient le changement dès l'enregistrement.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href="/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      Voir le site ↗
+                    </a>
+                    <button
+                      type="button"
+                      onClick={loadSiteChat}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingSiteChat ? 'animate-spin' : ''}`} /> Recharger
+                    </button>
+                  </div>
+                </div>
+
+                <label
+                  className="mt-4 flex flex-wrap items-center gap-3 cursor-pointer"
+                  data-testid="site-chat-enabled"
+                >
+                  <input
+                    type="checkbox"
+                    checked={siteChat?.enabled !== false}
+                    onChange={(e) => patchSiteChat({ enabled: e.target.checked })}
+                    className="w-4 h-4 accent-purple-600"
+                  />
+                  <span className="text-sm font-semibold text-slate-800">
+                    {siteChat?.enabled === false ? 'Chat fermé sur le site' : 'Chat ouvert sur le site'}
+                  </span>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${siteChat?.enabled === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {siteChat?.enabled === false ? 'les visiteurs ne voient rien' : 'visible en bas à droite'}
+                  </span>
+                </label>
+
+                {siteChat?.available === false && (
+                  <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
+                    ⚠️ La table <code>platform_settings</code> n'existe pas encore : exécutez{' '}
+                    <code>supabase/migration_site_chatbot.sql</code> pour enregistrer ces réglages. En attendant,
+                    le chatbot fonctionne avec les réglages par défaut.
+                  </p>
+                )}
+              </div>
+
+              {loadingSiteChat && !siteChat && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm flex items-center justify-center gap-3 text-slate-500">
+                  <Loader2 className="w-5 h-5 animate-spin" /> <span className="text-sm">Chargement des réglages…</span>
+                </div>
+              )}
+
+              {!loadingSiteChat && !siteChat && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm text-center space-y-3">
+                  <p className="text-sm text-slate-500">Réglages illisibles pour le moment.</p>
+                  <button type="button" onClick={loadSiteChat} className="px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 transition-colors cursor-pointer">
+                    Réessayer
+                  </button>
+                </div>
+              )}
+
+              {siteChat && (
+                <>
+                  {/* ── 1. Ce qu'il dit ─────────────────────────────────────── */}
+                  <div className={cardCls}>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-purple-600" /> Ce qu'il dit
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Le premier message, les questions cliquables sous le chat, et le texte du champ de saisie.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Message d'accueil</label>
+                      <textarea
+                        data-testid="site-chat-welcome"
+                        rows={3}
+                        value={siteChat.widget.welcomeMessage}
+                        onChange={(e) => patchSiteWidget({ welcomeMessage: e.target.value })}
+                        className={fieldCls}
+                        placeholder="Salam ! 👋 Je suis l'assistant JawebFlow…"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>Nom affiché (en-tête)</label>
+                        <input
+                          value={siteChat.widget.headerTitle}
+                          onChange={(e) => patchSiteWidget({ headerTitle: e.target.value })}
+                          className={fieldCls}
+                          placeholder="Assistant JawebFlow"
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Ligne d'état (en-tête)</label>
+                        <input
+                          value={siteChat.widget.headerSubtitle}
+                          onChange={(e) => patchSiteWidget({ headerSubtitle: e.target.value })}
+                          className={fieldCls}
+                          placeholder="En ligne • réponse immédiate"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Questions rapides (une par ligne, 6 max)</label>
+                      <textarea
+                        data-testid="site-chat-prompts"
+                        rows={4}
+                        value={siteChat.quickPrompts.join('\n')}
+                        onChange={(e) =>
+                          patchSiteChat({
+                            quickPrompts: e.target.value
+                              .split('\n')
+                              .map((line) => line.trim())
+                              .filter(Boolean)
+                              .slice(0, 6),
+                          })
+                        }
+                        className={fieldCls}
+                        placeholder={'Combien ça coûte ?\nÇa s’installe comment ?\nÇa parle darija ?\nComment je paie ?'}
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Texte du champ de saisie</label>
+                      <input
+                        value={siteChat.placeholder}
+                        onChange={(e) => patchSiteChat({ placeholder: e.target.value })}
+                        className={fieldCls}
+                        placeholder="Posez votre question…"
+                      />
+                    </div>
+                  </div>
+
+                  {/* ── 2. Ce qu'il sait (l'IA) ─────────────────────────────── */}
+                  <div className={cardCls}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <Bot className="w-4 h-4 text-purple-600" /> Ce qu'il sait
+                        </h3>
+                        <p className="text-[11px] text-slate-500 mt-1 max-w-2xl">
+                          Le chatbot répond <strong>uniquement</strong> avec cette base de connaissance : s'il ne
+                          sait pas, il le dit et propose de vous contacter. Pas de culture générale, pas d'invention.
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer shrink-0" data-testid="site-chat-ai">
+                        <input
+                          type="checkbox"
+                          checked={siteChat.ai.enabled}
+                          onChange={(e) => patchSiteAi({ enabled: e.target.checked })}
+                          className="w-4 h-4 accent-purple-600"
+                        />
+                        <span className="text-xs font-semibold text-slate-700">Réponses IA</span>
+                      </label>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Base de connaissance du site</label>
+                      <textarea
+                        data-testid="site-chat-knowledge"
+                        rows={10}
+                        value={siteChat.ai.knowledge}
+                        onChange={(e) => patchSiteAi({ knowledge: e.target.value })}
+                        className={`${fieldCls} font-mono text-[12px] leading-relaxed`}
+                        placeholder="Formules, prix, installation, paiement, garanties…"
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        {siteChat.ai.knowledge.length.toLocaleString('fr-FR')} / 8 000 caractères — la base entière
+                        part dans le prompt à chaque message.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className={labelCls}>Ton</label>
+                        <select
+                          value={siteChat.ai.tone}
+                          onChange={(e) => patchSiteAi({ tone: e.target.value as SiteChatConfig['ai']['tone'] })}
+                          className={fieldCls}
+                        >
+                          <option value="pro">Professionnel</option>
+                          <option value="amical">Amical</option>
+                          <option value="direct">Direct</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>Langue</label>
+                        <select
+                          value={siteChat.ai.language}
+                          onChange={(e) => patchSiteAi({ language: e.target.value as SiteChatConfig['ai']['language'] })}
+                          className={fieldCls}
+                        >
+                          <option value="auto">Langue du visiteur (auto)</option>
+                          <option value="fr">Toujours français</option>
+                          <option value="ar">Toujours arabe</option>
+                          <option value="darija">Toujours darija</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>Modèle (vide = défaut)</label>
+                        <input
+                          value={siteChat.ai.model}
+                          onChange={(e) => patchSiteAi({ model: e.target.value })}
+                          className={fieldCls}
+                          placeholder="gemini-3.1-flash-lite"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Réponse de secours (si l'IA est coupée ou en panne)</label>
+                      <textarea
+                        data-testid="site-chat-fallback"
+                        rows={3}
+                        value={siteChat.ai.fallbackReply}
+                        onChange={(e) => patchSiteAi({ fallbackReply: e.target.value })}
+                        className={fieldCls}
+                      />
+                    </div>
+                  </div>
+
+                  {/* ── 3. Le contact humain ────────────────────────────────── */}
+                  <div className={cardCls}>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-purple-600" /> Parler à un humain
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Ces coordonnées sont données au visiteur quand l'assistant ne sait pas répondre.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className={labelCls}>E-mail de l'équipe</label>
+                        <input
+                          value={siteChat.contact.email}
+                          onChange={(e) => patchSiteContact({ email: e.target.value })}
+                          className={fieldCls}
+                          placeholder="contact@jawebflow.dz"
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>WhatsApp (numéro international)</label>
+                        <input
+                          value={siteChat.contact.whatsapp}
+                          onChange={(e) => patchSiteContact({ whatsapp: e.target.value })}
+                          className={fieldCls}
+                          placeholder="+213…"
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Libellé du bouton WhatsApp</label>
+                        <input
+                          value={siteChat.contact.whatsappText}
+                          onChange={(e) => patchSiteContact({ whatsappText: e.target.value })}
+                          className={fieldCls}
+                          placeholder="Parler sur WhatsApp"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── 4. L'apparence & le comportement du widget ───────────── */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-purple-600" /> L'apparence & le comportement du widget
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Couleurs, forme, position, accroche, ouverture automatique, CSS libre : tout est ici, et
+                        s'applique au site dès l'enregistrement.
+                      </p>
+                    </div>
+                    <WidgetCustomizer
+                      businessName={siteChat.widget.headerTitle}
+                      onBusinessNameChange={(value: string) => patchSiteWidget({ headerTitle: value })}
+                      widgetId="jawebflow_site"
+                      config={siteChat.widget as WidgetCustomization}
+                      onChange={patchSiteWidget}
+                      onSave={saveSiteChat}
+                      isSaving={savingSiteChat}
+                      scriptUrl={`${window.location.origin}/widget.js`}
+                      hideVoice
+                    />
+                  </div>
+
+                  {/* ── Barre d'enregistrement ─────────────────────────────── */}
+                  <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 bg-white/95 backdrop-blur border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+                    <p className="text-xs text-slate-500">
+                      {siteChat.stored
+                        ? 'Réglages enregistrés — ils vivent en base (platform_settings).'
+                        : 'Encore jamais enregistré : le site utilise les valeurs par défaut.'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={loadSiteChat}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="site-chat-save"
+                        onClick={saveSiteChat}
+                        disabled={savingSiteChat}
+                        className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-sm shadow-purple-600/30 transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        {savingSiteChat ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        Enregistrer les réglages
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
             </div>

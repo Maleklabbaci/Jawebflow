@@ -14,6 +14,12 @@ interface WidgetCustomizerProps {
   /** URL du script, la même que celle du tableau de bord. */
   scriptUrl?: string;
   isSaving?: boolean;
+  /**
+   * Console admin (le widget de notre propre site vitrine) : le site ne propose
+   * pas encore l'appel, donc on masque l'onglet Voix et le choix du mode —
+   * jamais de réglage qui ne ferait rien.
+   */
+  hideVoice?: boolean;
 }
 
 // Icon choices with icons and labels
@@ -57,7 +63,8 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   onSave,
   onGoToIntegration,
   scriptUrl,
-  isSaving = false
+  isSaving = false,
+  hideVoice = false
 }) => {
   const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content' | 'voice' | 'attention'>('icon');
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
@@ -191,7 +198,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
         <div className="lg:col-span-7 space-y-4">
           
           {/* Sub-tabs for customization categories */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+          <div className={`grid grid-cols-2 sm:grid-cols-3 ${hideVoice ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm`}>
             <button
               type="button"
               onClick={() => setActiveTab('icon')}
@@ -244,19 +251,21 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               <span className="truncate">4. Textes & Accroche</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('voice')}
-              data-testid="tab-voice"
-              className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'voice'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span className="truncate">5. Voix</span>
-            </button>
+            {!hideVoice && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('voice')}
+                data-testid="tab-voice"
+                className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'voice'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span className="truncate">5. Voix</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -269,7 +278,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span className="truncate">6. Accroche</span>
+              <span className="truncate">{hideVoice ? '5. Accroche' : '6. Accroche'}</span>
             </button>
           </div>
 
@@ -707,7 +716,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
           )}
 
           {/* ── 5. VOIX : l'agent vocal dans la bulle ───────────────────── */}
-          {activeTab === 'voice' && (
+          {activeTab === 'voice' && !hideVoice && (
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-4">
                 <div>
@@ -813,6 +822,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
           {activeTab === 'attention' && (
             <div className="space-y-4">
               <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
+                {!hideVoice && (
                 <div>
                   <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-purple-600" /> Mode du widget
@@ -843,8 +853,9 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
                     ))}
                   </div>
                 </div>
+                )}
 
-                <div className="pt-4 border-t border-slate-100 space-y-4">
+                <div className={`space-y-4 ${hideVoice ? '' : 'pt-4 border-t border-slate-100'}`}>
                   <h4 className="text-sm font-bold text-slate-900">Attirer l'attention</h4>
 
                   <label className="flex items-start gap-3 cursor-pointer">

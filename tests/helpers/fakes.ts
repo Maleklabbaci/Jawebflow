@@ -53,6 +53,8 @@ const UNIQUE: Record<string, string[]> = {
   // Anti-doublon de la facturation : Meta renvoie plusieurs accusés (sent,
   // delivered, read) pour le MÊME message — une seule ligne doit être écrite.
   channel_messages: ['channel', 'message_id', 'direction'],
+  // Une seule ligne de réglages par plateforme (le chatbot du site vitrine).
+  platform_settings: ['id'],
 };
 
 function splitTop(s: string): string[] {

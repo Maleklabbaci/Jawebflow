@@ -42,6 +42,7 @@ Supabase → **SQL Editor** → coller et exécuter, dans cet ordre :
 | `supabase/migration_admin_repair.sql` | réparations | ✅ oui |
 | **`supabase/migration_channels.sql`** | **canaux (Messenger, WhatsApp, TikTok, Telegram) + compteur de facturation** | ✅ oui |
 | **`supabase/migration_module_social.sql`** | **module Réseaux sociaux : verrouillé par défaut, ouvert client par client + demandes d'activation** (voir `docs/MODULE_RESEAUX_SOCIAUX.md`) | ✅ oui |
+| **`supabase/migration_site_chatbot.sql`** | **réglages du chatbot du site vitrine** (console admin → « Chatbot du site », voir `docs/CHATBOT_SITE.md`) | ✅ oui |
 
 Toutes sont sans danger à rejouer (`if not exists`). Le tableau de bord dit lui-même quand une table
 manque, au lieu de planter : l'onglet **Canaux** affiche alors « migration à exécuter ».
