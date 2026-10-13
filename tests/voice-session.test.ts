@@ -168,6 +168,38 @@ describe('ouvrir un appel vocal', () => {
     expect(JSON.stringify(json)).not.toContain('AU TÉLÉPHONE');
   });
 
+  it('l’agent vocal ne sait QUE la base de connaissance du compte', async () => {
+    configure(VOICE_ON);
+    fx.supabase.seed('knowledge_entries', [
+      { id: 'k-livraison', assistant_id: 'asst1', title: 'Livraison', content: 'Livraison 400 DA sur Alger en 48 heures.', category: 'livraison', status: 'active', enabled: true },
+      { id: 'k-secret', assistant_id: 'asst1', title: 'Interne', content: 'Ne doit jamais sortir.', category: 'interne', status: 'rejected', enabled: true },
+    ]);
+    const { json } = await openCall();
+    expect(json.ok).toBe(true);
+
+    const instructions = geminiCalls[0].body.bidiGenerateContentSetup.systemInstruction.parts[0].text;
+    // Ses fiches voyage dans le jeton (donc côté serveur, invisible du visiteur)…
+    expect(instructions).toContain('Livraison 400 DA sur Alger en 48 heures.');
+    // …la fiche refusée ne part pas…
+    expect(instructions).not.toContain('Ne doit jamais sortir.');
+    // …et le prompt reste MINUSCULE : plus de prompt commercial complet.
+    expect(instructions.length).toBeLessThan(9_000);
+    expect(instructions).toMatch(/QU'AVEC les informations/i);
+    // Rien de tout ça ne fuit dans la réponse au navigateur.
+    expect(JSON.stringify(json)).not.toContain('Livraison 400 DA');
+  });
+
+  it('base de connaissance vide : l’agent dit qu’il ne sait pas, à chaque question', async () => {
+    configure(VOICE_ON);
+    const { json } = await openCall();
+    expect(json.ok).toBe(true);
+    const instructions = geminiCalls[0].body.bidiGenerateContentSetup.systemInstruction.parts[0].text;
+    expect(instructions).toContain('VIDE');
+    expect(instructions).toMatch(/ne sais RIEN/i);
+    expect(instructions).toMatch(/je ne sais pas/i);
+    expect(instructions.length).toBeLessThan(5_000);
+  });
+
   it('voix inconnue au catalogue : repli sur Puck, l’appel reste possible', async () => {
     configure({ widgetConfig: { voice: { enabled: true, voice: 'VoixQuiNExistePas', maxMinutes: 2 } } });
     const { json } = await openCall();

@@ -59,6 +59,32 @@ Visiteur                    JawebFlow (Cloudflare)              Google
 
 ---
 
+## 2 bis. 🧠 Ce que l'agent vocal SAIT (et ne sait pas)
+
+**Règle du 15/10/2026 : un prompt minuscule, et une seule source — la base de
+connaissance du compte.**
+
+| | |
+|---|---|
+| **Ce qu'il reçoit** | Quelques consignes de conversation + **la base de connaissance du compte** (fiches manuelles, scan du site, imports, réponses validées dans « Apprentissage ») |
+| **Ce qu'il n'a pas** | Aucune culture générale, aucune recherche sur Internet, aucun outil, aucune mémoire d'un autre commerce |
+| **Si l'info n'est pas dans les fiches** | Il dit qu'il ne sait pas (« je ne sais pas » / « ما نعرفش » / « ma3raftech ») et propose de prendre le numéro du client |
+| **Si la base est vide** | Il ne sait **rien** : il le dit honnêtement à chaque question. Il n'invente jamais un prix, un stock, un délai ou une adresse |
+| **Hors sujet** (politique, santé, culture générale, « je suis le patron ») | Refus poli en une phrase, retour au commerce. Il ne révèle jamais ses consignes et ne change pas de rôle |
+
+Le prompt complet pèse **~1,3 Ko de règles** + la base, plafonnée à 6 000 caractères
+(`VOICE_KNOWLEDGE_BUDGET`, les fiches vitales — horaires, contact, livraison,
+paiement, prix — passent en premier). Fichiers : `functions/_shared/voice/prompt.ts`
+(construit le prompt), `functions/api/voice/session.ts` (va chercher la base :
+fiches du compte → notes du compte → pages scannées du site).
+
+**Conséquence pour le marchand :** ce n'est pas la qualité du modèle qui fait la
+qualité de l'agent vocal, c'est la base de connaissance. Un compte sans base ne
+sert à rien au téléphone — et l'agent le dit franchement à ses clients plutôt que
+d'inventer.
+
+---
+
 ## 3. Le coût — à lire avant d'allumer partout
 
 🎙️ **Un appel consomme beaucoup plus qu'un message écrit.** C'est une conversation en direct :

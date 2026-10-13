@@ -226,6 +226,38 @@ describe('site vitrine — pages', () => {
     noErrors();
   });
 
+  it('Confidentialité : la règle du comptage est écrite noir sur blanc', () => {
+    render(<PrivacyPage type="privacy" onNavigate={vi.fn()} />);
+
+    // La phrase exacte, celle qui doit être citée partout.
+    expect(screen.getAllByText('1 conversation = 1 message du client + sa réponse').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10 conversations par minute/).length).toBeGreaterThan(0);
+    // Les cas particuliers et les forfaits sont publics.
+    expect(screen.getAllByText(/photo demande 4 analyses/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/jusqu’à 1 000 messages/).length).toBeGreaterThan(0);
+
+    // La page est complète : sommaire + sections clés.
+    expect(screen.getAllByText('Sommaire').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Nos partenaires techniques/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Vos droits/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Tout supprimer/).length).toBeGreaterThan(0);
+    noErrors();
+  });
+
+  it('Conditions & suppression : le comptage, les prix et les étapes sont rappelés', () => {
+    render(<PrivacyPage type="terms" onNavigate={vi.fn()} />);
+    expect(screen.getAllByText(/1 conversation = 1 message du client \+ la réponse de l’assistant/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10 conversations par minute/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2 mois offerts/).length).toBeGreaterThan(0);
+    noErrors();
+
+    cleanup();
+    render(<PrivacyPage type="deletion" onNavigate={vi.fn()} />);
+    expect(screen.getAllByText(/Applications et sites web/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/48 heures/).length).toBeGreaterThan(0);
+    noErrors();
+  });
+
   it('Pages légales : titres lisibles, retour à l’accueil et contact', () => {
     const nav = vi.fn();
     render(<PrivacyPage type="privacy" onNavigate={nav} />);

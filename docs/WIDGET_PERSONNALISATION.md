@@ -91,6 +91,12 @@ même consigne système (`functions/_shared/prompt.ts`).
 Le modèle temps réel est **Gemini 3.8 Live** (`gemini-3.8-live`), surchargeable
 par `GEMINI_LIVE_MODEL` — voir `docs/AGENT_VOCAL.md`.
 
+## 🧠 Ce que l'agent vocal sait (rappel)
+
+Le mode « le bot qui appelle » n'invente rien : au téléphone, l'agent ne connaît que
+la **base de connaissance du compte**. Sans base, il répond « je ne sais pas » et
+propose de prendre le numéro du client. Voir `docs/AGENT_VOCAL.md` §2 bis.
+
 ## Limites (volontaires)
 
 - Pas d'injection de HTML/CSS/JS libre **dans** le widget : une page cliente ne
