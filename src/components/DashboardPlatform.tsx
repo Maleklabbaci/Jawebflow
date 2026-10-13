@@ -67,6 +67,7 @@ import { KnowledgeNotesManager } from './KnowledgeNotesManager';
 import { AccountProfileView } from './AccountProfileView';
 import { CheckoutWizard } from './CheckoutWizard';
 import { InstagramIntegration } from './InstagramIntegration';
+import { ChannelsIntegration } from './ChannelsIntegration';
 import { InstagramAutomations } from './InstagramAutomations';
 import { CopilotChat, CopilotLauncher } from './CopilotChat';
 import { StatCard } from './dashboard/StatCard';
@@ -78,7 +79,7 @@ import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 import { DEAL_KIND_LABELS, DEAL_NEXT_ACTIONS, DEAL_STEPS, SALES_INTENT_LABELS, buildDealRecap, dealKindOf, dealStatusLabel, type DealKind } from '../../functions/_shared/sales-intent';
 
-export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'automations' | 'settings' | 'billing';
+export type DashboardSectionId = 'overview' | 'summary' | 'crawler' | 'knowledge' | 'behavior' | 'widget' | 'simulator' | 'learning' | 'leads' | 'orders' | 'integration' | 'instagram' | 'messenger' | 'whatsapp' | 'telegram' | 'tiktok' | 'automations' | 'settings' | 'billing';
 
 type LeadOrder = {
   id: string;
@@ -127,7 +128,13 @@ const SECTION_GROUPS: Record<string, { title: string; tabs: Array<{ id: Dashboar
   channels: {
     title: 'Canaux',
     tabs: [
+      // Un canal = une entrée : le marchand voit tout de suite où il en est,
+      // sans avoir à chercher son canal dans une page fourre-tout.
       { id: 'instagram', label: 'Instagram' },
+      { id: 'messenger', label: 'Messenger' },
+      { id: 'whatsapp', label: 'WhatsApp' },
+      { id: 'telegram', label: 'Telegram' },
+      { id: 'tiktok', label: 'TikTok' },
       { id: 'integration', label: 'Mon site' },
       { id: 'automations', label: 'Automatisations' },
     ],
@@ -138,6 +145,12 @@ const groupOf = (id: DashboardSectionId): string | null =>
   Object.keys(SECTION_GROUPS).find((g) => SECTION_GROUPS[g].tabs.some((t) => t.id === id)) || null;
 
 const menuGroupOf = (id: DashboardSectionId): string | null => groupOf(id) || (id === 'leads' ? 'clients' : null);
+
+/** Les écrans qui affichent la connexion d'UN canal de messagerie. */
+const MESSAGING_SECTIONS: DashboardSectionId[] = ['messenger', 'whatsapp', 'telegram', 'tiktok'];
+
+/** Un ancien lien (/dashboard/channels) doit continuer de mener quelque part. */
+const LEGACY_SECTIONS: Record<string, DashboardSectionId> = { channels: 'messenger' };
 
 const NAV_ITEMS: Array<NavItem & { group?: string }> = [
   { id: 'overview', label: 'Accueil', icon: LayoutDashboard },
@@ -192,7 +205,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
 
   // Navigation sections
   const [currentSection, setCurrentSection] = useState<DashboardSectionId>(
-    (initialSection as DashboardSectionId) || 'overview'
+    LEGACY_SECTIONS[initialSection] || ((initialSection as DashboardSectionId) || 'overview')
   );
   const [openGroup, setOpenGroup] = useState<string | null>(() => menuGroupOf(initialSection as DashboardSectionId));
   const [insightsTab, setInsightsTab] = useState<'analytics' | 'prospects'>('analytics');
@@ -208,7 +221,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   // Sync when initialSection prop changes
   useEffect(() => {
     if (initialSection && initialSection !== currentSection) {
-      setCurrentSection(initialSection as DashboardSectionId);
+      setCurrentSection(LEGACY_SECTIONS[initialSection] || (initialSection as DashboardSectionId));
       setOpenGroup(menuGroupOf(initialSection as DashboardSectionId));
     }
   }, [initialSection]);
@@ -2617,6 +2630,19 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
             </div>
             )}
             </>
+          )}
+
+          {/* =================================================================
+              SECTION: MESSAGERIES (Messenger, WhatsApp, Telegram, TikTok)
+              ================================================================= */}
+          {MESSAGING_SECTIONS.includes(currentSection) && (
+            <div className="animate-in fade-in duration-200">
+              <ChannelsIntegration
+                assistantId={assistantId || currentWidgetId || ''}
+                plan={activePlan !== 'free' ? activePlan : (profile?.plan || activePlan)}
+                channel={currentSection}
+              />
+            </div>
           )}
 
           {/* =================================================================

@@ -11,16 +11,39 @@ const runtimeEnv: Record<string, string> =
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || runtimeEnv.VITE_SUPABASE_URL) as string;
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || runtimeEnv.VITE_SUPABASE_ANON_KEY) as string;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  // Erreur volontairement bruyante : mieux vaut un crash clair au démarrage
-  // qu'un `auth.signIn` silencieusement cassé en prod.
+/**
+ * Configuration absente ? On ne laisse PAS `createClient` lever une exception :
+ * un plantage à l'import vide tout le site (page blanche) et n'explique rien.
+ * On prévient très fort dans la console, et `src/main.tsx` affiche un écran
+ * lisible qui dit quoi corriger.
+ */
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+if (!isSupabaseConfigured) {
   console.error(
-    'VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY manquantes. ' +
-    'Ajoute-les à ton fichier .env (voir .env.example).'
+    [
+      '',
+      '  ⚠️  JAWEBFLOW N’EST PAS CONFIGURÉ : le site ne peut joindre aucune base.',
+      '',
+      '  VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY sont INJECTÉES DANS LE',
+      '  JAVASCRIPT AU MOMENT DE LA CONSTRUCTION. Les définir dans Cloudflare ne',
+      '  suffit donc pas si la construction se fait ailleurs (ta machine, GitHub…).',
+      '',
+      '  • Construction sur ta machine → renseigne .env (copie de .env.example).',
+      '  • Construction par Cloudflare → Pages → Settings → Environment variables,',
+      '    puis relance un déploiement.',
+      '  Détail complet : docs/DEPLOIEMENT.md',
+      '',
+    ].join('\n')
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Valeurs de repli volontairement invalides-mais-valides-au-format : le client se
+// crée sans planter, chaque appel échoue proprement, et l'écran l'explique.
+export const supabase = createClient(
+  supabaseUrl || 'https://configuration-manquante.supabase.co',
+  supabaseAnonKey || 'configuration-manquante'
+);
 
 // ----------------------------------------------------------------------
 // Types (mêmes noms que src/lib/firebase.ts pour limiter les changements
