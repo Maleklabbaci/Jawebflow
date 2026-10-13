@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 import { 
   X, 
   Sparkles, 
@@ -39,14 +40,11 @@ export const AssistantModal: React.FC<AssistantModalProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   const generatedId = `ast_${businessName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Math.floor(1000 + Math.random() * 9000)}`;
-  const widgetCode = `<script 
-  src="https://jawebflow.app/cdn/widget.js" 
-  data-assistant="${generatedId}" 
-  data-business="${businessName}" 
-  data-sector="${activityType}"
-  data-lang="${languageMode}" 
-  async>
-</script>`;
+  const widgetCode = buildWidgetSnippet({
+    scriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/widget.js` : 'https://cdn.jawebflow.com/widget.js',
+    assistantId: generatedId,
+    businessName,
+  });
 
   const handleCopy = () => {
     navigator.clipboard.writeText(widgetCode);

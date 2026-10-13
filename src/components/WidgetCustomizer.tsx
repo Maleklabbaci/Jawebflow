@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Mic, Bot, MessageSquare, Zap, Headphones, Brain, Shield, Image as ImageIcon, Palette, Eye, Check, Copy, ArrowRight, Sun, Moon, CheckCircle2, HelpCircle, Upload, Layers, Send, X } from 'lucide-react';
 import { WidgetCustomization } from '../lib/supabase';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 
 interface WidgetCustomizerProps {
   businessName: string;
@@ -10,6 +11,8 @@ interface WidgetCustomizerProps {
   onChange: (updated: Partial<WidgetCustomization>) => void;
   onSave?: () => void;
   onGoToIntegration?: () => void;
+  /** URL du script, la même que celle du tableau de bord. */
+  scriptUrl?: string;
   isSaving?: boolean;
 }
 
@@ -53,6 +56,7 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
   onChange,
   onSave,
   onGoToIntegration,
+  scriptUrl,
   isSaving = false
 }) => {
   const [activeTab, setActiveTab] = useState<'icon' | 'colors' | 'layout' | 'content' | 'voice'>('icon');
@@ -119,18 +123,15 @@ export const WidgetCustomizer: React.FC<WidgetCustomizerProps> = ({
     compact: 'rounded-xl'
   }[config.shape || 'circle'];
 
-  const scriptPreview = `<!-- Bulle de discussion JawebFlow pour ${businessName || 'votre site'} -->
-<script 
-  src="https://cdn.jawebflow.com/widget.js" 
-  data-assistant-id="${widgetId || 'asst_live'}" 
-  data-position="${config.position}" 
-  data-theme="${config.themeMode}" 
-  data-primary-color="${config.primaryColor}"
-  data-shape="${config.shape}"
-  data-icon="${config.iconType}"
-  ${config.iconType === 'custom_logo' && config.customLogoUrl ? `data-avatar-url="${config.customLogoUrl}"\n  ` : ''}data-teaser="${config.showTeaser ? config.teaserText : ''}"
-  defer>
-</script>`;
+  // Même fabrique que le tableau de bord : l'aperçu et le code collé ne
+  // peuvent plus diverger (avant, la taille, le badge « en ligne » et la
+  // mention JawebFlow s'affichaient ici mais jamais sur le vrai widget).
+  const scriptPreview = buildWidgetSnippet({
+    scriptUrl: scriptUrl || 'https://cdn.jawebflow.com/widget.js',
+    assistantId: widgetId,
+    businessName,
+    config,
+  });
 
   const handleCopyScript = () => {
     navigator.clipboard.writeText(scriptPreview);

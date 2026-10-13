@@ -43,6 +43,7 @@ import {
   deleteProspectRecord,
   supabase,
 } from '../lib/supabase';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 import { useAuth } from '../context/AuthContext';
 
 export type AdminSectionId = 'overview' | 'users' | 'assistants' | 'plans' | 'leads' | 'invoices' | 'system';
@@ -1103,9 +1104,16 @@ export function AdminPage() {
     },
   ];
 
-  // widget.js lit l'attribut data-assistant-id (PAS data-widget-id).
+  // widget.js lit l'attribut data-assistant-id (PAS data-widget-id) et reçoit
+  // ici les réglages du client (couleurs, taille, voix…).
   const widgetSnippet = (a: NormAssistant) =>
-    `<script src="${window.location.origin}/cdn/widget.js" data-assistant-id="${a.id}" async></script>`;
+    buildWidgetSnippet({
+      scriptUrl: `${window.location.origin}/widget.js`,
+      assistantId: a.id,
+      businessName: a.businessName,
+      config: a._cfg?.widgetConfig,
+      whatsappEscalation: a.whatsappEscalation,
+    });
 
   const StatCard = ({ icon: Icon, label, value, sub, color }: any) => (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">

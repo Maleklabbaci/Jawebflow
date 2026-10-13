@@ -78,6 +78,7 @@ import type { CopilotStatePatch } from '../lib/copilot-api';
 import { InsightsDashboard } from './InsightsDashboard';
 import { LockedFeatureGate } from './LockedFeatureGate';
 import { SiteInstallWizard } from './dashboard/SiteInstallWizard';
+import { buildWidgetSnippet } from '../lib/widget-snippet';
 import { KnowledgeNote, PaymentPlanId, InvoiceRecord } from '../types';
 import { DEAL_KIND_LABELS, DEAL_NEXT_ACTIONS, DEAL_STEPS, SALES_INTENT_LABELS, buildDealRecap, dealKindOf, dealStatusLabel, type DealKind } from '../../functions/_shared/sales-intent';
 
@@ -1542,22 +1543,16 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const currentWidgetId = assistantId || widgetId || 'asst_live';
   const liveScriptCdnUrl = typeof window !== 'undefined' ? `${window.location.origin}/widget.js` : 'https://cdn.jawebflow.com/widget.js';
   
-  // Universal Embed Script HTML
-  const widgetScriptHtml = `<!-- Bulle de discussion JawebFlow pour ${businessName || 'votre site'} -->
-<script 
-  src="${liveScriptCdnUrl}" 
-  data-assistant-id="${currentWidgetId}" 
-  data-business-name="${(businessName || 'Mon Entreprise').replace(/"/g, '&quot;')}"
-  data-position="${widgetConfig.position}" 
-  data-theme="${widgetConfig.themeMode}" 
-  data-primary-color="${widgetConfig.primaryColor}"
-  data-secondary-color="${widgetConfig.gradientSecondary || '#6366f1'}"
-  data-shape="${widgetConfig.shape}"
-  data-icon="${widgetConfig.iconType}"
-  data-teaser="${(widgetConfig.teaserText || 'Une question ? Discutons en direct 👋').replace(/"/g, '&quot;')}"
-  data-welcome="${(widgetConfig.welcomeMessage || 'Bonjour ! Comment puis-je vous aider ?').replace(/"/g, '&quot;')}"${whatsappEscalation ? `\n  data-whatsapp="${whatsappEscalation}"` : ''}${widgetConfig.iconType === 'custom_logo' && widgetConfig.customLogoUrl ? `\n  data-avatar-url="${widgetConfig.customLogoUrl}"` : ''}
-  defer>
-</script>`;
+  // Le code à coller : fabriqué par src/lib/widget-snippet.ts, comme l'aperçu
+  // du personnalisateur — un seul endroit décide, donc plus de réglage qui
+  // s'affiche à l'écran sans jamais partir sur le vrai widget.
+  const widgetScriptHtml = buildWidgetSnippet({
+    scriptUrl: liveScriptCdnUrl,
+    assistantId: currentWidgetId,
+    businessName,
+    config: widgetConfig,
+    whatsappEscalation,
+  });
 
   // Completion calculation
   const hasIdentity = Boolean(businessName.trim());
@@ -2537,6 +2532,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 onChange={handleUpdateWidgetConfig}
                 onSave={handleSaveToDatabase}
                 onGoToIntegration={() => handleSectionChange('integration')}
+                scriptUrl={liveScriptCdnUrl}
                 isSaving={isSavingDb}
               />
             </div>

@@ -117,8 +117,8 @@ activé »* — et rien n'est facturé.
   avant de l'activer (aujourd'hui il doit tester sur son site).
 - 📞 **L'appel dans les « Clients »** : la transcription est déjà enregistrée (canal `voice`) ;
   il reste à l'afficher dans la fiche du prospect, avec un badge « appel entrant ».
-- 💳 **Recharge d'appels** : aujourd'hui c'est le plafond mensuel qui protège ; une recharge à
-  l'unité (comme pour WhatsApp) serait la suite logique.
+- 💳 **Recharge d'appels** : aujourd'hui c'est **le quota de conversations** qui protège (Basic
+  100 min, Pro 500 min) ; une recharge à l'unité (comme pour WhatsApp) serait la suite logique.
 - 🧮 **Choisir la formule** : réserver la voix à Pro/Enterprise (voir §3).
 
 ---
@@ -128,7 +128,7 @@ activé »* — et rien n'est facturé.
 | Fichier | Rôle |
 |---|---|
 | `functions/_shared/voice/live.ts` | jeton éphémère, consignes « au téléphone », assainissement des réglages |
-| `functions/api/voice/session.ts` | ouvre l'appel (forfait, quota, plafond, anti-abus) |
+| `functions/api/voice/session.ts` | ouvre l'appel (forfait, quota, anti-abus) |
 | `functions/api/voice/report.ts` | relevé de fin d'appel → `conversation_contexts` (canal `voice`) |
 | `public/cdn/voice.js` | moteur navigateur : micro 16 kHz, lecture 24 kHz, interruptions, transcription |
 | `public/widget.js` | bouton micro + écran d'appel (Shadow DOM, `data-jw-call`) |

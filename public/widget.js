@@ -17,11 +17,32 @@
   var theme = (scriptEl && scriptEl.getAttribute('data-theme')) || 'dark';
   var shape = (scriptEl && scriptEl.getAttribute('data-shape')) || 'circle';
   var icon = (scriptEl && scriptEl.getAttribute('data-icon')) || 'sparkles';
-  var teaserText = (scriptEl && scriptEl.getAttribute('data-teaser')) || 'Une question ? Discutons en direct \uD83D\uDC4B';
+  // Teaser : attribut ABSENT -> phrase par défaut ; attribut VIDE -> éteint.
+  // (Avant, « teaser désactivé » remettait la phrase par défaut : le marchand
+  // ne pouvait pas l'éteindre.)
+  var teaserAttr = scriptEl ? scriptEl.getAttribute('data-teaser') : null;
+  var teaserText = teaserAttr === null ? 'Une question ? Discutons en direct \uD83D\uDC4B' : teaserAttr;
   var welcomeMessage = (scriptEl && scriptEl.getAttribute('data-welcome')) || ("Bonjour ! \uD83D\uDC4B Comment puis-je vous aider aujourd'hui ?");
   var whatsappNumber = (scriptEl && scriptEl.getAttribute('data-whatsapp')) || '';
   var avatarUrl = (scriptEl && scriptEl.getAttribute('data-avatar-url')) || '';
-  var brandingEnabled = true;
+  var brandingEnabled = (scriptEl && scriptEl.getAttribute('data-branding')) !== 'false';
+  var size = (scriptEl && scriptEl.getAttribute('data-size')) || 'standard';
+  var headerTitle = (scriptEl && scriptEl.getAttribute('data-header-title')) || '';
+  var headerSubtitle = (scriptEl && scriptEl.getAttribute('data-header-subtitle')) || '';
+  var onlineBadge = (scriptEl && scriptEl.getAttribute('data-badge')) !== 'false';
+
+  // Taille de la bulle et arrondi : une seule source de vérité, utilisée pour
+  // le style de départ ET pour la mise à jour quand la config arrive du serveur.
+  function bubbleDims(value) {
+    if (value === 'compact') return { size: 48, icon: 22 };
+    if (value === 'large') return { size: 64, icon: 30 };
+    return { size: 56, icon: 26 };
+  }
+  function shapeRadius(value) {
+    if (value === 'squircle') return '16px';
+    if (value === 'compact') return '12px';
+    return '50%';
+  }
 
   // ── Appel vocal (agent voix) : le marchand l'allume depuis son tableau de
   // bord, ou avec data-voice="on" pour un test rapide.
@@ -107,12 +128,12 @@
   var styleEl = document.createElement('style');
   styleEl.id = 'jawebflow-widget-styles';
   styleEl.textContent =
-    ':host{--primary:' + primaryColor + ';--secondary:' + secondaryColor + ';--radius-shape:' + (shape === 'squircle' ? '16px' : '50%') + ';--window-radius:20px;--font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
+    ':host{--primary:' + primaryColor + ';--secondary:' + secondaryColor + ';--radius-shape:' + shapeRadius(shape) + ';--bubble-size:' + bubbleDims(size).size + 'px;--bubble-icon:' + bubbleDims(size).icon + 'px;--window-radius:20px;--font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
     '#jw-widget-wrapper{position:fixed;bottom:24px;' + (isLeft ? 'left:24px;' : 'right:24px;') + 'z-index:2147483647;font-family:var(--font-family);display:flex;flex-direction:column;align-items:' + (isLeft ? 'flex-start' : 'flex-end') + ';pointer-events:none;}' +
     '#jw-widget-wrapper *{box-sizing:border-box;pointer-events:auto;}' +
-    '.jw-bubble-btn{width:60px;height:60px;border-radius:var(--radius-shape);background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 8px 24px -4px var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;border:none;outline:none;transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s;padding:0;overflow:hidden;}' +
+    '.jw-bubble-btn{width:var(--bubble-size);height:var(--bubble-size);border-radius:var(--radius-shape);background:linear-gradient(135deg,var(--primary),var(--secondary));box-shadow:0 8px 24px -4px var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;border:none;outline:none;transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s;padding:0;overflow:hidden;}' +
     '.jw-bubble-btn:hover{transform:scale(1.06);}' +
-    '.jw-bubble-btn svg{width:26px;height:26px;}' +
+    '.jw-bubble-btn svg{width:var(--bubble-icon);height:var(--bubble-icon);}' +
     '.jw-teaser{margin-bottom:12px;padding:10px 16px;border-radius:16px;font-size:13px;font-weight:500;background:' + (isDark ? '#111524' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#1e293b') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';box-shadow:0 8px 24px -4px rgba(0,0,0,.15);cursor:pointer;display:flex;align-items:center;gap:10px;max-width:320px;}' +
     '.jw-teaser-close{opacity:.5;font-size:11px;padding:2px 4px;cursor:pointer;margin-left:auto;}' +
     '.jw-chat-window{width:380px;max-width:calc(100vw - 48px);height:540px;max-height:80vh;border-radius:var(--window-radius);overflow:hidden;display:flex;flex-direction:column;margin-bottom:16px;box-shadow:0 16px 40px -10px rgba(0,0,0,' + (isDark ? '.6' : '.18') + ');background:' + (isDark ? '#0c0f1d' : '#fff') + ';color:' + (isDark ? '#f1f5f9' : '#0f172a') + ';border:1px solid ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + ';}' +
@@ -467,15 +488,17 @@
       var title = document.createElement('div');
       title.className = 'jw-header-title';
       var titleText = document.createElement('span');
-      titleText.textContent = businessName;
+      titleText.textContent = headerTitle || businessName;
       title.appendChild(titleText);
-      var dot = document.createElement('span');
-      dot.className = 'jw-header-status-dot';
-      title.appendChild(dot);
+      if (onlineBadge) {
+        var dot = document.createElement('span');
+        dot.className = 'jw-header-status-dot';
+        title.appendChild(dot);
+      }
       meta.appendChild(title);
       var subtitle = document.createElement('div');
       subtitle.className = 'jw-header-subtitle';
-      subtitle.textContent = 'En ligne \u00b7 Reponse IA immediate';
+      subtitle.textContent = headerSubtitle || 'En ligne \u00b7 R\u00e9ponse IA imm\u00e9diate';
       meta.appendChild(subtitle);
       headerInfo.appendChild(meta);
       header.appendChild(headerInfo);
@@ -649,10 +672,16 @@
       if (c.themeMode) { theme = c.themeMode; isDark = theme === 'dark'; }
       if (c.position) { position = c.position; isLeft = position === 'bottom-left'; }
       if (c.shape) shape = c.shape;
-      if (c.teaserText) teaserText = c.teaserText;
+      if (c.showTeaser === false) teaserText = '';
+      else if (c.teaserText) teaserText = c.teaserText;
       if (c.welcomeMessage) messages[0] = { sender: 'bot', text: c.welcomeMessage };
-      if (c.headerTitle) businessName = c.headerTitle;
-      if (c.icon) icon = c.icon;
+      if (c.headerTitle) headerTitle = c.headerTitle;
+      if (c.headerSubtitle) headerSubtitle = c.headerSubtitle;
+      if (typeof c.onlineBadge === 'boolean') onlineBadge = c.onlineBadge;
+      if (typeof c.showBranding === 'boolean') brandingEnabled = c.showBranding !== false;
+      if (c.size) size = c.size;
+      if (c.iconType) icon = c.iconType;
+      else if (c.icon) icon = c.icon;
       if (c.voice && typeof c.voice === 'object') {
         if (c.voice.enabled === true) voiceEnabled = true;
         if (c.voice.greeting) voiceGreeting = String(c.voice.greeting);
@@ -662,7 +691,9 @@
       s.textContent = s.textContent
         .replace(/--primary:\s*[^;]+/g, '--primary: ' + primaryColor)
         .replace(/--secondary:\s*[^;]+/g, '--secondary: ' + secondaryColor)
-        .replace(/--radius-shape:\s*[^;]+/g, '--radius-shape: ' + (shape === 'squircle' ? '16px' : '50%'));
+        .replace(/--radius-shape:\s*[^;]+/g, '--radius-shape: ' + shapeRadius(shape))
+        .replace(/--bubble-size:\s*[^;]+/g, '--bubble-size: ' + bubbleDims(size).size + 'px')
+        .replace(/--bubble-icon:\s*[^;]+/g, '--bubble-icon: ' + bubbleDims(size).icon + 'px');
       render();
     })
     .catch(function (e) { console.warn('JawebFlow sync error:', e); })

@@ -3,7 +3,7 @@
  * Trilingue : Derja Arabizi + Arabe (حروف عربية) + Français
  *
  * IMPORTANT : cet endpoint renvoie du JSON classique ({ text }), PAS du streaming SSE.
- * Les 3 appelants (public/cdn/widget.js, JawebChatWidget.tsx, FloatingLiveWidget.tsx)
+ * Les 3 appelants (public/widget.js, JawebChatWidget.tsx, FloatingLiveWidget.tsx)
  * font tous un `response.json()` — un ancien retour en `text/event-stream` faisait
  * échouer silencieusement le parsing à chaque appel, d'où le bot qui ne répondait
  * jamais via l'IA (message fixe de secours affiché à la place).
