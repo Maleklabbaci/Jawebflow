@@ -140,7 +140,7 @@ le site du marchand. C'est le marchand qui l'allume : **Tableau de bord → Appa
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `GEMINI_LIVE_MODEL` | `gemini-2.0-flash-live-001` | modèle temps réel |
+| `GEMINI_LIVE_MODEL` | `gemini-3.8-live` | modèle temps réel (repli automatique sur `gemini-2.0-flash-live-001` si Google refuse) |
 | `GEMINI_LIVE_API_VERSION` | `v1alpha` | version d'API des jetons éphémères |
 
 ⚠️ La clé doit avoir accès à l'**API Live** (Google AI Studio → projet → activer l'API Gemini

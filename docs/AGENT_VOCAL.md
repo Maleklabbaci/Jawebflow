@@ -89,7 +89,7 @@ facultatifs existent :
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `GEMINI_LIVE_MODEL` | `gemini-2.0-flash-live-001` | le modèle temps réel |
+| `GEMINI_LIVE_MODEL` | `gemini-3.8-live` | le modèle temps réel (GA depuis le 15/09/2026) — en cas de refus côté Google, l'appel retombe **une fois** sur `gemini-2.0-flash-live-001` |
 | `GEMINI_LIVE_API_VERSION` | `v1alpha` | version d'API des jetons éphémères |
 
 ⚠️ **La clé doit avoir accès à l'API Live.** Dans Google AI Studio, ouvre ton projet et active

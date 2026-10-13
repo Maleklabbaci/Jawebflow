@@ -47,6 +47,30 @@ export const COST_CAP_USD_PER_PLAN: Record<string, number> = {
 export const GEMINI_PRICE_IN_PER_MTOK = 0.25;  // $ / million tokens entrée
 export const GEMINI_PRICE_OUT_PER_MTOK = 1.5;  // $ / million tokens sortie
 
+/** La voix (Gemini Live) se facture à l'AUDIO : 3 $/M entrée, 12 $/M sortie. */
+export const LIVE_PRICE_IN_PER_MTOK = 3;
+export const LIVE_PRICE_OUT_PER_MTOK = 12;
+
+/**
+ * Coût d'un relevé, au bon tarif selon le modèle. Un appel vocal coûte ~10× le
+ * tarif texte : sans cette distinction, le coût affiché au marchand (et le
+ * fusible Enterprise) passait à côté des appels.
+ */
+export function costUsdFromTokensForModel(
+  tokensIn: number,
+  tokensOut: number,
+  model?: string | null,
+): number {
+  const m = String(model || '').toLowerCase();
+  if (m.includes('live')) {
+    return (
+      (Number(tokensIn || 0) * LIVE_PRICE_IN_PER_MTOK + Number(tokensOut || 0) * LIVE_PRICE_OUT_PER_MTOK) /
+      1_000_000
+    );
+  }
+  return costUsdFromTokens(tokensIn, tokensOut);
+}
+
 export function costUsdFromTokens(tokensIn: number, tokensOut: number): number {
   return (Number(tokensIn || 0) * GEMINI_PRICE_IN_PER_MTOK + Number(tokensOut || 0) * GEMINI_PRICE_OUT_PER_MTOK) / 1_000_000;
 }

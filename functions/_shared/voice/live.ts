@@ -21,10 +21,20 @@
  */
 
 /** Modèle temps réel par défaut (surchargeable par `GEMINI_LIVE_MODEL`). */
-export const DEFAULT_LIVE_MODEL = 'gemini-2.0-flash-live-001';
+export const DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
 
 /** Version d'API des jetons éphémères (surchargeable par `GEMINI_LIVE_API_VERSION`). */
-export const DEFAULT_LIVE_API_VERSION = 'v1alpha';
+export const DEFAULT_LIVE_API_VERSION = 'v1beta';
+
+/**
+ * Repli automatique : si Google refuse le modèle par défaut (nom pas encore
+ * ouvert sur ce projet, version d'API différente…), on retente UNE fois avec le
+ * couple historique. Un appel qui fonctionne vaut mieux qu'un appel parfait qui
+ * échoue — et ça évite de laisser le visiteur devant un message d'erreur.
+ * Le repli ne s'applique QUE si le marchand n'a rien forcé par variable
+ * d'environnement.
+ */
+export const LEGACY_LIVE_FALLBACK = { model: 'gemini-2.0-flash-live-001', apiVersion: 'v1alpha' } as const;
 
 /** Voix proposées au marchand (Google en fournit d'autres : cette liste est un garde-fou). */
 export const LIVE_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr'] as const;
@@ -172,55 +182,76 @@ export async function createLiveToken(
   const expireTime = new Date(now + TOKEN_START_WINDOW_MS).toISOString();
 
   const doFetch = opts.fetchImpl || fetch;
-  const url = `https://generativelanguage.googleapis.com/${apiVersion}/auth_tokens`;
-  let res: Response;
-  try {
-    res = await doFetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        uses: 1, // un seul appel par jeton : impossible de le revendre
-        expireTime,
-        newSessionExpireTime: expireTime,
-        bidiGenerateContentSetup: buildTokenSetup(model, voice, opts.systemInstruction),
-      }),
-    });
-  } catch (e) {
-    return {
-      ok: false,
-      error: "L'appel vocal est momentanément indisponible. Écrivez-nous, nous répondons tout de suite.",
-      detail: `réseau : ${(e as Error)?.message || e}`,
-    };
-  }
 
-  const data: any = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const apiMsg = String(data?.error?.message || data?.error || res.status);
-    return {
-      ok: false,
-      error: apiMsg.includes('API key')
-        ? "L'appel vocal n'est pas encore activé (clé Gemini refusée). Notre équipe est prévenue."
-        : "L'appel vocal n'est pas disponible pour le moment. Écrivez-nous, nous répondons tout de suite.",
-      detail: `${res.status} : ${apiMsg.slice(0, 300)}`,
-    };
-  }
+  /** Une tentative complète (modèle + version d'API). */
+  const attempt = async (modelName: string, version: string): Promise<LiveSessionResult> => {
+    const url = `https://generativelanguage.googleapis.com/${version}/auth_tokens`;
+    let res: Response;
+    try {
+      res = await doFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          uses: 1, // un seul appel par jeton : impossible de le revendre
+          expireTime,
+          newSessionExpireTime: expireTime,
+          bidiGenerateContentSetup: buildTokenSetup(modelName, voice, opts.systemInstruction),
+        }),
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        error: "L'appel vocal est momentanément indisponible. Écrivez-nous, nous répondons tout de suite.",
+        detail: `réseau : ${(e as Error)?.message || e}`,
+      };
+    }
 
-  const token = tokenFromAuthTokenName(data?.name || data?.token);
-  if (!token) {
-    return {
-      ok: false,
-      error: "L'appel vocal n'a pas pu démarrer. Réessayez, ou écrivez-nous dans le chat.",
-      detail: `réponse inattendue : ${JSON.stringify(data).slice(0, 200)}`,
-    };
-  }
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const apiMsg = String(data?.error?.message || data?.error || res.status);
+      return {
+        ok: false,
+        error: apiMsg.includes('API key')
+          ? "L'appel vocal n'est pas encore activé (clé Gemini refusée). Notre équipe est prévenue."
+          : "L'appel vocal n'est pas disponible pour le moment. Écrivez-nous, nous répondons tout de suite.",
+        detail: `${res.status} : ${apiMsg.slice(0, 300)}`,
+      };
+    }
 
+    const token = tokenFromAuthTokenName(data?.name || data?.token);
+    if (!token) {
+      return {
+        ok: false,
+        error: "L'appel vocal n'a pas pu démarrer. Réessayez, ou écrivez-nous dans le chat.",
+        detail: `réponse inattendue : ${JSON.stringify(data).slice(0, 200)}`,
+      };
+    }
+
+    return {
+      ok: true,
+      token,
+      wsUrl: liveWebSocketUrl(version, token),
+      model: modelName,
+      apiVersion: version,
+      expiresAt: String(data?.expireTime || expireTime),
+    };
+  };
+
+  const premier = await attempt(model, apiVersion);
+  if (premier.ok) return premier;
+
+  // Repli : seulement si le marchand n'a rien forcé lui-même.
+  const modeleForce = Boolean(opts.model || env?.GEMINI_LIVE_MODEL);
+  const versionForcee = Boolean(opts.apiVersion || env?.GEMINI_LIVE_API_VERSION);
+  const dejaLeRepli =
+    model === LEGACY_LIVE_FALLBACK.model && apiVersion === LEGACY_LIVE_FALLBACK.apiVersion;
+  if (modeleForce || versionForcee || dejaLeRepli) return premier;
+
+  const repli = await attempt(LEGACY_LIVE_FALLBACK.model, LEGACY_LIVE_FALLBACK.apiVersion);
+  if (!repli.ok) return premier; // on montre l'erreur du modèle demandé
   return {
-    ok: true,
-    token,
-    wsUrl: liveWebSocketUrl(apiVersion, token),
-    model,
-    apiVersion,
-    expiresAt: String(data?.expireTime || expireTime),
+    ...repli,
+    detail: `repli sur ${LEGACY_LIVE_FALLBACK.model} après « ${String(premier.detail || '').slice(0, 160)} »`,
   };
 }
 
