@@ -17,7 +17,7 @@
  * reste utilisable et le message est clair.
  */
 import { verifySupabaseIdToken, supabaseRequest } from '../../_shared/supabase.ts';
-import { readSiteChatConfig, saveSiteChatConfig } from '../../_shared/site-chat.ts';
+import { readSiteChatConfig, saveSiteChatConfig, siteChatDiag } from '../../_shared/site-chat.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -54,8 +54,11 @@ export async function onRequestGet(context: any) {
   const gate = await requireAdmin(env, context.request);
   if (gate.error) return gate.error;
 
-  const { config, stored, available } = await readSiteChatConfig(env);
-  return json({ ok: true, stored, available, config });
+  const { config, stored, available, error } = await readSiteChatConfig(env);
+  // `error` + `diag` : quand la table est injoignable, la console doit pouvoir
+  // dire OÙ (quel projet Supabase) et QUOI FAIRE — le cas n°1 des « j'ai
+  // pourtant exécuté le SQL » est un SQL exécuté dans un autre projet.
+  return json({ ok: true, stored, available, error, diag: siteChatDiag(env), config });
 }
 
 export async function onRequestPost(context: any) {
@@ -69,7 +72,12 @@ export async function onRequestPost(context: any) {
   const raw = body && typeof body === 'object' && body.config && typeof body.config === 'object' ? body.config : body;
 
   const result = await saveSiteChatConfig(env, raw);
-  if (!result.ok) return json({ ok: false, error: result.error || 'Enregistrement impossible.' }, 502);
+  if (!result.ok) {
+    return json(
+      { ok: false, error: result.error || 'Enregistrement impossible.', detail: result.detail || '', diag: siteChatDiag(env) },
+      502,
+    );
+  }
 
   const { config } = await readSiteChatConfig(env);
   return json({ ok: true, stored: true, config });

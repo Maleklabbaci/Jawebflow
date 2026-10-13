@@ -346,6 +346,9 @@ export function AdminPage() {
   const [planLimits, setPlanLimits] = useState<Record<string, number | null>>({ ...DEFAULT_PLAN_LIMITS });
   // 🤖 Le chatbot de notre propre site (pages publiques, avant l'interface).
   const [siteChat, setSiteChat] = useState<SiteChatAdminState | null>(null);
+  // Diagnostic affiché quand la table des réglages est injoignable : QUEL projet
+  // Supabase, QUOI exécuter, et l'erreur brute de PostgREST.
+  const [siteChatDiag, setSiteChatDiag] = useState<any>(null);
   const [loadingSiteChat, setLoadingSiteChat] = useState(false);
   const [savingSiteChat, setSavingSiteChat] = useState(false);
   const [limitsDraft, setLimitsDraft] = useState<Record<string, string>>({
@@ -605,6 +608,7 @@ export function AdminPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Lecture impossible');
       setSiteChat({ ...(data.config as SiteChatConfig), available: data.available !== false, stored: !!data.stored });
+      setSiteChatDiag({ ...(data.diag || {}), error: data.error || null });
     } catch (err: any) {
       notify('Chatbot du site : ' + (err?.message || 'lecture impossible'), 'error');
     } finally {
@@ -634,8 +638,12 @@ export function AdminPage() {
         body: JSON.stringify({ config: payload }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Enregistrement refusé');
+      if (!res.ok || !data?.ok) {
+        if (data?.diag) setSiteChatDiag({ ...data.diag, error: { message: data?.error || '', code: '', status: res.status } });
+        throw new Error(data?.error || 'Enregistrement refusé');
+      }
       setSiteChat({ ...(data.config as SiteChatConfig), available: true, stored: true });
+      setSiteChatDiag((prev: any) => ({ ...(prev || {}), error: null }));
       notify('Chatbot du site enregistré : vos visiteurs voient déjà les nouveaux réglages.');
     } catch (err: any) {
       notify('Chatbot du site : ' + (err?.message || 'enregistrement impossible'), 'error');
@@ -2194,11 +2202,51 @@ export function AdminPage() {
                 </label>
 
                 {siteChat?.available === false && (
-                  <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
-                    ⚠️ La table <code>platform_settings</code> n'existe pas encore : exécutez{' '}
-                    <code>supabase/migration_site_chatbot.sql</code> pour enregistrer ces réglages. En attendant,
-                    le chatbot fonctionne avec les réglages par défaut.
-                  </p>
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3" data-testid="site-chat-db-alert">
+                    <p className="text-sm font-semibold text-amber-900">
+                      ⚠️ La table <code>platform_settings</code> n'existe pas encore dans le projet Supabase utilisé par le site.
+                    </p>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Le chatbot fonctionne déjà avec les réglages par défaut et l'appel marche, mais rien ne
+                      s'enregistre. Le plus souvent, le SQL a été exécuté dans un <strong>autre projet</strong>
+                      Supabase que celui de la production : vérifiez l'adresse ci-dessous, ouvrez le SQL Editor
+                      <strong> de ce projet-là</strong>, collez le SQL et exécutez-le.
+                    </p>
+                    <div className="text-[11px] text-amber-900 font-mono break-all bg-white/70 border border-amber-200 rounded-lg p-2">
+                      <div>Projet utilisé : {siteChatDiag?.host || 'inconnu'}</div>
+                      {siteChatDiag?.error?.message ? (
+                        <div className="mt-1 opacity-80">
+                          Erreur Supabase : {siteChatDiag.error.code || ''} {siteChatDiag.error.message}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {siteChatDiag?.sqlEditorUrl && (
+                        <a
+                          href={siteChatDiag.sqlEditorUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition-colors"
+                        >
+                          Ouvrir le SQL Editor de ce projet ↗
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(siteChatDiag?.sql || '', 'site-chat-sql')}
+                        className="px-3.5 py-2 rounded-xl border border-amber-300 text-amber-900 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer"
+                      >
+                        {copiedField === 'site-chat-sql' ? 'SQL copié ✓' : 'Copier le SQL'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={loadSiteChat}
+                        className="px-3.5 py-2 rounded-xl border border-amber-300 text-amber-900 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer"
+                      >
+                        J'ai exécuté le SQL → Recharger
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -2428,8 +2476,10 @@ export function AdminPage() {
                         <Eye className="w-4 h-4 text-purple-600" /> L'apparence & le comportement du widget
                       </h3>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Couleurs, forme, position, accroche, ouverture automatique, CSS libre : tout est ici, et
-                        s'applique au site dès l'enregistrement.
+                        Couleurs, forme, position, accroche, ouverture automatique, CSS libre — et l'onglet
+                        <strong> Voix</strong> : le visiteur appuie sur le téléphone et il vous parle (l'appel
+                        utilise la même base de connaissance que le chat). Tout s'applique au site dès
+                        l'enregistrement.
                       </p>
                     </div>
                     <WidgetCustomizer
@@ -2441,7 +2491,6 @@ export function AdminPage() {
                       onSave={saveSiteChat}
                       isSaving={savingSiteChat}
                       scriptUrl={`${window.location.origin}/widget.js`}
-                      hideVoice
                     />
                   </div>
 

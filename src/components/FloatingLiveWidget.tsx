@@ -12,6 +12,11 @@ import {
   Brain,
   Shield,
   Mail,
+  Phone,
+  PhoneOff,
+  Mic,
+  MicOff,
+  Loader2,
 } from 'lucide-react';
 import { renderMessageContent } from '../utils/renderMessageContent';
 
@@ -93,7 +98,8 @@ interface PublicSiteChat {
     welcomeMessage: string;
     themeMode: 'dark' | 'light';
     showBranding: boolean;
-    mode: 'chat' | 'both';
+    mode: 'chat' | 'both' | 'voice';
+    voice: { enabled: boolean; voice: string; greeting: string; maxMinutes: number };
     attention: { pulse: boolean; teaserDelaySeconds: number; autoOpenSeconds: number; proactiveText: string; callCtaText: string };
     customCss: string;
   };
@@ -129,6 +135,12 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       timestamp: now(),
     },
   ]);
+
+  // 🎙️ L'appel en cours : état, durée, transcription, micro coupé.
+  const [call, setCall] = useState<{ active: boolean; state: string; error: string; seconds: number; lines: Array<{ speaker: string; text: string }>; muted: boolean }>({
+    active: false, state: '', error: '', seconds: 0, lines: [], muted: false,
+  });
+  const callRef = useRef<any>(null);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const openedOnce = useRef(false);
@@ -204,11 +216,125 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
   const customCss = widget?.customCss?.trim() || '';
   const customCssTag = useMemo(() => (customCss ? <style>{customCss}</style> : null), [customCss]);
 
+  // ── L'APPEL (Gemini Live, via /api/site-voice puis /cdn/voice.js) ──────────
+  const voiceOn = widget?.voice?.enabled !== false;
+  const mode = widget?.mode || 'both';
+  const canCall = voiceOn && mode !== 'chat';
+  const voiceOnly = mode === 'voice';
+
+  const reportCall = (info: any, sessionId: string) => {
+    try {
+      fetch('/api/voice/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assistantId: 'jawebflow_site',
+          sessionId: sessionId || 'site_voice',
+          seconds: info?.seconds || 0,
+          tokensIn: info?.tokensIn || 0,
+          tokensOut: info?.tokensOut || 0,
+          transcript: info?.transcript || '',
+        }),
+        keepalive: true,
+      }).catch(() => undefined);
+    } catch {
+      /* un relevé raté ne casse rien */
+    }
+  };
+
+  const startCall = async () => {
+    if (call.active) return;
+    setShowTeaser(false);
+    setHasUnread(false);
+    setIsOpen(true);
+    setCall({ active: true, state: 'connecting', error: '', seconds: 0, lines: [], muted: false });
+    try {
+      const res = await fetch('/api/site-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: `site_${Date.now().toString(36)}` }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.ok || !data.wsUrl) {
+        throw new Error(data?.error || data?.message || "L'appel n'est pas disponible pour le moment.");
+      }
+      const url = '/cdn/voice.js';
+      const mod: any = await import(/* @vite-ignore */ url);
+      const session = mod.createVoiceCall({
+        wsUrl: data.wsUrl,
+        setup: data.setup,
+        greeting: data.greeting,
+        maxSeconds: data.maxSeconds,
+        onState: (state: string) => setCall((c) => ({ ...c, state })),
+        onTranscript: (t: any) =>
+          setCall((c) => {
+            const lines = [...c.lines];
+            const last = lines[lines.length - 1];
+            if (last && last.speaker === t?.speaker) lines[lines.length - 1] = { speaker: t.speaker, text: t.text };
+            else lines.push({ speaker: t?.speaker || 'model', text: String(t?.text || '') });
+            return { ...c, lines };
+          }),
+        onError: (e: any) => setCall((c) => ({ ...c, state: 'error', error: e?.message || "L'appel a échoué." })),
+        onEnd: (info: any) => {
+          setCall((c) => ({ ...c, active: false, state: '' }));
+          callRef.current = null;
+          reportCall(info, data.sessionId);
+        },
+      });
+      callRef.current = session;
+      session.start();
+    } catch (e: any) {
+      setCall((c) => ({ ...c, active: false, state: 'error', error: e?.message || "L'appel n'a pas pu démarrer." }));
+    }
+  };
+
+  const hangUp = () => {
+    try {
+      callRef.current?.stop?.('client');
+    } catch {
+      /* on raccroche quand même */
+    }
+    callRef.current = null;
+    setCall((c) => ({ ...c, active: false, state: '' }));
+  };
+
+  const toggleMute = () => {
+    const muted = callRef.current?.setMuted?.(!call.muted);
+    setCall((c) => ({ ...c, muted: muted === undefined ? !c.muted : !!muted }));
+  };
+
+  useEffect(() => {
+    if (!call.active) return;
+    const timer = setInterval(() => {
+      setCall((c) => ({ ...c, seconds: callRef.current?.getSeconds?.() ?? c.seconds + 1 }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [call.active]);
+
   const handleToggle = () => {
+    if (voiceOnly) {
+      // « Le bot qui appelle » : la bulle EST le bouton d'appel.
+      if (call.active) hangUp();
+      else startCall();
+      return;
+    }
     setIsOpen((v) => !v);
     setShowTeaser(false);
     setHasUnread(false);
   };
+
+  const callClock = (total: number) => {
+    const m = Math.floor(total / 60);
+    const r = total % 60;
+    return `${m < 10 ? '0' : ''}${m}:${r < 10 ? '0' : ''}${r}`;
+  };
+
+  const callStatus =
+    call.state === 'connecting' ? 'Connexion…'
+    : call.state === 'listening' ? 'Je vous écoute…'
+    : call.state === 'speaking' ? 'Je réponds…'
+    : call.state === 'error' ? (call.error || "L'appel a échoué.")
+    : 'Appel terminé';
 
   const handleSendMessage = async (customQuery?: string) => {
     const query = (customQuery || inputText).trim();
@@ -340,6 +466,17 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
             </div>
 
             <div className="ml-2 flex shrink-0 items-center gap-1">
+              {canCall && !call.active && (
+                <button
+                  type="button"
+                  onClick={startCall}
+                  data-testid="site-call-start"
+                  className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 transition-colors hover:bg-emerald-500/25 hover:text-emerald-300 sm:h-8 sm:w-8"
+                  title="Appeler maintenant"
+                >
+                  <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -359,10 +496,87 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
             </div>
           </div>
 
+          {/* 🎙️ Écran d'appel : l'avatar, le chrono, ce qui se dit, et raccrocher */}
+          {(call.active || call.state === 'error') && (
+            <div
+              data-testid="site-call-panel"
+              className={`flex flex-1 flex-col items-center gap-2.5 overflow-y-auto p-4 text-center ${skin.area}`}
+            >
+              <div className="relative mt-1 flex h-20 w-20 items-center justify-center rounded-full text-white" style={bubbleStyle}>
+                {widget?.customLogoUrl ? (
+                  <img src={widget.customLogoUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                ) : (
+                  <Phone className="h-8 w-8" />
+                )}
+                {(call.state === 'listening' || call.state === 'speaking') && (
+                  <span className="absolute inset-0 animate-ping rounded-full opacity-30" style={bubbleStyle} />
+                )}
+              </div>
+              <p className="text-sm font-semibold">{widget?.headerTitle || 'Assistant JawebFlow'}</p>
+              <p className={`text-xs ${call.state === 'error' ? 'text-red-400' : 'opacity-70'}`}>{callStatus}</p>
+              <p data-testid="site-call-timer" className="text-2xl font-bold tabular-nums">{callClock(call.seconds)}</p>
+
+              {call.lines.length > 0 && (
+                <div className="w-full space-y-1.5 text-left">
+                  {call.lines.slice(-4).map((line, i) => (
+                    <p
+                      key={i}
+                      className={`rounded-xl px-3 py-2 text-[12px] leading-relaxed ${
+                        line.speaker === 'user'
+                          ? light ? 'bg-black/[0.05] text-neutral-700' : 'bg-white/[0.06] text-neutral-200'
+                          : light ? 'bg-purple-50 text-neutral-800' : 'bg-purple-500/10 text-neutral-100'
+                      }`}
+                    >
+                      {line.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {call.state === 'connecting' && (
+                <span className="flex items-center gap-2 text-[11px] opacity-70">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Autorisation du micro…
+                </span>
+              )}
+
+              <div className="mt-auto flex flex-wrap items-center justify-center gap-2 pt-3">
+                {call.active && (
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    data-testid="site-call-mute"
+                    className={`flex cursor-pointer items-center gap-2 rounded-full px-3.5 py-2 text-[12.5px] font-medium ${light ? 'bg-black/[0.06] text-neutral-700' : 'bg-white/[0.08] text-neutral-200'}`}
+                  >
+                    {call.muted ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                    {call.muted ? 'Réactiver le micro' : 'Couper le micro'}
+                  </button>
+                )}
+                {call.active ? (
+                  <button
+                    type="button"
+                    onClick={hangUp}
+                    data-testid="site-call-hangup"
+                    className="flex cursor-pointer items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-red-500"
+                  >
+                    <PhoneOff className="h-3.5 w-3.5" /> Raccrocher
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startCall}
+                    className="btn btn-sm btn-primary"
+                  >
+                    <Phone className="h-3.5 w-3.5" /> Rappeler
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Messages Container */}
           <div
             ref={chatScrollRef}
-            className={`flex-1 space-y-3 overflow-y-auto overscroll-contain p-3.5 sm:p-4 ${skin.area}`}
+            className={`flex-1 space-y-3 overflow-y-auto overscroll-contain p-3.5 sm:p-4 ${skin.area} ${call.active || call.state === 'error' ? 'hidden' : ''}`}
             style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}
           >
             {messages.map((m) => {
@@ -408,7 +622,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           </div>
 
           {/* Quick Prompts Bar */}
-          <div className={`flex shrink-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain border-t px-3 py-2 ${skin.bar}`} style={{ scrollbarWidth: 'none' }}>
+          <div className={`flex shrink-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain border-t px-3 py-2 ${skin.bar} ${call.active || call.state === 'error' ? 'hidden' : ''}`} style={{ scrollbarWidth: 'none' }}>
             {quickPrompts.map((qp, idx) => (
               <button key={idx} type="button" onClick={() => handleSendMessage(qp)} className="lux-chip shrink-0">
                 {qp}
@@ -417,7 +631,7 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           </div>
 
           {/* Input Footer */}
-          <div className={`flex shrink-0 items-center gap-2 border-t p-3 ${skin.bar}`}>
+          <div className={`flex shrink-0 items-center gap-2 border-t p-3 ${skin.bar} ${call.active || call.state === 'error' ? 'hidden' : ''}`}>
             <input
               id="live-widget-input"
               type="text"
@@ -462,13 +676,17 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
       )}
 
       {/* Teaser Bubble (when closed) */}
-      {!isOpen && showTeaser && showTeaserBubble && (
+      {!isOpen && !call.active && showTeaser && showTeaserBubble && (
         <div
           className={`animate-in fade-in slide-in-from-right-4 pointer-events-auto mb-2 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-2xl border px-3 py-2 text-[0.76rem] font-light shadow-[0_20px_45px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl duration-300 sm:max-w-xs sm:px-3.5 ${skin.teaser}`}
         >
           <button type="button" onClick={handleToggle} className="flex cursor-pointer items-center gap-2 truncate text-left hover:opacity-90">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400"></span>
-            <span className="truncate">{widget?.teaserText || 'Une question ? Je réponds tout de suite 👋'}</span>
+            <span className="truncate">
+              {voiceOnly
+                ? widget?.attention?.callCtaText || 'Appelez-moi, je réponds tout de suite 📞'
+                : widget?.teaserText || 'Une question ? Je réponds tout de suite 👋'}
+            </span>
           </button>
           <button
             type="button"
@@ -492,9 +710,11 @@ export const FloatingLiveWidget: React.FC<FloatingLiveWidgetProps> = ({
           onClick={handleToggle}
           className={`group pointer-events-auto relative flex cursor-pointer items-center justify-center text-white shadow-[0_20px_45px_-22px_rgba(124,58,237,1)] transition-transform duration-200 hover:scale-[1.04] active:scale-95 ${bubbleRadius} ${bubblePadding}`}
           style={bubbleStyle}
-          aria-label="Ouvrir l'assistant"
+          aria-label={voiceOnly ? 'Appeler maintenant' : "Ouvrir l'assistant"}
         >
-          {isOpen ? (
+          {voiceOnly && !call.active ? (
+            <Phone className={`${bubbleIconSize} transition-transform duration-200 group-hover:scale-110`} />
+          ) : isOpen ? (
             <X className={`${bubbleIconSize} transition-transform duration-200`} />
           ) : widget?.customLogoUrl ? (
             <img src={widget.customLogoUrl} alt="" className={`${bubbleIconSize} rounded-full object-cover`} />

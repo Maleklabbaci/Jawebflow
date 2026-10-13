@@ -15,6 +15,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as siteChatApi from '../functions/api/site-chat';
 import * as adminSiteChatApi from '../functions/api/admin/site-chat';
+import * as siteVoiceApi from '../functions/api/site-voice';
+import * as voiceReport from '../functions/api/voice/report';
 import { ENV, installFakes } from './helpers/fakes';
 
 const ADMIN = '22222222-2222-4222-8222-222222222222';
@@ -225,7 +227,8 @@ describe('la console admin règle le chatbot', () => {
     expect(config.ai.tone).toBe('pro'); // ton inconnu → valeur sûre
     expect(config.ai.language).toBe('auto'); // langue inconnue → auto
     expect(config.widget.customCss.length).toBe(4000);
-    expect(config.widget.mode).toBe('chat'); // pas d'appel sur le site vitrine
+    expect(config.widget.mode).toBe('voice'); // « le bot qui appelle » est permis
+    expect(config.widget.voice.maxMinutes).toBe(5); // réglage d'appel par défaut
     expect(config.widget.attention.teaserDelaySeconds).toBe(120); // délai borné
 
     // Persisté pour de vrai : un second appel relit les mêmes valeurs.
@@ -255,6 +258,95 @@ describe('la console admin règle le chatbot', () => {
     const json = (await write.json()) as any;
     expect(write.status).toBe(502);
     expect(json.ok).toBe(false);
-    expect(json.error).toContain('migration_site_chatbot.sql');
+    expect(json.error).toContain('platform_settings');
+    // …et surtout : la console dit OÙ exécuter le SQL (le cas n°1 des « j'ai
+    // pourtant exécuté le SQL » = un SQL lancé dans un autre projet Supabase).
+    expect(json.diag.sql).toContain('create table if not exists public.platform_settings');
+    expect(json.diag.sqlEditorUrl).toContain('supabase.com/dashboard/project/');
+    expect(json.detail).toContain('PGRST205');
+  });
+});
+
+describe('l’appel du site vitrine (« je veux que le bot puisse appeler »)', () => {
+  const withKey = { ...ENV, GEMINI_API_KEY: 'GEMINI_TEST_KEY' } as any;
+
+  const call = (body: Record<string, unknown> = {}, env: any = withKey, ip = '20.0.0.1') =>
+    siteVoiceApi.onRequestPost({
+      request: new Request('https://jawebflow.test/api/site-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+    });
+
+  it('voix coupée dans la console : l’appel est refusé proprement (pas d’erreur technique)', async () => {
+    fx.supabase.seed('platform_settings', [{ id: 'site_chat', data: { widget: { voice: { enabled: false } } } }]);
+    const res = await call({}, withKey, '20.0.0.2');
+    const json = (await res.json()) as any;
+    expect(json.ok).toBe(false);
+    expect(json.blocked).toBe(true);
+    expect(json.error).toMatch(/pas activé|écrivez-nous/i);
+  });
+
+  it('sans clé Gemini : message clair, jamais de jeton', async () => {
+    const res = await call({}, ENV, '20.0.0.3');
+    const json = (await res.json()) as any;
+    expect(res.status).toBe(502);
+    expect(json.ok).toBe(false);
+    expect(String(json.error)).toMatch(/clé Gemini|indisponible/i);
+  });
+
+  it('voix allumée : jeton éphémère à usage unique + réglages de l’appel', async () => {
+    fx.external.handler = (url: URL, init: any) => {
+      expect(url.pathname).toContain('/auth_tokens');
+      const sent = JSON.parse(String(init.body));
+      expect(sent.uses).toBe(1);
+      // Le prompt de l'appel contient les règles du téléphone ET la base du site.
+      const instruction = sent.bidiGenerateContentSetup.systemInstruction.parts[0].text;
+      expect(instruction).toContain('TU ES AU TÉLÉPHONE');
+      expect(instruction).toContain('BASE DE CONNAISSANCE');
+      expect(instruction).toContain("JAWEBFLOW — l'essentiel");
+      return new Response(JSON.stringify({ name: 'auth_tokens/TOKEN_SITE', expireTime: '2026-01-01T00:00:00Z' }), { status: 200 });
+    };
+
+    const res = await call({ sessionId: 'site_test' }, withKey, '20.0.0.4');
+    const json = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.wsUrl).toContain('TOKEN_SITE');
+    expect(json.setup).toBeTruthy();
+    expect(json.maxSeconds).toBe(300);
+    expect(json.greeting).toContain('JawebFlow');
+    expect(json.assistantId).toBe('jawebflow_site');
+    // La clé Gemini ne sort jamais du serveur.
+    expect(JSON.stringify(json)).not.toContain('GEMINI_TEST_KEY');
+  });
+
+  it('anti-abus : 6 appels par IP et par 10 minutes, pas plus', async () => {
+    fx.external.handler = () =>
+      new Response(JSON.stringify({ name: 'auth_tokens/T', expireTime: '2026-01-01T00:00:00Z' }), { status: 200 });
+    for (let i = 0; i < 6; i += 1) {
+      const ok = await call({}, withKey, '20.0.0.5');
+      expect(ok.status).toBe(200);
+    }
+    const blocked = await call({}, withKey, '20.0.0.5');
+    expect(((await blocked.json()) as any).blocked).toBe(true);
+  });
+
+  it('le relevé d’un appel du site n’écrit aucun quota (il n’y a pas de marchand)', async () => {
+    const res = await voiceReport.onRequestPost({
+      request: new Request('https://jawebflow.test/api/voice/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '20.0.0.6' },
+        body: JSON.stringify({ assistantId: 'jawebflow_site', seconds: 95, tokensIn: 4000, tokensOut: 3000 }),
+      }),
+      env: ENV,
+    });
+    const json = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.site).toBe(true);
+    expect(fx.supabase.rows('conversation_contexts').length).toBe(0);
   });
 });
