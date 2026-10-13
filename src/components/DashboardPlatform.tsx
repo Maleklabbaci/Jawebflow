@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -396,6 +396,28 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
   const [learningSaving, setLearningSaving] = useState<string | null>(null);
   const [learningNotice, setLearningNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string>('');
+
+  // ── Messageries : au moins un canal est-il déjà branché ? Sert à proposer
+  // l'étape « Brancher ma première messagerie » à ceux qui ne l'ont pas fait,
+  // et à ne plus la proposer aux autres.
+  // null = on ne sait pas encore (aucune étape affichée tant qu'on ignore :
+  // pas de clignotement pour un marchand déjà équipé).
+  const [hasConnectedChannel, setHasConnectedChannel] = useState<boolean | null>(null);
+  const refreshChannels = useCallback(async () => {
+    if (!user?.uid) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/channels/integrations?assistantId=${encodeURIComponent(assistantId || '')}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setHasConnectedChannel(Boolean((data.integrations || []).some((i: { connected?: boolean }) => i.connected)));
+      }
+    } catch { /* simple confort d'affichage : l'écran « Canaux » reste la référence */ }
+  }, [user?.uid, assistantId]);
+
+  useEffect(() => { refreshChannels(); }, [refreshChannels]);
 
   // Billing & Plan State
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
@@ -1526,6 +1548,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
     !hasKnowledge && { label: 'Ajouter mes informations', onClick: () => handleSectionChange('knowledge') },
     websiteUrl.trim().length === 0 && { label: 'Indiquer l’adresse de mon site', onClick: () => handleSectionChange('crawler') },
     !isReadyToDeploy && { label: 'Installer la bulle sur mon site', onClick: () => handleSectionChange('integration') },
+    hasConnectedChannel === false && { label: 'Brancher ma première messagerie (Messenger, Instagram, TikTok)', onClick: () => handleSectionChange('messenger') },
   ].filter(Boolean) as Array<{ label: string; onClick: () => void }>;
   // Seules les urgences remontent sur l'Accueil ; le détail reste dans « Résumé ».
   const homeNotice = (() => {
@@ -1953,6 +1976,7 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                     { done: hasKnowledge, label: 'Ajouter mes informations (prix, livraison, horaires)', section: 'knowledge' as DashboardSectionId },
                     { done: websiteUrl.trim().length > 0, label: 'Indiquer l\'adresse de mon site web', section: 'crawler' as DashboardSectionId },
                     { done: isReadyToDeploy, label: 'Installer la bulle sur mon site', section: 'integration' as DashboardSectionId },
+                    { done: hasConnectedChannel === true, label: 'Brancher une messagerie (Messenger, Instagram, TikTok)', section: 'messenger' as DashboardSectionId },
                   ].map((step) => (
                     <li key={step.label}>
                       <button
@@ -2641,6 +2665,8 @@ export const DashboardPlatform: React.FC<DashboardPlatformProps> = ({ initialSec
                 assistantId={assistantId || currentWidgetId || ''}
                 plan={activePlan !== 'free' ? activePlan : (profile?.plan || activePlan)}
                 channel={currentSection}
+                onUpgrade={() => handleSectionChange('billing')}
+                onChanged={refreshChannels}
               />
             </div>
           )}

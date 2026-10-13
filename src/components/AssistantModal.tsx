@@ -307,7 +307,7 @@ export const AssistantModal: React.FC<AssistantModalProps> = ({ isOpen, onClose 
             </div>
 
             <div className="p-3 rounded-xl bg-neutral-900/50 border border-white/10 text-xs text-neutral-400">
-              💡 <strong>Intégration universelle :</strong> Fonctionne immédiatement sur tout site web (WordPress, Shopify, Webflow, HTML/React). La liaison directe WhatsApp & réseaux sociaux sera activée très prochainement.
+              💡 <strong>Intégration universelle :</strong> Fonctionne immédiatement sur tout site web (WordPress, Shopify, Webflow, HTML/React). La liaison directe WhatsApp & réseaux sociaux est disponible : branchez vos canaux depuis votre tableau de bord.
             </div>
           </div>
         )}

@@ -146,7 +146,7 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenAssistantModal
     { name: 'Webflow', tag: 'Disponible', isLive: true },
     { name: 'Wix & Squarespace', tag: 'Disponible', isLive: true },
     { name: 'React / Next.js / HTML', tag: 'Disponible', isLive: true },
-    { name: 'WhatsApp & Réseaux', tag: 'Prochainement', isLive: false }
+    { name: 'WhatsApp & Réseaux', tag: 'Disponible', isLive: true }
   ];
 
   return (
@@ -372,7 +372,8 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenAssistantModal
               </h2>
               <p className="lux-sub mx-auto max-w-xl text-[0.88rem]">
                 Pas besoin de développeur : une seule ligne de code suffit pour afficher la bulle sur
-                votre site. Les modules WhatsApp et réseaux sociaux arrivent ensuite.
+                votre site. Vos messageries — Instagram, Messenger, TikTok et WhatsApp — se branchent
+                ensuite depuis votre tableau de bord, en collant deux informations.
               </p>
             </div>
 

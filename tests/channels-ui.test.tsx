@@ -191,3 +191,43 @@ describe('écran Messageries', () => {
     expect(be.supabase.rows('channel_integrations')[0].access_token).toBe('PAGE_TOKEN_1');
   });
 });
+
+describe('mise en service vue par le client', () => {
+  it('WhatsApp sur Basic : on explique au lieu de laisser brancher un canal qui ne répondrait pas', async () => {
+    seedPlan(be.supabase, 'basic'); // le serveur est seul juge du forfait réel
+    await openChannels('whatsapp');
+    expect(screen.getByTestId('whatsapp-upgrade')).toBeTruthy();
+    // Aucun formulaire : impossible de croire que le canal est branché.
+    expect(screen.queryByTestId('connect-whatsapp')).toBeNull();
+    // Et le bouton mène vraiment quelque part : l'abonnement.
+    fireEvent.click(screen.getByTestId('whatsapp-upgrade-cta'));
+    await waitFor(() => expect(document.getElementById('nav-billing')?.getAttribute('aria-current')).toBe('page'));
+  });
+
+  it('WhatsApp sur Pro : le formulaire de branchement est bien proposé', async () => {
+    seedPlan(be.supabase, 'pro');
+    await openChannels('whatsapp');
+    expect(screen.queryByTestId('whatsapp-upgrade')).toBeNull();
+    expect(screen.getByTestId('connect-whatsapp')).toBeTruthy();
+  });
+
+  it('un canal branché explique au marchand comment vérifier lui-même, en trente secondes', async () => {
+    be.supabase.seed('channel_integrations', [{
+      id: 'int_tg2', user_id: ASSISTANT.userId, assistant_id: 'asst1', channel: 'telegram',
+      account_id: 'ma-cle-secrete-2026', access_token: 'TG_TOKEN_TEST', connected: true,
+    }]);
+    await openChannels('telegram');
+    const how = await screen.findByTestId('channel-test-telegram');
+    expect(how.textContent).toContain('Comment savoir que ça marche ?');
+    expect(how.textContent).toContain('Bonjour');
+  });
+
+  it('base sans tables : on parle au marchand, le SQL devient un détail pour l’équipe', async () => {
+    be.supabase.missing.add('channel_integrations');
+    await openChannels('messenger');
+    const banner = screen.getByTestId('channels-setup-required');
+    expect(banner.textContent).toContain('contact@jawebflow.dz');
+    expect(banner.textContent).toContain('Détail technique');
+    expect(banner.textContent).toContain('migration_channels.sql'); // pour l'équipe JawebFlow
+  });
+});
