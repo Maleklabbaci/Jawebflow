@@ -34,7 +34,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       features: [
         'Accès complet au tableau de bord et à la configuration',
         'Installation du widget sur votre site web',
-        'Connexion à Instagram & canaux externes',
+        'Branchez Instagram, Messenger et TikTok, et testez tout',
         'Aucun crédit de réponse IA inclus (pour tester la mise en place)',
       ],
       ctaText: 'Commencer gratuitement',
@@ -48,11 +48,12 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       priceDzdMonthly: 6850,
       priceUsdYearly: 23,
       priceDzdYearly: 5480,
-      badge: '100% Web',
+      badge: 'Web & Messenger',
       isPopular: false,
       features: [
         'Widget web universel (Shopify, WordPress, Webflow, site sur mesure)',
         'Jusqu’à 1 000 conversations par mois',
+        'Réponses automatiques sur Instagram, Messenger et TikTok (inclus)',
         'Base de connaissances : FAQ, catalogue, consignes',
         'Français, darija et anglais compris automatiquement',
         'Facture d’entreprise conforme (NIF, NIS, RC) sur demande'
@@ -74,7 +75,8 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
         'Widget web illimité pour tous vos sites',
         'Jusqu’à 5 000 conversations par mois',
         'Détection automatique des clients intéressés (nom, téléphone, ville)',
-        'Accès anticipé WhatsApp & réseaux sociaux (prochainement)',
+        'WhatsApp inclus : 1 000 réponses par mois (puis recharge à l’unité)',
+        'Tous les autres canaux inclus : Instagram, Messenger, TikTok',
         'Support prioritaire et IA optimisée pour la conversion'
       ],
       ctaText: 'Choisir Pro',
@@ -92,7 +94,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       isPopular: false,
       features: [
         'Volume élevé ou conversations illimitées',
-        'Tous les canaux dès leur disponibilité (web, WhatsApp, réseaux)',
+        'Tous les canaux, WhatsApp inclus : 5 000 réponses par mois',
         'Intégrations sur mesure (CRM, outils de gestion, Google Sheets)',
         'Accompagnement dédié et configuration sur site',
         'Devis proforma et convention annuelle adaptés à vos procédures'
@@ -122,12 +124,12 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onOpenAssistantModal, 
       a: 'Une conversation correspond à un échange suivi avec un même visiteur. Les questions répétées d’un même client dans la même discussion ne comptent pas plusieurs fois.'
     },
     {
-      q: 'Quand arrivent WhatsApp et les réseaux sociaux ?',
-      a: 'Le déploiement est en phase finale. Les abonnés Pro et Enterprise seront automatiquement activés dès la mise à disposition, sans changement de prix.'
+      q: 'Sur quels canaux mon assistant répond-il ?',
+      a: 'Le widget de votre site, Instagram, Facebook Messenger et TikTok sont inclus dans toutes les formules payantes. WhatsApp est inclus à partir de la formule Pro — 1 000 réponses par mois, 5 000 en Enterprise — car c’est le seul canal dont les réponses sont facturées par Meta. Le branchement se fait depuis votre tableau de bord, en collant deux informations. Les réseaux sociaux forment un module à part : vous demandez son activation depuis votre tableau de bord (« Demander l’activation ») et nous vous répondons avec les conditions.'
     },
     {
       q: 'Puis-je commencer en Basic et passer en Pro ensuite ?',
-      a: 'Oui, à tout moment et en un clic, pour augmenter votre volume ou activer les nouveaux canaux dès leur sortie.'
+      a: 'Oui, à tout moment et en un clic, pour augmenter votre volume ou activer WhatsApp.'
     },
     {
       q: 'Faut-il des compétences techniques pour installer le widget ?',

@@ -7,10 +7,13 @@ import { fireEvent } from '@testing-library/react';
 /** Entrée du menu qui contient chaque écran. */
 export const MENU_ENTRY: Record<string, string> = {
   overview: 'overview', summary: 'summary', simulator: 'simulator', leads: 'leads', orders: 'orders',
+  // ESPACE « MON ASSISTANT WEB » : le chatbot à intégrer dans le site.
   knowledge: 'knowledge', crawler: 'knowledge', behavior: 'knowledge', widget: 'knowledge', learning: 'knowledge',
-  integration: 'integration', instagram: 'integration', automations: 'integration',
-  // Un onglet par canal de messagerie.
-  messenger: 'integration', whatsapp: 'integration', telegram: 'integration', tiktok: 'integration',
+  integration: 'knowledge',
+  // ESPACE « RÉSEAUX SOCIAUX » : module à part (cadenas + demande d'activation
+  // tant que l'équipe ne l'a pas ouvert). Un onglet par réseau.
+  instagram: 'instagram', automations: 'instagram',
+  messenger: 'instagram', whatsapp: 'instagram', telegram: 'instagram', tiktok: 'instagram',
 };
 
 export function goTo(id: string) {

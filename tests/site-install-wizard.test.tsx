@@ -243,7 +243,7 @@ describe('dans le tableau de bord', () => {
     fireEvent.click(screen.getByRole('button', { name: /Tester mon assistant/ }));
     await settle(60);
     expect(document.querySelector('header h1')!.textContent).toBe('Tester mon assistant');
-    fireEvent.click(document.getElementById('nav-integration')!);
+    fireEvent.click(document.getElementById('nav-knowledge')!);
     await settle(40);
     fireEvent.click(document.querySelector('[data-tab="integration"]')!);
     await settle(60);

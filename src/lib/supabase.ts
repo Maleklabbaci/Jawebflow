@@ -59,6 +59,11 @@ export interface UserProfile {
   photoURL?: string;
   role?: string;
   plan?: string;
+  /**
+   * 🔒 Module réseaux sociaux (Instagram, Messenger, WhatsApp, Telegram, TikTok)
+   * débloqué pour ce compte par le propriétaire. Absent ou false = verrouillé.
+   */
+  socialEnabled?: boolean;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -80,6 +85,17 @@ export interface WidgetCustomization {
   welcomeMessage: string;
   themeMode: 'dark' | 'light';
   showBranding: boolean;
+  /**
+   * 🎙️ Agent vocal : le visiteur appuie sur le micro et parle à voix haute.
+   * Éteint par défaut — personne ne découvre un micro sur son site sans l'avoir
+   * demandé. `maxMinutes` protège le marchand : l'appel se termine tout seul.
+   */
+  voice?: {
+    enabled: boolean;
+    voice: string;
+    greeting: string;
+    maxMinutes: number;
+  };
 }
 
 export interface AssistantConfig {
